@@ -63,6 +63,7 @@ export function App() {
   const handleTrackCreated = (newTrack: Track) => {
     setTracks((prev) => [newTrack, ...prev]);
     setSelectedTrack(newTrack);
+    setCurrentView('create'); // Ouverture immédiate du studio de storyboard pour cette musique
   };
 
   const handleVoteUpdated = (proposalId: string, newCount: number) => {

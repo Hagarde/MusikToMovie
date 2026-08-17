@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Music, Link as LinkIcon, Play, Pause, Clock, Check, Sparkles, Loader2, FastForward, Rewind } from 'lucide-react';
+import { X, Music, Link as LinkIcon, Play, Pause, Clock, Check, Sparkles, Loader2, FastForward, Rewind, Clapperboard } from 'lucide-react';
 import { Track } from '../../lib/types';
 import { createTrack } from '../../lib/supabase';
 import { extractYouTubeId, fetchYouTubeMetadata, getYouTubeThumbnail } from '../../lib/youtube';
@@ -305,7 +305,8 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
               disabled={isSubmitting || !title || !youtubeUrl}
               className="px-5 sm:px-6 py-2.5 rounded-xl text-xs font-bold bg-brand-500 hover:bg-brand-400 text-cinema-950 transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-md hover:scale-105"
             >
-              {isSubmitting ? 'Enregistrement...' : 'Ajouter cette musique'}
+              <Clapperboard className="w-4 h-4" />
+              <span>{isSubmitting ? 'Enregistrement...' : 'Ajouter & Créer un Storyboard'}</span>
             </button>
           </div>
         </form>
