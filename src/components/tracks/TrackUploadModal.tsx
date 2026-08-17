@@ -32,6 +32,8 @@ const GENRES = [
   'Ambiance / Planant',
 ];
 
+const PRESET_TIMECODES = [15, 30, 45, 60, 90, 120, 180, 240];
+
 export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   isOpen,
   onClose,
@@ -43,7 +45,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
-  const [duration, setDuration] = useState(240); // 4 minutes par défaut
+  const [duration, setDuration] = useState(240); // Initialisé par défaut, auto-ajusté dès détection
   const [defaultStartTime, setDefaultStartTime] = useState<number>(30);
   
   // État de pré-écoute audio YouTube
@@ -73,6 +75,19 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
       });
     }
   }, [youtubeUrl]);
+
+  // Détection automatique et mise à jour dynamique de la durée réelle
+  const updateExactDuration = (player: any) => {
+    if (!player || typeof player.getDuration !== 'function') return;
+    try {
+      const videoDuration = player.getDuration();
+      if (videoDuration && videoDuration > 0 && Number.isFinite(videoDuration)) {
+        const exactSecs = Math.floor(videoDuration);
+        setDuration(exactSecs);
+        setDefaultStartTime((prev) => Math.min(prev, Math.max(0, exactSecs - 5)));
+      }
+    } catch (e) {}
+  };
 
   // Initialisation du lecteur YouTube invisible pour l'écoute en direct
   useEffect(() => {
@@ -105,13 +120,12 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
           onReady: (event: any) => {
             if (isCancelled) return;
             setIsPlayerReady(true);
-            const videoDuration = event.target.getDuration();
-            if (videoDuration && videoDuration > 0) {
-              setDuration(Math.floor(videoDuration));
-            }
+            updateExactDuration(event.target);
           },
           onStateChange: (event: any) => {
             if (isCancelled) return;
+            updateExactDuration(event.target);
+
             if (event.data === YT.PlayerState.PLAYING) {
               setIsPlayingPreview(true);
             } else if (
@@ -146,6 +160,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
       ytPlayerRef.current.pauseVideo();
       setIsPlayingPreview(false);
     } else {
+      updateExactDuration(ytPlayerRef.current);
       ytPlayerRef.current.seekTo(defaultStartTime, true);
       ytPlayerRef.current.playVideo();
       setIsPlayingPreview(true);
@@ -153,15 +168,19 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   };
 
   const handleSliderChange = (newTime: number) => {
-    setDefaultStartTime(newTime);
+    const clamped = Math.max(0, Math.min(duration, newTime));
+    setDefaultStartTime(clamped);
     if (ytPlayerRef.current && isPlayerReady && isPlayingPreview) {
-      ytPlayerRef.current.seekTo(newTime, true);
+      ytPlayerRef.current.seekTo(clamped, true);
     }
   };
 
   const handleSliderCommit = (newTime: number) => {
+    const clamped = Math.max(0, Math.min(duration, newTime));
+    setDefaultStartTime(clamped);
     if (ytPlayerRef.current && isPlayerReady) {
-      ytPlayerRef.current.seekTo(newTime, true);
+      updateExactDuration(ytPlayerRef.current);
+      ytPlayerRef.current.seekTo(clamped, true);
       if (!isPlayingPreview) {
         ytPlayerRef.current.playVideo();
         setIsPlayingPreview(true);
@@ -173,6 +192,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
     const nextTime = Math.max(0, Math.min(duration, defaultStartTime + delta));
     setDefaultStartTime(nextTime);
     if (ytPlayerRef.current && isPlayerReady) {
+      updateExactDuration(ytPlayerRef.current);
       ytPlayerRef.current.seekTo(nextTime, true);
     }
   };
@@ -205,7 +225,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
         youtube_id: youtubeId || undefined,
         thumbnail_url: thumbnailUrl || (youtubeId ? getYouTubeThumbnail(youtubeId) : undefined),
         duration: duration || 240,
-        default_start_time: defaultStartTime,
+        default_start_time: Math.min(defaultStartTime, duration),
       });
 
       onTrackCreated(created);
@@ -217,6 +237,9 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
       setIsSubmitting(false);
     }
   };
+
+  // Liste des presets adaptés à la durée réelle de la chanson
+  const availablePresets = PRESET_TIMECODES.filter((t) => t < duration);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto">
@@ -234,7 +257,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-white text-sm sm:text-base">Ajouter une Musique YouTube</h3>
-              <p className="text-[10px] sm:text-[11px] text-slate-400">Zéro stockage • Métadonnées et pré-écoute synchronisée</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-400">Zéro stockage • Durée et pré-écoute synchronisées</p>
             </div>
           </div>
           <button
@@ -288,9 +311,14 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                 </div>
 
                 <div className="min-w-0 flex-1 space-y-0.5">
-                  <span className="inline-block px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
-                    ✓ Détecté
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="inline-block px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
+                      ✓ Détecté
+                    </span>
+                    <span className="inline-block px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-mono font-bold bg-cinema-800 text-brand-300 border border-cinema-700">
+                      Durée : {formatSeconds(duration)}
+                    </span>
+                  </div>
                   <h4 className="text-xs font-semibold text-white truncate">{title || 'Chargement...'}</h4>
                   <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">{artist}</p>
                 </div>
@@ -302,9 +330,9 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                   <div className="flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-brand-400" />
                     <span className="text-xs font-bold text-brand-300">
-                      Point fort (Début de scène) :
+                      Début de scène :
                     </span>
-                    <span className="font-mono text-sm font-bold text-brand-400 bg-cinema-800 px-2 py-0.5 rounded-lg border border-cinema-700 shadow-inner">
+                    <span className="font-mono text-sm font-bold text-brand-400 bg-cinema-800 px-2.5 py-0.5 rounded-lg border border-cinema-700 shadow-inner">
                       {formatSeconds(defaultStartTime)}
                     </span>
                   </div>
@@ -334,69 +362,58 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                   </button>
                 </div>
 
-                {/* Slider interactif */}
+                {/* Slider interactif borné à la durée exacte */}
                 <div className="space-y-1">
                   <input
                     type="range"
                     min="0"
-                    max={duration}
+                    max={Math.max(1, duration)}
                     step="1"
-                    value={defaultStartTime}
+                    value={Math.min(defaultStartTime, duration)}
                     onChange={(e) => handleSliderChange(parseInt(e.target.value, 10))}
                     onMouseUp={(e) => handleSliderCommit(parseInt((e.target as HTMLInputElement).value, 10))}
                     onTouchEnd={(e) => handleSliderCommit(parseInt((e.target as HTMLInputElement).value, 10))}
                     className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-brand-500 hover:accent-brand-400"
                   />
                   <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                    <span>00:00 (Début)</span>
+                    <span>00:00</span>
                     <span>{formatSeconds(Math.floor(duration / 2))}</span>
-                    <span>{formatSeconds(duration)}</span>
+                    <span className="text-brand-400/80 font-bold">{formatSeconds(duration)} (Fin)</span>
                   </div>
                 </div>
 
-                {/* Boutons d'ajustement rapide */}
+                {/* Boutons d'ajustement rapide bornés */}
                 <div className="flex items-center justify-between gap-1 pt-1 overflow-x-auto">
                   <button
                     type="button"
                     onClick={() => adjustStartTime(-10)}
-                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
+                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700 shrink-0"
                   >
                     -10s
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDefaultStartTime(30);
-                      handleSliderCommit(30);
-                    }}
-                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
-                  >
-                    00:30
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDefaultStartTime(60);
-                      handleSliderCommit(60);
-                    }}
-                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
-                  >
-                    01:00
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDefaultStartTime(90);
-                      handleSliderCommit(90);
-                    }}
-                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
-                  >
-                    01:30
-                  </button>
+
+                  {availablePresets.slice(0, 4).map((time) => (
+                    <button
+                      key={time}
+                      type="button"
+                      onClick={() => {
+                        setDefaultStartTime(time);
+                        handleSliderCommit(time);
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-mono border shrink-0 transition-colors ${
+                        defaultStartTime === time
+                          ? 'bg-brand-500 text-cinema-950 font-bold border-brand-400'
+                          : 'bg-cinema-800 hover:bg-cinema-700 text-slate-300 border border-cinema-700'
+                      }`}
+                    >
+                      {formatSeconds(time)}
+                    </button>
+                  ))}
+
                   <button
                     type="button"
                     onClick={() => adjustStartTime(10)}
-                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
+                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700 shrink-0"
                   >
                     +10s
                   </button>
