@@ -65,6 +65,12 @@ export function App() {
     setSelectedTrack(newTrack);
   };
 
+  const handleVoteUpdated = (proposalId: string, newCount: number) => {
+    setProposals((prev) =>
+      prev.map((p) => (p.id === proposalId ? { ...p, likes_count: newCount } : p))
+    );
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0c10] text-slate-100">
       <Navbar
@@ -116,6 +122,7 @@ export function App() {
             proposals={proposals}
             tracks={tracks}
             onSelectProposal={handleSelectProposal}
+            onVoteUpdated={handleVoteUpdated}
             onCreateNew={() => {
               if (tracks.length > 0) {
                 handleCreateProposal(tracks[0]);

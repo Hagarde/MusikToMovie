@@ -85,7 +85,9 @@ export const StoryboardCanvas: React.FC<StoryboardCanvasProps> = ({
     setHistoryStep(newHistory.length - 1);
 
     if (onSave) {
-      onSave(canvas.toDataURL('image/png'));
+      // Export compressé WebP / JPEG pour optimiser le stockage Supabase
+      const compressedData = canvas.toDataURL('image/webp', 0.85);
+      onSave(compressedData);
     }
   };
 
@@ -154,7 +156,7 @@ export const StoryboardCanvas: React.FC<StoryboardCanvasProps> = ({
       const prevStep = historyStep - 1;
       ctx.putImageData(history[prevStep], 0, 0);
       setHistoryStep(prevStep);
-      if (onSave) onSave(canvas.toDataURL('image/png'));
+      if (onSave) onSave(canvas.toDataURL('image/webp', 0.85));
     }
   };
 
@@ -168,7 +170,7 @@ export const StoryboardCanvas: React.FC<StoryboardCanvasProps> = ({
       const nextStep = historyStep + 1;
       ctx.putImageData(history[nextStep], 0, 0);
       setHistoryStep(nextStep);
-      if (onSave) onSave(canvas.toDataURL('image/png'));
+      if (onSave) onSave(canvas.toDataURL('image/webp', 0.85));
     }
   };
 

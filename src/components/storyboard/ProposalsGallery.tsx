@@ -1,12 +1,14 @@
-import React from 'react';
-import { Film, User, Sparkles, Play, Clock, Music } from 'lucide-react';
+import React, { useState } from 'react';
+import { Film, User, Sparkles, Play, Clock, Music, Heart, Flame, Calendar } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
+import { voteProposal, hasUserVoted } from '../../lib/supabase';
 
 interface ProposalsGalleryProps {
   proposals: Proposal[];
   tracks: Track[];
   onSelectProposal: (proposal: Proposal) => void;
   onCreateNew: () => void;
+  onVoteUpdated?: (proposalId: string, newCount: number) => void;
 }
 
 export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
@@ -14,10 +16,28 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
   tracks,
   onSelectProposal,
   onCreateNew,
+  onVoteUpdated,
 }) => {
+  const [sortBy, setSortBy] = useState<'likes' | 'recent'>('likes');
+
   const getTrackForProposal = (trackId: string) => {
     return tracks.find((t) => t.id === trackId);
   };
+
+  const handleVote = async (e: React.MouseEvent, proposalId: string) => {
+    e.stopPropagation();
+    const count = await voteProposal(proposalId);
+    if (onVoteUpdated) {
+      onVoteUpdated(proposalId, count);
+    }
+  };
+
+  const sortedProposals = [...proposals].sort((a, b) => {
+    if (sortBy === 'likes') {
+      return (b.likes_count || 0) - (a.likes_count || 0);
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   return (
     <div className="space-y-6">
@@ -28,21 +48,47 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
             Galerie des Scénarios & Storyboards
           </h2>
           <p className="text-xs text-slate-400">
-            Découvrez comment chaque créateur a visualisé un univers cinématographique pour chaque musique
+            Découvrez et votez pour les meilleurs concepts cinématographiques imaginés par les utilisateurs
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onCreateNew}
-          className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-cinema-900 font-semibold text-xs transition-transform hover:scale-105 shadow-md flex items-center gap-1.5"
-        >
-          <Sparkles className="w-4 h-4" />
-          Créer un nouveau scénario
-        </button>
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          {/* Sélecteur de tri */}
+          <div className="flex items-center bg-cinema-850 p-1 rounded-xl border border-cinema-700/60 text-xs">
+            <button
+              type="button"
+              onClick={() => setSortBy('likes')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
+                sortBy === 'likes' ? 'bg-brand-500 text-cinema-900 font-bold shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5" />
+              Populaires
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy('recent')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
+                sortBy === 'recent' ? 'bg-brand-500 text-cinema-900 font-bold shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              Récents
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={onCreateNew}
+            className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-cinema-900 font-semibold text-xs transition-transform hover:scale-105 shadow-md flex items-center gap-1.5 shrink-0"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Nouveau Storyboard</span>
+          </button>
+        </div>
       </div>
 
-      {proposals.length === 0 ? (
+      {sortedProposals.length === 0 ? (
         <div className="bg-cinema-850 border border-cinema-700/60 rounded-3xl p-12 text-center space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-cinema-800 border border-cinema-700 mx-auto flex items-center justify-center text-brand-400">
             <Film className="w-8 h-8" />
@@ -61,10 +107,11 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {proposals.map((proposal) => {
+          {sortedProposals.map((proposal) => {
             const track = getTrackForProposal(proposal.track_id);
             const mainScene = proposal.scenes?.find((s) => s.section_type === 'main') || proposal.scenes?.[0];
             const sketchImage = mainScene?.image_data;
+            const isVoted = hasUserVoted(proposal.id);
 
             return (
               <div
@@ -91,6 +138,23 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cinema-900/90 text-brand-300 border border-cinema-700 backdrop-blur-sm">
                       {proposal.genre}
                     </span>
+                  </div>
+
+                  {/* Bouton Vote / Like en overlay */}
+                  <div className="absolute top-3 right-3 z-20">
+                    <button
+                      type="button"
+                      onClick={(e) => handleVote(e, proposal.id)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-transform hover:scale-110 shadow-lg ${
+                        isVoted
+                          ? 'bg-rose-500 text-white shadow-rose-500/30'
+                          : 'bg-cinema-900/90 hover:bg-cinema-800 text-slate-300 border border-cinema-700/80 backdrop-blur-sm'
+                      }`}
+                      title="Voter pour ce storyboard"
+                    >
+                      <Heart className={`w-3.5 h-3.5 ${isVoted ? 'fill-current' : 'text-rose-400'}`} />
+                      <span>{proposal.likes_count || 0}</span>
+                    </button>
                   </div>
 
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">

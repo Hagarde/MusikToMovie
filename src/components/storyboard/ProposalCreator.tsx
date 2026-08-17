@@ -37,7 +37,8 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Initialisation des 3 scènes narratives
+  // Initialisation des 3 scènes narratives calées sur le point fort
+  const startTime = track.default_start_time || Math.floor(track.duration * 0.25);
   const [scenes, setScenes] = useState<Scene[]>([
     {
       section_type: 'preceding',
@@ -45,7 +46,7 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
       description: '',
       image_data: '',
       start_time: 0,
-      end_time: Math.min(20, Math.floor(track.duration * 0.25)),
+      end_time: startTime,
       order_index: 0,
     },
     {
@@ -53,8 +54,8 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
       scene_title: 'La Scène Clé (Climax musical)',
       description: '',
       image_data: '',
-      start_time: Math.min(20, Math.floor(track.duration * 0.25)),
-      end_time: Math.floor(track.duration * 0.75),
+      start_time: startTime,
+      end_time: Math.min(Math.floor(track.duration), startTime + 30),
       order_index: 1,
     },
     {
@@ -62,7 +63,7 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
       scene_title: 'Dénouement & Transition',
       description: '',
       image_data: '',
-      start_time: Math.floor(track.duration * 0.75),
+      start_time: Math.min(Math.floor(track.duration), startTime + 30),
       end_time: Math.floor(track.duration),
       order_index: 2,
     },

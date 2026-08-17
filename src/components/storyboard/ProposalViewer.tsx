@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Film, Clock, User, Tag, Sparkles, Play, Share2 } from 'lucide-react';
+import { ArrowLeft, Film, Clock, User, Heart, Share2, Sparkles } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { AudioPlayer } from '../audio/AudioPlayer';
+import { voteProposal, hasUserVoted } from '../../lib/supabase';
 
 interface ProposalViewerProps {
   proposal: Proposal;
@@ -21,6 +22,8 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   onBack,
 }) => {
   const [currentTime, setCurrentTime] = useState(0);
+  const [likesCount, setLikesCount] = useState<number>(proposal.likes_count || 0);
+  const [isVoted, setIsVoted] = useState<boolean>(hasUserVoted(proposal.id));
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -28,11 +31,17 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const handleVote = async () => {
+    const newCount = await voteProposal(proposal.id);
+    setLikesCount(newCount);
+    setIsVoted(!isVoted);
+  };
+
   const scenes = proposal.scenes || [];
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-16 animate-in fade-in duration-200">
-      {/* Navigation */}
+      {/* Navigation & Actions */}
       <div className="flex items-center justify-between gap-4">
         <button
           type="button"
@@ -40,12 +49,28 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cinema-850 hover:bg-cinema-800 border border-cinema-700 text-xs font-medium text-slate-300 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Retour aux projets</span>
+          <span>Retour à la galerie</span>
         </button>
 
-        <span className="text-xs font-mono text-slate-400">
-          Créé le {new Date(proposal.created_at).toLocaleDateString('fr-FR')}
-        </span>
+        <div className="flex items-center gap-3">
+          {/* Bouton Vote */}
+          <button
+            type="button"
+            onClick={handleVote}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-transform hover:scale-105 shadow-md ${
+              isVoted
+                ? 'bg-rose-500 text-white shadow-rose-500/30'
+                : 'bg-cinema-850 hover:bg-cinema-800 text-slate-200 border border-cinema-700'
+            }`}
+          >
+            <Heart className={`w-4 h-4 ${isVoted ? 'fill-current' : 'text-rose-400'}`} />
+            <span>{isVoted ? 'Voté !' : 'Voter'} ({likesCount})</span>
+          </button>
+
+          <span className="text-xs font-mono text-slate-400">
+            {new Date(proposal.created_at).toLocaleDateString('fr-FR')}
+          </span>
+        </div>
       </div>
 
       {/* Lecteur Audio */}

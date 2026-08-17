@@ -40,8 +40,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   useEffect(() => {
     if (track && audioRef.current) {
-      audioRef.current.currentTime = 0;
-      setCurrentTime(0);
+      const initialTime = track.default_start_time || 0;
+      audioRef.current.currentTime = initialTime;
+      setCurrentTime(initialTime);
       if (autoPlay) {
         audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
       } else {
