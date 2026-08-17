@@ -8,9 +8,11 @@ import {
   Loader2, 
   Repeat, 
   Clapperboard,
+  RotateCcw,
   FastForward,
   Rewind,
-  ArrowRight
+  ArrowRight,
+  Disc
 } from 'lucide-react';
 import { Track } from '../../lib/types';
 import { createTrack } from '../../lib/supabase';
@@ -50,7 +52,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const [startTime, setStartTime] = useState<number>(30);
   const [endTime, setEndTime] = useState<number>(60);
   
-  // État de pré-écoute en boucle
+  // État de pré-écoute en boucle et tête de lecture dragable
   const [isPlayingLoop, setIsPlayingLoop] = useState<boolean>(false);
   const [currentPlayTime, setCurrentPlayTime] = useState<number>(30);
   const [isPlayerReady, setIsPlayerReady] = useState<boolean>(false);
@@ -126,6 +128,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             if (isCancelled) return;
             setIsPlayerReady(true);
             updateExactDuration(event.target);
+            setCurrentPlayTime(startTime);
           },
           onStateChange: (event: any) => {
             if (isCancelled) return;
@@ -169,13 +172,16 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
         if (!ytPlayerRef.current || typeof ytPlayerRef.current.getCurrentTime !== 'function') return;
         try {
           const t = ytPlayerRef.current.getCurrentTime();
-          setCurrentPlayTime(t);
-          // Si on a atteint la fin du segment, on reboucle immédiatement au début !
-          if (t >= endTime || t < startTime - 2) {
-            ytPlayerRef.current.seekTo(startTime, true);
+          if (typeof t === 'number' && !isNaN(t)) {
+            setCurrentPlayTime(t);
+            // Rebouclage instantané et strict dès que la fin du segment est atteinte
+            if (t >= endTime || t < startTime - 1) {
+              ytPlayerRef.current.seekTo(startTime, true);
+              setCurrentPlayTime(startTime);
+            }
           }
         } catch (e) {}
-      }, 150);
+      }, 100);
     } else {
       if (loopIntervalRef.current) {
         clearInterval(loopIntervalRef.current);
@@ -196,15 +202,46 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
       setIsPlayingLoop(false);
     } else {
       updateExactDuration(ytPlayerRef.current);
-      ytPlayerRef.current.seekTo(startTime, true);
+      const targetSeek = (currentPlayTime >= startTime && currentPlayTime < endTime) ? currentPlayTime : startTime;
+      ytPlayerRef.current.seekTo(targetSeek, true);
       ytPlayerRef.current.playVideo();
       setIsPlayingLoop(true);
     }
   };
 
+  // Sauter à un moment précis dans la boucle (curseur dragable conscrit à [startTime, endTime])
+  const handleScrubInLoop = (newTime: number, commit: boolean = false) => {
+    const clamped = Math.max(startTime, Math.min(newTime, endTime));
+    setCurrentPlayTime(clamped);
+    if (ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
+      ytPlayerRef.current.seekTo(clamped, commit);
+    }
+  };
+
+  // Revenir au début du segment
+  const jumpToLoopStart = () => {
+    setCurrentPlayTime(startTime);
+    if (ytPlayerRef.current) {
+      ytPlayerRef.current.seekTo(startTime, true);
+      if (!isPlayingLoop) {
+        ytPlayerRef.current.playVideo();
+        setIsPlayingLoop(true);
+      }
+    }
+  };
+
+  // Décaler la tête de lecture dans la boucle (ex: -2s / +2s)
+  const nudgeCurrentPlayTime = (delta: number) => {
+    const newTime = Math.max(startTime, Math.min(currentPlayTime + delta, endTime));
+    handleScrubInLoop(newTime, true);
+  };
+
   const handleStartChange = (newStart: number) => {
     const clamped = Math.max(0, Math.min(newStart, endTime - 3));
     setStartTime(clamped);
+    if (currentPlayTime < clamped) {
+      setCurrentPlayTime(clamped);
+    }
     if (ytPlayerRef.current && isPlayingLoop) {
       ytPlayerRef.current.seekTo(clamped, true);
     }
@@ -213,6 +250,9 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const handleEndChange = (newEnd: number) => {
     const clamped = Math.max(startTime + 3, Math.min(newEnd, duration));
     setEndTime(clamped);
+    if (currentPlayTime > clamped) {
+      setCurrentPlayTime(clamped);
+    }
   };
 
   const setSegmentLength = (seconds: number) => {
@@ -239,6 +279,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
 
     setStartTime(newStart);
     setEndTime(newEnd);
+    setCurrentPlayTime(newStart);
 
     if (ytPlayerRef.current && isPlayingLoop) {
       ytPlayerRef.current.seekTo(newStart, true);
@@ -251,14 +292,6 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const parseTime = (timeStr: string) => {
-    const parts = timeStr.split(':').map(p => parseInt(p, 10));
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-      return parts[0] * 60 + parts[1];
-    }
-    return parseInt(timeStr, 10) || 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -295,9 +328,13 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
     }
   };
 
-  const segmentDuration = endTime - startTime;
+  const segmentDuration = Math.max(1, endTime - startTime);
+  const clampedPlayTime = Math.max(startTime, Math.min(currentPlayTime, endTime));
+  const loopProgressPercent = ((clampedPlayTime - startTime) / segmentDuration) * 100;
+
   const startPercent = duration > 0 ? (startTime / duration) * 100 : 0;
   const endPercent = duration > 0 ? (endTime / duration) * 100 : 100;
+  const playheadPercentOnGlobal = duration > 0 ? (clampedPlayTime / duration) * 100 : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto">
@@ -315,7 +352,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-white text-sm sm:text-base">Ajouter une Musique YouTube</h3>
-              <p className="text-[10px] sm:text-[11px] text-slate-400">Définissez le segment de scène avec boucle en direct</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-400">Définissez le segment de scène avec boucle & curseur de position</p>
             </div>
           </div>
           <button
@@ -353,7 +390,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </div>
           </div>
 
-          {/* Aperçu YouTube & Réglage à 2 POINTS (Début / Fin) avec BOUCLE EN DIRECT */}
+          {/* Aperçu YouTube & Réglage à 2 POINTS avec INDICATEUR DRAGABLE DE BOUCLE */}
           {youtubeId && (
             <div className="bg-cinema-900/90 rounded-2xl border border-cinema-700/80 p-3.5 sm:p-4 space-y-4 animate-in fade-in duration-200">
               <div className="flex gap-3 sm:gap-4 items-center">
@@ -373,8 +410,8 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                     <span className="inline-block px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-green-500/20 text-green-400 border border-green-500/30">
                       ✓ Détecté
                     </span>
-                    <span className="inline-block px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-mono font-bold bg-cinema-800 text-brand-300 border border-cinema-700">
-                      Durée : {formatSeconds(duration)}
+                    <span className="inline-block px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-mono font-bold bg-cinema-800 text-amber-300 border border-cinema-700">
+                      Durée totale : {formatSeconds(duration)}
                     </span>
                   </div>
                   <h4 className="text-xs font-semibold text-white truncate">{title || 'Chargement...'}</h4>
@@ -382,52 +419,143 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                 </div>
               </div>
 
-              {/* 🎚️ SLIDER À DEUX POINTS (DÉBUT & FIN) & BOUCLE */}
-              <div className="pt-3 border-t border-cinema-700/60 space-y-3">
+              {/* 🎚️ MODULE DE BOUCLE AVEC CURSEUR DE POSITION DRAGABLE */}
+              <div className="pt-3 border-t border-cinema-700/60 space-y-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Clock className="w-3.5 h-3.5 text-brand-400" />
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-xs font-bold text-white">Segment de la scène :</span>
-                    <span className="font-mono text-xs font-bold text-brand-300 bg-cinema-800 px-2 py-0.5 rounded-lg border border-cinema-700">
+                    <span className="font-mono text-xs font-bold text-amber-300 bg-cinema-800 px-2 py-0.5 rounded-lg border border-cinema-700">
                       {formatSeconds(startTime)} → {formatSeconds(endTime)} ({segmentDuration}s)
                     </span>
                   </div>
 
-                  {/* Bouton Boucle en direct */}
+                  {/* Bouton Lecture en boucle */}
                   <button
                     type="button"
                     onClick={toggleLoopPlayback}
                     disabled={!isPlayerReady}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
                       isPlayingLoop
                         ? 'bg-rose-500 text-white shadow-rose-500/30 ring-2 ring-rose-400/50 animate-pulse'
-                        : 'bg-brand-500 hover:bg-brand-400 text-cinema-950 shadow-brand-500/20 hover:scale-105'
+                        : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-cinema-950 shadow-amber-500/20 hover:scale-105'
                     } disabled:opacity-50`}
                   >
                     <Repeat className={`w-3.5 h-3.5 ${isPlayingLoop ? 'animate-spin' : ''}`} />
-                    <span>{isPlayingLoop ? 'Arrêter la boucle' : 'Écouter en boucle'}</span>
+                    <span>{isPlayingLoop ? 'Arrêter la boucle' : '🔁 Écouter en boucle'}</span>
                   </button>
                 </div>
 
-                {/* Barre Visuelle du Segment Sélectionné */}
+                {/* 🎯 CURSEUR TEMPOREL DRAGABLE DANS LA BOUCLE (SCRUBBER CONSCIENT DE LA BOUCLE) */}
+                <div className="bg-cinema-800/90 p-3.5 rounded-2xl border border-amber-500/30 space-y-2.5 shadow-inner">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+                      <Disc className={`w-3.5 h-3.5 text-amber-400 ${isPlayingLoop ? 'animate-spin' : ''}`} />
+                      <span>Position dans la boucle :</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 font-mono text-xs">
+                      <span className="text-amber-300 font-bold bg-cinema-950 px-2 py-0.5 rounded border border-amber-500/30">
+                        {formatSeconds(clampedPlayTime)}
+                      </span>
+                      <span className="text-slate-400 text-[11px]">
+                        (+{(clampedPlayTime - startTime).toFixed(1)}s / {segmentDuration}s)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Slider de positionnement dragable dans la boucle */}
+                  <div className="relative pt-1">
+                    <div className="relative h-3 bg-cinema-950 rounded-full overflow-hidden border border-cinema-700/80">
+                      {/* Remplissage de progression dans la boucle */}
+                      <div
+                        className="absolute top-0 bottom-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-75"
+                        style={{ width: `${Math.max(0, Math.min(100, loopProgressPercent))}%` }}
+                      />
+                    </div>
+
+                    {/* Input Range de scrubbing conscrit strictement à [startTime, endTime] */}
+                    <input
+                      type="range"
+                      min={startTime}
+                      max={endTime}
+                      step="0.1"
+                      value={clampedPlayTime}
+                      onChange={(e) => handleScrubInLoop(parseFloat(e.target.value), false)}
+                      onMouseUp={(e) => handleScrubInLoop(parseFloat((e.target as HTMLInputElement).value), true)}
+                      onTouchEnd={(e) => handleScrubInLoop(parseFloat((e.target as HTMLInputElement).value), true)}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-10"
+                      title="Glisser pour reculer ou avancer précisément dans la boucle"
+                    />
+                  </div>
+
+                  {/* Contrôles de navigation fine dans la boucle (Revenir au début, -2s, +2s) */}
+                  <div className="flex items-center justify-between gap-2 pt-1 text-[11px]">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={jumpToLoopStart}
+                        className="px-2 py-1 rounded-lg bg-cinema-750 hover:bg-cinema-700 text-slate-200 hover:text-white font-semibold flex items-center gap-1 transition-colors border border-white/5"
+                        title="Revenir au début de la boucle"
+                      >
+                        <RotateCcw className="w-3 h-3 text-amber-400" />
+                        <span>Début boucle</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => nudgeCurrentPlayTime(-2)}
+                        className="px-2 py-1 rounded-lg bg-cinema-750 hover:bg-cinema-700 text-slate-200 hover:text-white font-mono transition-colors border border-white/5"
+                        title="Reculer de 2 secondes dans la boucle"
+                      >
+                        -2s
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => nudgeCurrentPlayTime(2)}
+                        className="px-2 py-1 rounded-lg bg-cinema-750 hover:bg-cinema-700 text-slate-200 hover:text-white font-mono transition-colors border border-white/5"
+                        title="Avancer de 2 secondes dans la boucle"
+                      >
+                        +2s
+                      </button>
+                    </div>
+
+                    <span className="text-[10px] text-slate-400 italic">
+                      Glissez la barre pour vous caler au bon moment
+                    </span>
+                  </div>
+                </div>
+
+                {/* Barre Visuelle Globale de la musique & Sélection Début / Fin */}
                 <div className="space-y-2 pt-1">
-                  <div className="relative h-3 bg-cinema-700 rounded-full overflow-hidden">
+                  <div className="text-[11px] font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Aperçu sur la musique entière :</span>
+                    <span className="font-mono text-slate-400 text-[10px]">00:00 → {formatSeconds(duration)}</span>
+                  </div>
+
+                  <div className="relative h-2.5 bg-cinema-950 rounded-full overflow-hidden border border-cinema-700/60">
                     {/* Segment Actif en surbrillance Or */}
                     <div
-                      className="absolute top-0 bottom-0 bg-gradient-to-r from-brand-500 to-brand-400 rounded-full transition-all"
+                      className="absolute top-0 bottom-0 bg-amber-500/40 rounded-full transition-all"
                       style={{
                         left: `${startPercent}%`,
                         width: `${Math.max(2, endPercent - startPercent)}%`,
                       }}
                     />
+                    {/* Tête de lecture globale */}
+                    <div
+                      className="absolute top-0 bottom-0 w-1 bg-white shadow-sm z-10 transition-all duration-75"
+                      style={{ left: `${playheadPercentOnGlobal}%` }}
+                    />
                   </div>
 
-                  {/* Sliders Début et Fin */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 bg-cinema-800/60 p-3 rounded-2xl border border-cinema-700/60">
+                  {/* Sliders de Début et Fin */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 bg-cinema-800/40 p-3 rounded-2xl border border-cinema-700/60">
                     <div className="space-y-1">
                       <div className="flex justify-between text-[11px] font-semibold">
                         <span className="text-slate-300">Point de DÉBUT :</span>
-                        <span className="font-mono text-brand-300 font-bold">{formatSeconds(startTime)}</span>
+                        <span className="font-mono text-amber-300 font-bold">{formatSeconds(startTime)}</span>
                       </div>
                       <input
                         type="range"
@@ -436,14 +564,14 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                         step="1"
                         value={startTime}
                         onChange={(e) => handleStartChange(parseInt(e.target.value, 10))}
-                        className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                        className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
                       />
                     </div>
 
                     <div className="space-y-1">
                       <div className="flex justify-between text-[11px] font-semibold">
                         <span className="text-slate-300">Point de FIN :</span>
-                        <span className="font-mono text-brand-300 font-bold">{formatSeconds(endTime)}</span>
+                        <span className="font-mono text-amber-300 font-bold">{formatSeconds(endTime)}</span>
                       </div>
                       <input
                         type="range"
@@ -452,7 +580,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                         step="1"
                         value={endTime}
                         onChange={(e) => handleEndChange(parseInt(e.target.value, 10))}
-                        className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-brand-400"
+                        className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-amber-400"
                       />
                     </div>
                   </div>
@@ -465,7 +593,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                     <button
                       type="button"
                       onClick={() => shiftSegment(-5)}
-                      className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
+                      className="px-2 py-1 rounded-lg bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
                       title="Décaler le segment de 5s vers la gauche"
                     >
                       ◀ -5s
@@ -473,7 +601,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                     <button
                       type="button"
                       onClick={() => shiftSegment(5)}
-                      className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
+                      className="px-2 py-1 rounded-lg bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
                       title="Décaler le segment de 5s vers la droite"
                     >
                       +5s ▶
@@ -488,9 +616,9 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                         key={s}
                         type="button"
                         onClick={() => setSegmentLength(s)}
-                        className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors ${
+                        className={`px-2 py-1 rounded-lg text-[10px] font-mono border transition-colors ${
                           segmentDuration === s
-                            ? 'bg-brand-500 text-cinema-950 font-bold border-brand-400'
+                            ? 'bg-amber-500 text-cinema-950 font-bold border-amber-400'
                             : 'bg-cinema-800 hover:bg-cinema-700 text-slate-300 border border-cinema-700'
                         }`}
                       >
@@ -515,7 +643,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Ex: Time - Inception"
-                className="w-full bg-cinema-900 border border-cinema-700 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                className="w-full bg-cinema-900 border border-cinema-700 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
               />
             </div>
 
@@ -528,7 +656,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                 value={artist}
                 onChange={(e) => setArtist(e.target.value)}
                 placeholder="Ex: Hans Zimmer"
-                className="w-full bg-cinema-900 border border-cinema-700 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                className="w-full bg-cinema-900 border border-cinema-700 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
               />
             </div>
           </div>
@@ -540,7 +668,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             <select
               value={genre}
               onChange={(e) => setGenre(e.target.value)}
-              className="w-full bg-cinema-900 border border-cinema-700 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-brand-500 cursor-pointer"
+              className="w-full bg-cinema-900 border border-cinema-700 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-500 cursor-pointer"
             >
               {GENRES.map((g) => (
                 <option key={g} value={g}>
@@ -567,7 +695,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || !title || !youtubeUrl}
-              className="px-5 sm:px-6 py-2.5 rounded-xl text-xs font-bold bg-brand-500 hover:bg-brand-400 text-cinema-950 transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-md hover:scale-105"
+              className="px-5 sm:px-6 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-cinema-950 transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-md hover:scale-105"
             >
               <Clapperboard className="w-4 h-4" />
               <span>{isSubmitting ? 'Enregistrement...' : 'Ajouter & Créer un Storyboard'}</span>
