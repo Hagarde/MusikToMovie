@@ -1,5 +1,5 @@
 import React from 'react';
-import { Film, Music, Compass, Plus } from 'lucide-react';
+import { Film, Music, Compass, Plus, Sparkles } from 'lucide-react';
 
 interface NavbarProps {
   currentView: 'tracks' | 'proposals' | 'create' | 'view';
@@ -13,52 +13,52 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenUpload,
 }) => {
   return (
-    <header className="border-b border-cinema-700/60 bg-cinema-900/80 backdrop-blur-md sticky top-0 z-50">
+    <header className="border-b border-cinema-700/60 bg-cinema-900/80 backdrop-blur-xl sticky top-0 z-50 transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Logo & Titre */}
         <button
           type="button"
           onClick={() => onNavigate('tracks')}
-          className="flex items-center gap-2.5 group text-left"
+          className="flex items-center gap-3 group text-left"
         >
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center text-cinema-950 font-bold shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 flex items-center justify-center text-cinema-950 font-black shadow-lg shadow-amber-500/25 group-hover:scale-105 transition-all">
             <Film className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-base font-bold text-white tracking-tight flex items-center gap-1">
-              Musik<span className="text-brand-400">To</span>Movie
+            <span className="text-base font-extrabold text-white tracking-tight flex items-center gap-1 font-display">
+              Musik<span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-200">To</span>Movie
             </span>
-            <span className="block text-[10px] text-slate-400 tracking-wider uppercase font-medium">
-              Audio-to-Cinema Storyboard
+            <span className="block text-[10px] text-amber-300/70 tracking-widest uppercase font-semibold">
+              Audio-to-Cinema Studio
             </span>
           </div>
         </button>
 
-        {/* Navigation */}
-        <nav className="flex items-center gap-1 sm:gap-3">
+        {/* Navigation principale */}
+        <nav className="flex items-center gap-1.5 sm:gap-3 bg-cinema-850/80 p-1.5 rounded-2xl border border-white/5 shadow-inner">
           <button
             type="button"
             onClick={() => onNavigate('tracks')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
               currentView === 'tracks'
-                ? 'bg-cinema-750 text-white bg-cinema-800'
-                : 'text-slate-400 hover:text-white hover:bg-cinema-800/50'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 shadow-md shadow-amber-500/20 scale-[1.02]'
+                : 'text-slate-300 hover:text-white hover:bg-cinema-750/60'
             }`}
           >
-            <Music className="w-3.5 h-3.5 text-brand-400" />
+            <Music className="w-3.5 h-3.5" />
             <span>Musiques</span>
           </button>
 
           <button
             type="button"
             onClick={() => onNavigate('proposals')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
               currentView === 'proposals' || currentView === 'view'
-                ? 'bg-cinema-750 text-white bg-cinema-800'
-                : 'text-slate-400 hover:text-white hover:bg-cinema-800/50'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 shadow-md shadow-amber-500/20 scale-[1.02]'
+                : 'text-slate-300 hover:text-white hover:bg-cinema-750/60'
             }`}
           >
-            <Compass className="w-3.5 h-3.5 text-brand-400" />
+            <Compass className="w-3.5 h-3.5" />
             <span>Galerie Scénarios</span>
           </button>
         </nav>
@@ -68,17 +68,17 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={onOpenUpload}
-            className="px-3.5 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-cinema-900 text-xs font-bold transition-transform hover:scale-105 shadow-sm flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-cinema-950 text-xs font-extrabold transition-all hover:scale-105 shadow-lg shadow-amber-500/20 flex items-center gap-1.5"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Ajouter Morceau</span>
+            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+            <span className="hidden sm:inline">Ajouter Musique</span>
           </button>
 
           <a
             href="https://github.com/Hagarde/MusikToMovie"
             target="_blank"
             rel="noreferrer"
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-cinema-800 transition-colors"
+            className="p-2.5 rounded-xl text-slate-400 hover:text-white bg-cinema-850 hover:bg-cinema-750 border border-white/5 transition-colors"
             title="Dépôt GitHub"
           >
             <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">

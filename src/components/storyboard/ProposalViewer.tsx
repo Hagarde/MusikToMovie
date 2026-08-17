@@ -76,13 +76,13 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   const keyDesc = proposal.key_scene_description || proposal.scenes?.find(s => s.section_type === 'main')?.description || '';
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-16 animate-in fade-in duration-200">
+    <div className="max-w-5xl mx-auto space-y-8 pb-16 animate-in fade-in duration-300">
       {/* Barre de navigation et Vote */}
       <div className="flex items-center justify-between gap-4">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cinema-850 hover:bg-cinema-800 border border-cinema-700 text-xs font-medium text-slate-300 transition-colors"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-cinema-850 hover:bg-cinema-750 border border-white/5 text-xs font-semibold text-slate-300 hover:text-white transition-all shadow-md"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Retour à la galerie</span>
@@ -92,17 +92,17 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
           <button
             type="button"
             onClick={handleVote}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-transform hover:scale-105 shadow-md ${
+            className={`px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all hover:scale-105 shadow-md ${
               isVoted
-                ? 'bg-rose-500 text-white shadow-rose-500/30'
-                : 'bg-cinema-850 hover:bg-cinema-800 text-slate-200 border border-cinema-700'
+                ? 'bg-rose-500 text-white shadow-rose-500/30 ring-2 ring-rose-400/40'
+                : 'bg-cinema-850 hover:bg-cinema-750 text-slate-200 border border-white/5'
             }`}
           >
             <Heart className={`w-4 h-4 ${isVoted ? 'fill-current' : 'text-rose-400'}`} />
             <span>{isVoted ? 'Voté !' : 'Voter'} ({likesCount})</span>
           </button>
 
-          <span className="text-xs font-mono text-slate-400">
+          <span className="text-xs font-mono text-slate-400 bg-cinema-850/80 px-3 py-1.5 rounded-xl border border-white/5">
             {new Date(proposal.created_at).toLocaleDateString('fr-FR')}
           </span>
         </div>
@@ -120,24 +120,26 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
         </div>
       )}
 
-      {/* En-tête du Film */}
-      <div className="bg-gradient-to-br from-cinema-850 via-cinema-800 to-cinema-900 rounded-3xl border border-cinema-700/80 p-8 shadow-2xl space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-brand-500/20 text-brand-400 border border-brand-500/40">
+      {/* En-tête du Film (Ambiance Chaleureuse Cinema) */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-cinema-850 via-cinema-800 to-cinema-900 border border-amber-500/20 p-7 sm:p-9 shadow-2xl space-y-4">
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-amber-500/15 blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+          <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm">
             {proposal.genre}
           </span>
           <div className="flex items-center gap-2 text-xs text-slate-400">
-            <User className="w-4 h-4 text-brand-400" />
-            <span>Scénario imaginé par : <strong className="text-slate-200">{proposal.author_name}</strong></span>
+            <User className="w-4 h-4 text-amber-400" />
+            <span>Scénario imaginé par : <strong className="text-slate-100 font-bold">{proposal.author_name}</strong></span>
           </div>
         </div>
 
-        <h1 className="text-3xl sm:text-4xl font-serif font-bold text-white tracking-tight">
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-display">
           {proposal.movie_title}
         </h1>
 
         {proposal.logline && (
-          <p className="text-slate-300 text-sm sm:text-base leading-relaxed max-w-3xl border-l-2 border-brand-500 pl-4 italic">
+          <p className="text-slate-300 text-sm sm:text-base leading-relaxed max-w-3xl border-l-2 border-amber-500 pl-4 italic font-serif">
             "{proposal.logline}"
           </p>
         )}
@@ -145,8 +147,8 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
       {/* 1. Bloc : Ce qui précède */}
       {contextBefore && (
-        <div className="bg-cinema-850 rounded-2xl border border-blue-500/30 p-6 shadow-xl space-y-3">
-          <div className="flex items-center gap-2 text-blue-400 font-bold text-sm border-b border-cinema-700/50 pb-2.5">
+        <div className="bg-cinema-850/90 backdrop-blur-xl rounded-3xl border border-cyan-500/30 p-6 sm:p-7 shadow-xl space-y-3">
+          <div className="flex items-center gap-2 text-cyan-400 font-bold text-sm border-b border-cinema-700/50 pb-3 font-display">
             <BookOpen className="w-4 h-4" />
             <span>1. Ce qui précède (Contexte & Mise en place)</span>
           </div>
@@ -157,21 +159,22 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
       )}
 
       {/* 2. Bloc : LA SCÈNE CLÉ & STORYBOARD ANIMÉ */}
-      <div className={`bg-cinema-850 rounded-3xl border-2 p-6 transition-all duration-300 shadow-2xl space-y-6 ${
+      <div className={`rounded-3xl border-2 p-6 sm:p-7 transition-all duration-500 shadow-2xl space-y-6 ${
         isScenePlayingNow 
-          ? 'border-brand-400 bg-gradient-to-br from-cinema-800 to-cinema-850 ring-2 ring-brand-400/40 shadow-brand-500/10' 
-          : 'border-brand-500/60'
+          ? 'border-amber-400 bg-gradient-to-br from-cinema-800 via-cinema-850 to-cinema-900 ring-4 ring-amber-400/20 shadow-amber-500/15' 
+          : 'border-amber-500/60 bg-cinema-850/95'
       }`}>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cinema-700/60 pb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-brand-500 text-cinema-950 flex items-center justify-center font-bold">
-              <Clapperboard className="w-4 h-4" />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-cinema-950 flex items-center justify-center font-bold shadow-lg shadow-amber-500/20">
+              <Clapperboard className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base flex items-center gap-2">
+              <h3 className="font-bold text-white text-base font-display flex items-center gap-2">
                 2. La Scène Clé (Le Moment Fort)
                 {isScenePlayingNow && (
-                  <span className="text-xs font-bold text-brand-400 animate-pulse">
+                  <span className="text-xs font-bold text-amber-400 animate-pulse flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
                     ● En cours d'écoute
                   </span>
                 )}
@@ -180,8 +183,8 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-mono text-slate-300 bg-cinema-900 px-3 py-1.5 rounded-xl border border-cinema-700">
-            <Clock className="w-3.5 h-3.5 text-brand-400" />
+          <div className="flex items-center gap-2 text-xs font-mono text-slate-200 bg-cinema-900 px-3.5 py-2 rounded-2xl border border-cinema-700 shadow-inner">
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
             <span>{formatTime(startTime)} → {formatTime(endTime)}</span>
           </div>
         </div>
@@ -200,15 +203,15 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             )}
 
             {frames.length > 1 && (
-              <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 text-xs">
+              <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10 flex items-center gap-2.5 text-xs shadow-lg">
                 <button
                   type="button"
                   onClick={() => setIsPlayingFlipbook(!isPlayingFlipbook)}
-                  className="p-1 rounded-lg bg-brand-500 text-cinema-950 hover:bg-brand-400 transition-colors"
+                  className="p-1 rounded-lg bg-amber-500 text-cinema-950 hover:bg-amber-400 transition-colors font-bold"
                 >
                   {isPlayingFlipbook ? <Pause className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
                 </button>
-                <span className="font-mono text-slate-300 text-[11px]">
+                <span className="font-mono text-slate-200 text-xs font-bold">
                   Frame {activeFrameIndex + 1} / {frames.length} ({proposal.animation_fps || 3} fps)
                 </span>
               </div>
@@ -226,9 +229,9 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
                     setIsPlayingFlipbook(false);
                     setActiveFrameIndex(idx);
                   }}
-                  className={`w-14 h-9 rounded-lg overflow-hidden border-2 transition-all shrink-0 bg-black ${
+                  className={`w-16 h-10 rounded-xl overflow-hidden border-2 transition-all shrink-0 bg-black ${
                     activeFrameIndex === idx
-                      ? 'border-brand-400 ring-2 ring-brand-400/40 scale-105'
+                      ? 'border-amber-400 ring-2 ring-amber-400/40 scale-105 shadow-md'
                       : 'border-cinema-700 opacity-60 hover:opacity-100'
                   }`}
                 >
@@ -241,8 +244,8 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
         {/* Intentions de mise en scène */}
         {keyDesc && (
-          <div className="bg-cinema-900/80 rounded-xl p-4 border border-cinema-700/60">
-            <h4 className="text-xs font-bold text-brand-300 uppercase tracking-wider mb-1">
+          <div className="bg-cinema-900/90 rounded-2xl p-4 border border-cinema-700/60 shadow-inner">
+            <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider mb-1 font-display">
               Intentions de réalisation & synchronisation
             </h4>
             <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">
@@ -254,8 +257,8 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
       {/* 3. Bloc : Ce qui succède */}
       {contextAfter && (
-        <div className="bg-cinema-850 rounded-2xl border border-purple-500/30 p-6 shadow-xl space-y-3">
-          <div className="flex items-center gap-2 text-purple-400 font-bold text-sm border-b border-cinema-700/50 pb-2.5">
+        <div className="bg-cinema-850/90 backdrop-blur-xl rounded-3xl border border-purple-500/30 p-6 sm:p-7 shadow-xl space-y-3">
+          <div className="flex items-center gap-2 text-purple-400 font-bold text-sm border-b border-cinema-700/50 pb-3 font-display">
             <FileText className="w-4 h-4" />
             <span>3. Ce qui succède (Résolution & Dénouement)</span>
           </div>

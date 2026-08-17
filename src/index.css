@@ -4,9 +4,35 @@
 
 @layer base {
   body {
-    @apply bg-[#0b0c10] text-[#e2e8f0] font-sans antialiased;
-    background-image: radial-gradient(circle at 50% 0%, rgba(191, 136, 45, 0.08) 0%, transparent 60%);
+    @apply bg-cinema-900 text-[#e2e8f0] font-sans antialiased;
+    background-color: #080a12;
+    background-image: 
+      radial-gradient(circle at 50% -10%, rgba(245, 158, 11, 0.15) 0%, transparent 60%),
+      radial-gradient(circle at 10% 40%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 90% 60%, rgba(244, 63, 94, 0.08) 0%, transparent 50%);
+    background-attachment: fixed;
   }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Glassmorphism surfaces */
+.glass-panel {
+  background: rgba(17, 21, 38, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-glow {
+  background: rgba(17, 21, 38, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  box-shadow: 0 10px 35px -5px rgba(245, 158, 11, 0.15);
 }
 
 /* Custom scrollbar */
@@ -15,14 +41,14 @@
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #12141c;
+  background: #0b0e1a;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2b3046;
-  border-radius: 4px;
+  background: #273054;
+  border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bf882d;
+  background: #f59e0b;
 }
 
 /* Canvas drawing container */
