@@ -110,7 +110,8 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
           {sortedProposals.map((proposal) => {
             const track = getTrackForProposal(proposal.track_id);
             const mainScene = proposal.scenes?.find((s) => s.section_type === 'main') || proposal.scenes?.[0];
-            const sketchImage = mainScene?.image_data;
+            const sketchImage = (proposal.frames && proposal.frames.length > 0) ? proposal.frames[0] : mainScene?.image_data;
+            const framesCount = proposal.frames?.length || (mainScene?.image_data ? 1 : 0);
             const isVoted = hasUserVoted(proposal.id);
 
             return (
@@ -130,14 +131,19 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-slate-600">
                       <Film className="w-8 h-8" />
-                      <span className="text-[11px] italic">Storyboard textuel</span>
+                      <span className="text-[11px] italic">Storyboard narratif</span>
                     </div>
                   )}
 
-                  <div className="absolute top-3 left-3">
+                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cinema-900/90 text-brand-300 border border-cinema-700 backdrop-blur-sm">
                       {proposal.genre}
                     </span>
+                    {framesCount > 1 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-500/90 text-cinema-950 flex items-center gap-1 shadow-sm">
+                        🎬 {framesCount} frames (Animé)
+                      </span>
+                    )}
                   </div>
 
                   {/* Bouton Vote / Like en overlay */}

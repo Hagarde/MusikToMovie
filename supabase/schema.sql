@@ -7,10 +7,10 @@ CREATE TABLE IF NOT EXISTS public.tracks (
     artist TEXT NOT NULL DEFAULT 'Inconnu',
     genre TEXT DEFAULT 'Cinématique',
     audio_url TEXT NOT NULL,
-    youtube_id TEXT, -- ID de la vidéo YouTube (ex: 'dQw4w9WgXcQ')
-    thumbnail_url TEXT, -- Miniature de la vidéo YouTube
+    youtube_id TEXT,
+    thumbnail_url TEXT,
     duration NUMERIC DEFAULT 0,
-    default_start_time NUMERIC DEFAULT 0, -- Moment précis de début (timecode en secondes)
+    default_start_time NUMERIC DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -22,25 +22,36 @@ CREATE TABLE IF NOT EXISTS public.proposals (
     movie_title TEXT NOT NULL,
     genre TEXT DEFAULT 'Drame',
     logline TEXT DEFAULT '',
-    likes_count INT DEFAULT 0, -- Nombre de votes
+    
+    -- Sections narratives & Scène Clé Flipanim
+    context_before TEXT DEFAULT '',
+    context_after TEXT DEFAULT '',
+    key_scene_title TEXT DEFAULT '',
+    key_scene_description TEXT DEFAULT '',
+    key_scene_start_time NUMERIC DEFAULT 0,
+    key_scene_end_time NUMERIC DEFAULT 0,
+    frames JSONB DEFAULT '[]'::jsonb, -- Tableau des images frames d'animation
+    animation_fps INT DEFAULT 3,
+
+    likes_count INT DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 3. Table des scènes & storyboards (scenes)
+-- 3. Table de rétro-compatibilité des scènes
 CREATE TABLE IF NOT EXISTS public.scenes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     proposal_id UUID NOT NULL REFERENCES public.proposals(id) ON DELETE CASCADE,
     section_type TEXT NOT NULL CHECK (section_type IN ('preceding', 'main', 'succeeding')),
     scene_title TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
-    image_data TEXT DEFAULT '', -- Données image compressées ou URL Storage
+    image_data TEXT DEFAULT '',
     start_time NUMERIC DEFAULT 0,
     end_time NUMERIC DEFAULT 0,
     order_index INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 4. Activer Row Level Security (RLS) avec politiques publiques
+-- 4. RLS & Politiques
 ALTER TABLE public.tracks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.proposals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scenes ENABLE ROW LEVEL SECURITY;
