@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS public.tracks (
     thumbnail_url TEXT,
     duration NUMERIC DEFAULT 0,
     default_start_time NUMERIC DEFAULT 0,
+    default_end_time NUMERIC DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -51,17 +52,23 @@ CREATE TABLE IF NOT EXISTS public.scenes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 4. RLS & Politiques
+-- 4. RLS & Politiques de Sécurité
 ALTER TABLE public.tracks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.proposals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scenes ENABLE ROW LEVEL SECURITY;
 
+-- Politiques Tracks
 CREATE POLICY "Permettre la lecture publique des tracks" ON public.tracks FOR SELECT USING (true);
 CREATE POLICY "Permettre l'insertion publique des tracks" ON public.tracks FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permettre la suppression publique des tracks" ON public.tracks FOR DELETE USING (true);
 
+-- Politiques Proposals
 CREATE POLICY "Permettre la lecture publique des proposals" ON public.proposals FOR SELECT USING (true);
 CREATE POLICY "Permettre l'insertion publique des proposals" ON public.proposals FOR INSERT WITH CHECK (true);
 CREATE POLICY "Permettre la mise à jour des votes des proposals" ON public.proposals FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Permettre la suppression publique des proposals" ON public.proposals FOR DELETE USING (true);
 
+-- Politiques Scenes
 CREATE POLICY "Permettre la lecture publique des scenes" ON public.scenes FOR SELECT USING (true);
 CREATE POLICY "Permettre l'insertion publique des scenes" ON public.scenes FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permettre la suppression publique des scenes" ON public.scenes FOR DELETE USING (true);

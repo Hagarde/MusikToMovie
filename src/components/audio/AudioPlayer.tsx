@@ -111,6 +111,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
     return () => {
       isCancelled = true;
+      if (ytPlayerRef.current) {
+        try {
+          ytPlayerRef.current.destroy();
+        } catch (e) {}
+        ytPlayerRef.current = null;
+      }
+      setIsPlaying(false);
+      setIsYtReady(false);
     };
   }, [track?.id, track?.youtube_id]);
 
@@ -176,11 +184,19 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const newTime = parseFloat(e.target.value);
     setCurrentTime(newTime);
     if (isYouTube && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
-      ytPlayerRef.current.seekTo(newTime, true);
+      ytPlayerRef.current.seekTo(newTime, false);
     } else if (audioRef.current) {
       audioRef.current.currentTime = newTime;
     }
     if (onTimeUpdate) onTimeUpdate(newTime);
+  };
+
+  const handleSeekCommit = (newTime: number) => {
+    if (isYouTube && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
+      ytPlayerRef.current.seekTo(newTime, true);
+    } else if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+    }
   };
 
   const jumpToTime = (time: number) => {
@@ -382,6 +398,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           step="0.1"
           value={currentTime}
           onChange={handleSeek}
+          onMouseUp={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
+          onTouchEnd={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
           className="relative z-10 w-full h-2 bg-cinema-700/80 rounded-lg appearance-none cursor-pointer accent-brand-500 hover:accent-brand-400"
         />
       </div>

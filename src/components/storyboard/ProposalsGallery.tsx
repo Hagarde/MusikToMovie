@@ -1,5 +1,18 @@
-import React, { useState } from 'react';
-import { Film, User, Sparkles, Play, Clock, Music, Heart, Flame, Calendar, Clapperboard } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { 
+  Film, 
+  User, 
+  Sparkles, 
+  Play, 
+  Clock, 
+  Music, 
+  Heart, 
+  Flame, 
+  Calendar, 
+  Clapperboard,
+  Search,
+  Filter
+} from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { voteProposal, hasUserVoted } from '../../lib/supabase';
 
@@ -19,6 +32,8 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
   onVoteUpdated,
 }) => {
   const [sortBy, setSortBy] = useState<'likes' | 'recent'>('likes');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedGenre, setSelectedGenre] = useState<string>('all');
 
   const getTrackForProposal = (trackId: string) => {
     return tracks.find((t) => t.id === trackId);
@@ -32,12 +47,37 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
     }
   };
 
-  const sortedProposals = [...proposals].sort((a, b) => {
-    if (sortBy === 'likes') {
-      return (b.likes_count || 0) - (a.likes_count || 0);
-    }
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
+  // Liste unique des genres disponibles dans les scénarios
+  const availableGenres = useMemo(() => {
+    const set = new Set<string>();
+    proposals.forEach((p) => {
+      if (p.genre) set.add(p.genre);
+    });
+    return Array.from(set);
+  }, [proposals]);
+
+  // Filtrage et Tri combinés
+  const filteredProposals = useMemo(() => {
+    return proposals
+      .filter((p) => {
+        const matchesSearch =
+          searchQuery.trim() === '' ||
+          p.movie_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.author_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.logline && p.logline.toLowerCase().includes(searchQuery.toLowerCase()));
+
+        const matchesGenre =
+          selectedGenre === 'all' || p.genre === selectedGenre;
+
+        return matchesSearch && matchesGenre;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'likes') {
+          return (b.likes_count || 0) - (a.likes_count || 0);
+        }
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+  }, [proposals, searchQuery, selectedGenre, sortBy]);
 
   return (
     <div className="space-y-8">
@@ -76,70 +116,142 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
         </div>
       </div>
 
-      {/* Barre d'outils et Sélecteur de Tri */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-2">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-400 flex items-center justify-center">
-            <Clapperboard className="w-5 h-5" />
+      {/* Barre d'outils, Recherche & Sélecteur de Tri */}
+      <div className="space-y-4 pt-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-400 flex items-center justify-center">
+              <Clapperboard className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white font-display">
+                Concepts Cinématographiques
+              </h2>
+              <p className="text-xs text-slate-400">
+                {filteredProposals.length} projet{filteredProposals.length > 1 ? 's' : ''} trouvé{filteredProposals.length > 1 ? 's' : ''}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-white font-display">
-              Concepts Cinématographiques
-            </h2>
-            <p className="text-xs text-slate-400">
-              {proposals.length} projet{proposals.length > 1 ? 's' : ''} publié{proposals.length > 1 ? 's' : ''}
-            </p>
+
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            {/* Barre de recherche */}
+            <div className="relative flex-1 sm:w-60">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher scénario, auteur..."
+                className="w-full bg-cinema-850 border border-white/10 rounded-2xl pl-10 pr-3.5 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-amber-500 transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-2.5 text-slate-500 hover:text-white text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Tri Populaires / Récents */}
+            <div className="flex items-center bg-cinema-850/80 p-1.5 rounded-2xl border border-white/5 shadow-inner text-xs shrink-0">
+              <button
+                type="button"
+                onClick={() => setSortBy('likes')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                  sortBy === 'likes'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>Populaires</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy('recent')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                  sortBy === 'recent'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Récents</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center bg-cinema-850/80 p-1.5 rounded-2xl border border-white/5 shadow-inner text-xs">
-          <button
-            type="button"
-            onClick={() => setSortBy('likes')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
-              sortBy === 'likes'
-                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Flame className="w-3.5 h-3.5" />
-            Populaires
-          </button>
-          <button
-            type="button"
-            onClick={() => setSortBy('recent')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
-              sortBy === 'recent'
-                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            Récents
-          </button>
-        </div>
+        {/* Pilules de filtres par Genre */}
+        {availableGenres.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-full">
+            <button
+              type="button"
+              onClick={() => setSelectedGenre('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                selectedGenre === 'all'
+                  ? 'bg-amber-500 text-cinema-950 font-bold shadow-md shadow-amber-500/20'
+                  : 'bg-cinema-850 hover:bg-cinema-750 text-slate-400 hover:text-white border border-white/5'
+              }`}
+            >
+              Tous les genres
+            </button>
+            {availableGenres.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setSelectedGenre(g)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                  selectedGenre === g
+                    ? 'bg-amber-500 text-cinema-950 font-bold shadow-md shadow-amber-500/20'
+                    : 'bg-cinema-850 hover:bg-cinema-750 text-slate-400 hover:text-white border border-white/5'
+                }`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {sortedProposals.length === 0 ? (
+      {filteredProposals.length === 0 ? (
         <div className="bg-cinema-850/70 border border-white/10 rounded-3xl p-12 text-center space-y-4 backdrop-blur-md">
           <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 mx-auto flex items-center justify-center text-amber-400 shadow-inner">
             <Film className="w-8 h-8" />
           </div>
-          <h3 className="text-base font-bold text-white font-display">Aucun scénario créé pour l'instant</h3>
+          <h3 className="text-base font-bold text-white font-display">Aucun scénario trouvé</h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            Soyez le premier à imaginer une séquence cinématographique à partir de notre bibliothèque musicale !
+            {searchQuery || selectedGenre !== 'all'
+              ? 'Aucun projet ne correspond à vos filtres de recherche.'
+              : 'Soyez le premier à imaginer une séquence cinématographique à partir de notre bibliothèque musicale !'}
           </p>
-          <button
-            type="button"
-            onClick={onCreateNew}
-            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 font-bold text-xs transition-transform hover:scale-105 shadow-lg shadow-amber-500/20"
-          >
-            Commencer un Storyboard
-          </button>
+          {(searchQuery || selectedGenre !== 'all') ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedGenre('all');
+              }}
+              className="px-4 py-2 rounded-xl bg-cinema-750 hover:bg-cinema-700 text-amber-300 text-xs font-bold transition-colors"
+            >
+              Réinitialiser les filtres
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onCreateNew}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-cinema-950 font-bold text-xs transition-transform hover:scale-105 shadow-lg shadow-amber-500/20"
+            >
+              Commencer un Storyboard
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sortedProposals.map((proposal) => {
+          {filteredProposals.map((proposal) => {
             const track = getTrackForProposal(proposal.track_id);
             const mainScene = proposal.scenes?.find((s) => s.section_type === 'main') || proposal.scenes?.[0];
             const sketchImage = (proposal.frames && proposal.frames.length > 0) ? proposal.frames[0] : mainScene?.image_data;

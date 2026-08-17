@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, 
   Film, 
   Clock, 
   User, 
   Heart, 
-  Share2, 
   Sparkles, 
   BookOpen, 
   Clapperboard, 
   FileText,
   Play,
   Pause,
-  Layers
+  Layers,
+  Maximize2,
+  Minimize2,
+  Music
 } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { AudioPlayer } from '../audio/AudioPlayer';
@@ -29,9 +31,12 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   track,
   onBack,
 }) => {
+  const theatreRef = useRef<HTMLDivElement | null>(null);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [likesCount, setLikesCount] = useState<number>(proposal.likes_count || 0);
   const [isVoted, setIsVoted] = useState<boolean>(hasUserVoted(proposal.id));
+  const [isTheatreMode, setIsTheatreMode] = useState<boolean>(false);
 
   // Animation Flipbook de la Scène Clé
   const frames = proposal.frames && proposal.frames.length > 0 
@@ -58,6 +63,35 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
     return () => clearInterval(interval);
   }, [isPlayingFlipbook, frames.length, proposal.animation_fps]);
 
+  // Écoute de la touche Échap pour quitter le mode projection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isTheatreMode) {
+        setIsTheatreMode(false);
+      }
+      if (e.code === 'Space' && isTheatreMode) {
+        e.preventDefault();
+        setIsPlayingFlipbook(!isPlayingFlipbook);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTheatreMode, isPlayingFlipbook]);
+
+  const toggleTheatreMode = () => {
+    if (!isTheatreMode) {
+      setIsTheatreMode(true);
+      if (theatreRef.current && theatreRef.current.requestFullscreen) {
+        theatreRef.current.requestFullscreen().catch(() => {});
+      }
+    } else {
+      setIsTheatreMode(false);
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  };
+
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
@@ -77,8 +111,8 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-16 animate-in fade-in duration-300">
-      {/* Barre de navigation et Vote */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Barre de navigation, Mode Projection et Vote */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <button
           type="button"
           onClick={onBack}
@@ -89,6 +123,17 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
         </button>
 
         <div className="flex items-center gap-3">
+          {/* Bouton Mode Projection Cinéma */}
+          <button
+            type="button"
+            onClick={toggleTheatreMode}
+            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-cinema-950 text-xs font-extrabold flex items-center gap-1.5 transition-transform hover:scale-105 shadow-md shadow-amber-500/20"
+            title="Lancer le visionnage en plein écran cinéma"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span>Mode Projection Plein Écran</span>
+          </button>
+
           <button
             type="button"
             onClick={handleVote}
@@ -196,7 +241,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
               <img
                 src={frames[activeFrameIndex]}
                 alt={`Plan ${activeFrameIndex + 1}`}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain select-none pointer-events-none"
               />
             ) : (
               <div className="text-slate-500 text-xs italic">Aucun croquis visuel</div>
@@ -216,6 +261,16 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
                 </span>
               </div>
             )}
+
+            {/* Bouton rapide Plein Écran en coin de lecteur */}
+            <button
+              type="button"
+              onClick={toggleTheatreMode}
+              className="absolute bottom-3 right-3 p-2 rounded-xl bg-black/70 hover:bg-amber-500 hover:text-cinema-950 text-slate-300 border border-white/10 backdrop-blur-md transition-all shadow-lg"
+              title="Agrandir en mode projection plein écran"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Vignettes des frames */}
@@ -265,6 +320,85 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
           <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
             {contextAfter}
           </p>
+        </div>
+      )}
+
+      {/* 🎬 MODAL DE PROJECTION PLEIN ÉCRAN (THEATRE MODE) */}
+      {isTheatreMode && (
+        <div
+          ref={theatreRef}
+          className="fixed inset-0 z-50 bg-black flex flex-col justify-between p-4 sm:p-8 animate-in fade-in duration-200 select-none"
+        >
+          {/* Barre supérieure de projection */}
+          <div className="flex items-center justify-between text-white border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
+              <div>
+                <h2 className="text-lg sm:text-xl font-extrabold font-display">{proposal.movie_title}</h2>
+                <p className="text-xs text-amber-300 font-mono">
+                  {keyTitle} • {formatTime(startTime)} → {formatTime(endTime)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={toggleTheatreMode}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+              >
+                <Minimize2 className="w-4 h-4" />
+                <span>Quitter le plein écran (Échap)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Écran central de projection de la Scène */}
+          <div className="flex-1 flex items-center justify-center p-2 sm:p-6 my-auto max-h-[75vh]">
+            <div className="relative aspect-video w-full max-w-6xl h-full bg-black rounded-3xl overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center">
+              {frames[activeFrameIndex] ? (
+                <img
+                  src={frames[activeFrameIndex]}
+                  alt={`Plan ${activeFrameIndex + 1}`}
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <span className="text-slate-500">Plan sans dessin</span>
+              )}
+
+              {/* Sous-titre cinématique flottant */}
+              {keyDesc && (
+                <div className="absolute bottom-6 inset-x-8 max-w-2xl mx-auto text-center bg-black/80 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 text-white text-xs sm:text-sm leading-relaxed shadow-2xl">
+                  {keyDesc}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Contrôles de projection inférieurs */}
+          <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-4 text-xs font-mono text-slate-300">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsPlayingFlipbook(!isPlayingFlipbook)}
+                className="px-4 py-2 rounded-xl bg-amber-500 text-cinema-950 font-black flex items-center gap-2 hover:scale-105 transition-transform"
+              >
+                {isPlayingFlipbook ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+                <span>{isPlayingFlipbook ? 'Pause' : 'Lecture'}</span>
+              </button>
+
+              <span className="text-slate-400">
+                Frame {activeFrameIndex + 1} / {frames.length}
+              </span>
+            </div>
+
+            {track && (
+              <div className="flex items-center gap-2 text-slate-400">
+                <Music className="w-4 h-4 text-amber-400" />
+                <span className="truncate max-w-xs">{track.title}</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

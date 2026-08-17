@@ -12,7 +12,9 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
-  ArrowLeftToLine
+  ArrowLeftToLine,
+  Image as ImageIcon,
+  Upload
 } from 'lucide-react';
 
 interface FlipanimCanvasProps {
@@ -45,6 +47,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   readOnly = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [frames, setFrames] = useState<string[]>(
     initialFrames.length > 0 ? initialFrames : ['']
   );
@@ -134,13 +138,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     return () => clearInterval(interval);
   }, [isPlayingAnim, frames.length, animFps]);
 
-  const toggleAnimation = () => {
+  const toggleAnimation = useCallback(() => {
     const nextState = !isPlayingAnim;
     setIsPlayingAnim(nextState);
     if (onTogglePlayAnim) {
       onTogglePlayAnim(nextState);
     }
-  };
+  }, [isPlayingAnim, onTogglePlayAnim]);
 
   const saveHistoryState = () => {
     const canvas = canvasRef.current;
@@ -159,7 +163,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return frames;
 
-    const dataUrl = canvas.toDataURL('image/webp', 0.85);
+    const dataUrl = canvas.toDataURL('image/webp', 0.80);
     const updated = [...frames];
     updated[frameIdx] = dataUrl;
     setFrames(updated);
@@ -252,37 +256,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     }
   }, [historyStep, history, currentFrameIndex]);
 
-  // ⌨️ Raccourci Clavier Global Ctrl+Z / Cmd+Z et Ctrl+Y
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-
-      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
-      if (isCtrlOrCmd && (e.key === 'z' || e.key === 'Z')) {
-        e.preventDefault();
-        if (e.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
-      } else if (isCtrlOrCmd && (e.key === 'y' || e.key === 'Y')) {
-        e.preventDefault();
-        redo();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
-
   const clearCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -293,6 +266,39 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     saveHistoryState();
     saveCurrentFrameToState();
+  };
+
+  // 🖼️ Importer une image externe comme calque de référence sur la frame active
+  const handleImageImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.fillStyle = '#12141c';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        const x = (canvas.width - w) / 2;
+        const y = (canvas.height - h) / 2;
+
+        ctx.drawImage(img, x, y, w, h);
+        saveHistoryState();
+        saveCurrentFrameToState();
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // 🎬 Actions de Gestion des Frames (Ajout, Duplication, Déplacement)
@@ -308,7 +314,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     loadFrame(index, newFrames);
   };
 
-  const duplicateFrame = () => {
+  const duplicateFrame = useCallback(() => {
     const saved = saveCurrentFrameToState();
     const currentFrameData = saved[currentFrameIndex];
     const newFrames = [...saved];
@@ -319,25 +325,22 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     setHistoryStep(-1);
     if (onChange) onChange(newFrames);
     loadFrame(currentFrameIndex + 1, newFrames);
-  };
+  }, [currentFrameIndex, frames, onChange]);
 
-  // 🗑️ Suppression d'une frame (CORRECTION ROBUSTE DU BUG)
+  // 🗑️ Suppression d'une frame
   const deleteFrame = (indexToDelete: number) => {
     if (frames.length <= 1) {
       clearCanvas();
       return;
     }
 
-    // 1. Sauvegarder l'état actuel si ce n'est pas la frame qu'on supprime
     let baseFrames = frames;
     if (indexToDelete !== currentFrameIndex) {
       baseFrames = saveCurrentFrameToState();
     }
 
-    // 2. Retirer exactement la frame ciblée
     const newFrames = baseFrames.filter((_, i) => i !== indexToDelete);
 
-    // 3. Calculer précisément le nouvel index actif
     let newIndex = currentFrameIndex;
     if (indexToDelete === currentFrameIndex) {
       newIndex = Math.min(indexToDelete, newFrames.length - 1);
@@ -345,7 +348,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       newIndex = currentFrameIndex - 1;
     }
 
-    // 4. Mettre à jour l'état et recharger directement le canvas
     setFrames(newFrames);
     setCurrentFrameIndex(newIndex);
     setHistory([]);
@@ -367,6 +369,66 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     if (onChange) onChange(newFrames);
     loadFrame(toIndex, newFrames);
   };
+
+  // ⌨️ Raccourcis Clavier du Studio (Espace pour Play/Pause, Ctrl+Z, Flèches Gauche/Droite, D pour Dupliquer)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      // Ctrl + Z / Ctrl + Y
+      if (isCtrlOrCmd && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if (isCtrlOrCmd && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        redo();
+      }
+
+      // Espace : Play / Pause animation flipbook
+      else if (e.code === 'Space') {
+        e.preventDefault();
+        toggleAnimation();
+      }
+
+      // Flèche Gauche : Frame précédente
+      else if (e.key === 'ArrowLeft') {
+        if (currentFrameIndex > 0) {
+          saveCurrentFrameToState();
+          setCurrentFrameIndex((prev) => prev - 1);
+        }
+      }
+
+      // Flèche Droite : Frame suivante
+      else if (e.key === 'ArrowRight') {
+        if (currentFrameIndex < frames.length - 1) {
+          saveCurrentFrameToState();
+          setCurrentFrameIndex((prev) => prev + 1);
+        }
+      }
+
+      // Touche D : Dupliquer la frame
+      else if (e.key === 'd' || e.key === 'D') {
+        duplicateFrame();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo, toggleAnimation, duplicateFrame, currentFrameIndex, frames.length]);
 
   // Drag and Drop Handlers
   const handleDragStart = (index: number) => {
@@ -396,6 +458,14 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
   return (
     <div className="flex flex-col bg-cinema-850 rounded-2xl border border-cinema-700/80 overflow-hidden shadow-2xl space-y-0">
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        onChange={handleImageImport}
+        className="hidden"
+      />
+
       {/* Barre d'outils supérieure (Adaptée Mobile) */}
       {!readOnly && (
         <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 bg-cinema-800/95 border-b border-cinema-700/60 text-xs">
@@ -406,7 +476,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               onClick={() => setIsEraser(false)}
               className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-semibold ${
                 !isEraser
-                  ? 'bg-brand-500 text-cinema-950 shadow-sm'
+                  ? 'bg-amber-500 text-cinema-950 shadow-sm'
                   : 'bg-cinema-700/50 text-slate-300 hover:bg-cinema-700'
               }`}
             >
@@ -418,7 +488,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               onClick={() => setIsEraser(true)}
               className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-semibold ${
                 isEraser
-                  ? 'bg-brand-500 text-cinema-950 shadow-sm'
+                  ? 'bg-amber-500 text-cinema-950 shadow-sm'
                   : 'bg-cinema-700/50 text-slate-300 hover:bg-cinema-700'
               }`}
             >
@@ -436,7 +506,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   type="button"
                   onClick={() => setColor(c)}
                   className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border transition-transform shrink-0 ${
-                    color === c ? 'scale-125 border-brand-400 ring-2 ring-brand-400/40' : 'border-cinema-600 hover:scale-110'
+                    color === c ? 'scale-125 border-amber-400 ring-2 ring-amber-400/40' : 'border-cinema-600 hover:scale-110'
                   }`}
                   style={{ backgroundColor: c }}
                   title={`Couleur ${c}`}
@@ -453,7 +523,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 type="button"
                 onClick={() => setBrushSize(size)}
                 className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono transition-colors ${
-                  brushSize === size ? 'bg-brand-500/30 text-brand-300 font-bold' : 'text-slate-400 hover:text-white'
+                  brushSize === size ? 'bg-amber-500/30 text-amber-300 font-bold' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 {size}px
@@ -461,20 +531,31 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             ))}
           </div>
 
-          {/* Pelure d'oignon & Actions Undo/Redo avec indicateur Ctrl+Z */}
+          {/* Pelure d'oignon, Import Image & Actions Undo/Redo */}
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setOnionSkin(!onionSkin)}
               className={`px-2 py-1 rounded-lg text-xs flex items-center gap-1 transition-colors ${
                 onionSkin
-                  ? 'bg-brand-500/20 text-brand-300 border border-brand-500/40 font-semibold'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold'
                   : 'bg-cinema-700 text-slate-400 hover:text-white'
               }`}
-              title="Afficher la frame précédente en filigrane"
+              title="Afficher la frame précédente en filigrane (Pelure d'oignon)"
             >
               <Layers className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Pelure d'oignon</span>
+              <span className="hidden md:inline">Oignon</span>
+            </button>
+
+            {/* Importer Image */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-2 py-1 rounded-lg text-xs flex items-center gap-1 bg-cinema-700 hover:bg-cinema-600 text-slate-300 hover:text-white transition-colors"
+              title="Importer un croquis ou une image de référence"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Importer</span>
             </button>
 
             <div className="flex items-center gap-0.5">
@@ -486,7 +567,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 title="Annuler (Ctrl+Z)"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span className="text-[10px] text-slate-500 font-mono hidden lg:inline">Ctrl+Z</span>
               </button>
               <button
                 type="button"
@@ -496,7 +576,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 title="Rétablir (Ctrl+Y)"
               >
                 <RotateCw className="w-3.5 h-3.5" />
-                <span className="text-[10px] text-slate-500 font-mono hidden lg:inline">Ctrl+Y</span>
               </button>
               <button
                 type="button"
@@ -511,7 +590,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         </div>
       )}
 
-      {/* Surface du Canvas (Tactile fluide sur Mobile) */}
+      {/* Surface du Canvas avec repères de cadrage cinématique */}
       <div className="relative aspect-video w-full bg-[#12141c] flex items-center justify-center overflow-hidden touch-none">
         {isPlayingAnim ? (
           <div className="w-full h-full flex items-center justify-center bg-black relative">
@@ -560,10 +639,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             <button
               type="button"
               onClick={toggleAnimation}
-              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-transform hover:scale-105 shadow-md ${
+              className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-transform hover:scale-105 shadow-md ${
                 isPlayingAnim
                   ? 'bg-rose-500 text-white shadow-rose-500/20'
-                  : 'bg-brand-500 hover:bg-brand-400 text-cinema-950 shadow-brand-500/20'
+                  : 'bg-amber-500 hover:bg-amber-400 text-cinema-950 shadow-amber-500/20'
               }`}
             >
               {isPlayingAnim ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
@@ -578,7 +657,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   type="button"
                   onClick={() => setAnimFps(f)}
                   className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                    animFps === f ? 'bg-brand-500 text-cinema-950 font-bold' : 'text-slate-400 hover:text-white'
+                    animFps === f ? 'bg-amber-500 text-cinema-950 font-bold' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   {f}fps
@@ -587,8 +666,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1 text-[11px] text-slate-400">
-            <span className="hidden sm:inline">Glissez-déposez les vignettes pour réordonner • Ctrl+Z pour annuler</span>
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="hidden lg:inline bg-cinema-800/80 px-2 py-0.5 rounded border border-white/5 font-mono text-[10px]">
+              Espace (Play) • ◀ ▶ (Frames) • D (Dupliquer)
+            </span>
           </div>
         </div>
 
@@ -599,10 +680,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             <button
               type="button"
               onClick={() => addFrameAt(0)}
-              className="px-2.5 py-2 rounded-xl bg-cinema-800 hover:bg-cinema-750 border border-cinema-700/80 hover:border-brand-500/60 text-slate-300 hover:text-brand-300 text-[10px] font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+              className="px-2.5 py-2 rounded-xl bg-cinema-800 hover:bg-cinema-750 border border-cinema-700/80 hover:border-amber-500/60 text-slate-300 hover:text-amber-300 text-[10px] font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
               title="Créer une nouvelle frame en 1ère position"
             >
-              <ArrowLeftToLine className="w-3.5 h-3.5 text-brand-400" />
+              <ArrowLeftToLine className="w-3.5 h-3.5 text-amber-400" />
               <span>+ Au début</span>
             </button>
           )}
@@ -622,7 +703,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 onDragEnd={handleDragEnd}
                 className={`relative group shrink-0 transition-all ${
                   isDragged ? 'opacity-40 scale-95' : ''
-                } ${isOver ? 'ring-2 ring-brand-400 scale-105 rounded-xl' : ''}`}
+                } ${isOver ? 'ring-2 ring-amber-400 scale-105 rounded-xl' : ''}`}
               >
                 <div className="relative">
                   <button
@@ -635,7 +716,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                     }}
                     className={`w-14 sm:w-16 h-9 sm:h-10 rounded-xl overflow-hidden border-2 transition-all flex items-center justify-center bg-black cursor-grab active:cursor-grabbing ${
                       currentFrameIndex === i && !isPlayingAnim
-                        ? 'border-brand-400 ring-2 ring-brand-400/40 shadow-lg scale-105'
+                        ? 'border-amber-400 ring-2 ring-amber-400/40 shadow-lg scale-105'
                         : 'border-cinema-700 hover:border-slate-500 opacity-75 hover:opacity-100'
                     }`}
                   >
@@ -711,7 +792,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 className="px-3 py-2 rounded-xl bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                 title="Ajouter une frame à la fin"
               >
-                <Plus className="w-3.5 h-3.5 text-brand-400" />
+                <Plus className="w-3.5 h-3.5 text-amber-400" />
                 <span>Frame</span>
               </button>
 
@@ -719,7 +800,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 type="button"
                 onClick={duplicateFrame}
                 className="p-2 rounded-xl bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-300 hover:text-white transition-colors"
-                title="Dupliquer la frame active pour animer le mouvement"
+                title="Dupliquer la frame active pour animer le mouvement (Raccourci: Touche D)"
               >
                 <Copy className="w-3.5 h-3.5" />
               </button>

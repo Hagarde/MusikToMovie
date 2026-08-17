@@ -251,8 +251,20 @@ export async function createProposal(
       movie_title: newProposal.movie_title,
       genre: newProposal.genre,
       logline: newProposal.logline,
+      context_before: newProposal.context_before || '',
+      context_after: newProposal.context_after || '',
+      key_scene_title: newProposal.key_scene_title || '',
+      key_scene_description: newProposal.key_scene_description || '',
+      key_scene_start_time: newProposal.key_scene_start_time || 0,
+      key_scene_end_time: newProposal.key_scene_end_time || 0,
+      frames: newProposal.frames || [],
+      animation_fps: newProposal.animation_fps || 3,
       likes_count: 0,
     }]);
+
+    if (pError) {
+      console.warn('Erreur insertion proposal Supabase:', pError);
+    }
 
     if (!pError && newProposal.scenes) {
       const formattedScenes = newProposal.scenes.map(s => ({
