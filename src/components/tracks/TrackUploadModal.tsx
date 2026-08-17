@@ -6,10 +6,11 @@ import {
   Pause, 
   Clock, 
   Loader2, 
-  FastForward, 
-  Rewind, 
+  Repeat, 
   Clapperboard,
-  Volume2
+  FastForward,
+  Rewind,
+  ArrowRight
 } from 'lucide-react';
 import { Track } from '../../lib/types';
 import { createTrack } from '../../lib/supabase';
@@ -32,8 +33,6 @@ const GENRES = [
   'Ambiance / Planant',
 ];
 
-const PRESET_TIMECODES = [15, 30, 45, 60, 90, 120, 180, 240];
-
 export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   isOpen,
   onClose,
@@ -45,14 +44,20 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
-  const [duration, setDuration] = useState(240); // Initialisé par défaut, auto-ajusté dès détection
-  const [defaultStartTime, setDefaultStartTime] = useState<number>(30);
+  const [duration, setDuration] = useState(180); // 3 minutes par défaut
   
-  // État de pré-écoute audio YouTube
-  const [isPlayingPreview, setIsPlayingPreview] = useState<boolean>(false);
+  // Segment : 2 Points (Début et Fin)
+  const [startTime, setStartTime] = useState<number>(30);
+  const [endTime, setEndTime] = useState<number>(60);
+  
+  // État de pré-écoute en boucle
+  const [isPlayingLoop, setIsPlayingLoop] = useState<boolean>(false);
+  const [currentPlayTime, setCurrentPlayTime] = useState<number>(30);
   const [isPlayerReady, setIsPlayerReady] = useState<boolean>(false);
+
   const ytPlayerRef = useRef<any>(null);
   const ytContainerRef = useRef<HTMLDivElement | null>(null);
+  const loopIntervalRef = useRef<any>(null);
 
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,7 +81,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
     }
   }, [youtubeUrl]);
 
-  // Détection automatique et mise à jour dynamique de la durée réelle
+  // Mise à jour de la durée réelle
   const updateExactDuration = (player: any) => {
     if (!player || typeof player.getDuration !== 'function') return;
     try {
@@ -84,12 +89,12 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
       if (videoDuration && videoDuration > 0 && Number.isFinite(videoDuration)) {
         const exactSecs = Math.floor(videoDuration);
         setDuration(exactSecs);
-        setDefaultStartTime((prev) => Math.min(prev, Math.max(0, exactSecs - 5)));
+        setEndTime((prevEnd) => Math.min(prevEnd, exactSecs));
       }
     } catch (e) {}
   };
 
-  // Initialisation du lecteur YouTube invisible pour l'écoute en direct
+  // Initialisation du lecteur YouTube invisible
   useEffect(() => {
     if (!youtubeId || !isOpen) return;
     let isCancelled = false;
@@ -125,14 +130,14 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
           onStateChange: (event: any) => {
             if (isCancelled) return;
             updateExactDuration(event.target);
-
-            if (event.data === YT.PlayerState.PLAYING) {
-              setIsPlayingPreview(true);
-            } else if (
+            if (
               event.data === YT.PlayerState.PAUSED ||
               event.data === YT.PlayerState.ENDED
             ) {
-              setIsPlayingPreview(false);
+              if (isPlayingLoop && ytPlayerRef.current) {
+                ytPlayerRef.current.seekTo(startTime, true);
+                ytPlayerRef.current.playVideo();
+              }
             }
           },
         },
@@ -141,59 +146,102 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
 
     return () => {
       isCancelled = true;
+      if (loopIntervalRef.current) {
+        clearInterval(loopIntervalRef.current);
+      }
       if (ytPlayerRef.current) {
         try {
           ytPlayerRef.current.destroy();
         } catch (e) {}
         ytPlayerRef.current = null;
       }
-      setIsPlayingPreview(false);
+      setIsPlayingLoop(false);
       setIsPlayerReady(false);
     };
   }, [youtubeId, isOpen]);
 
-  // Écouter / Prévisualiser le son à ce moment précis
-  const togglePlayPreview = () => {
-    if (!ytPlayerRef.current || !isPlayerReady) return;
+  // Surveillance de la boucle de lecture (loop entre startTime et endTime)
+  useEffect(() => {
+    if (isPlayingLoop && isPlayerReady && ytPlayerRef.current) {
+      if (loopIntervalRef.current) clearInterval(loopIntervalRef.current);
 
-    if (isPlayingPreview) {
-      ytPlayerRef.current.pauseVideo();
-      setIsPlayingPreview(false);
+      loopIntervalRef.current = setInterval(() => {
+        if (!ytPlayerRef.current || typeof ytPlayerRef.current.getCurrentTime !== 'function') return;
+        try {
+          const t = ytPlayerRef.current.getCurrentTime();
+          setCurrentPlayTime(t);
+          // Si on a atteint la fin du segment, on reboucle immédiatement au début !
+          if (t >= endTime || t < startTime - 2) {
+            ytPlayerRef.current.seekTo(startTime, true);
+          }
+        } catch (e) {}
+      }, 150);
     } else {
-      updateExactDuration(ytPlayerRef.current);
-      ytPlayerRef.current.seekTo(defaultStartTime, true);
-      ytPlayerRef.current.playVideo();
-      setIsPlayingPreview(true);
-    }
-  };
-
-  const handleSliderChange = (newTime: number) => {
-    const clamped = Math.max(0, Math.min(duration, newTime));
-    setDefaultStartTime(clamped);
-    if (ytPlayerRef.current && isPlayerReady && isPlayingPreview) {
-      ytPlayerRef.current.seekTo(clamped, true);
-    }
-  };
-
-  const handleSliderCommit = (newTime: number) => {
-    const clamped = Math.max(0, Math.min(duration, newTime));
-    setDefaultStartTime(clamped);
-    if (ytPlayerRef.current && isPlayerReady) {
-      updateExactDuration(ytPlayerRef.current);
-      ytPlayerRef.current.seekTo(clamped, true);
-      if (!isPlayingPreview) {
-        ytPlayerRef.current.playVideo();
-        setIsPlayingPreview(true);
+      if (loopIntervalRef.current) {
+        clearInterval(loopIntervalRef.current);
       }
     }
+
+    return () => {
+      if (loopIntervalRef.current) clearInterval(loopIntervalRef.current);
+    };
+  }, [isPlayingLoop, isPlayerReady, startTime, endTime]);
+
+  // Démarrer ou arrêter la lecture en boucle du segment
+  const toggleLoopPlayback = () => {
+    if (!ytPlayerRef.current || !isPlayerReady) return;
+
+    if (isPlayingLoop) {
+      ytPlayerRef.current.pauseVideo();
+      setIsPlayingLoop(false);
+    } else {
+      updateExactDuration(ytPlayerRef.current);
+      ytPlayerRef.current.seekTo(startTime, true);
+      ytPlayerRef.current.playVideo();
+      setIsPlayingLoop(true);
+    }
   };
 
-  const adjustStartTime = (delta: number) => {
-    const nextTime = Math.max(0, Math.min(duration, defaultStartTime + delta));
-    setDefaultStartTime(nextTime);
-    if (ytPlayerRef.current && isPlayerReady) {
-      updateExactDuration(ytPlayerRef.current);
-      ytPlayerRef.current.seekTo(nextTime, true);
+  const handleStartChange = (newStart: number) => {
+    const clamped = Math.max(0, Math.min(newStart, endTime - 3));
+    setStartTime(clamped);
+    if (ytPlayerRef.current && isPlayingLoop) {
+      ytPlayerRef.current.seekTo(clamped, true);
+    }
+  };
+
+  const handleEndChange = (newEnd: number) => {
+    const clamped = Math.max(startTime + 3, Math.min(newEnd, duration));
+    setEndTime(clamped);
+  };
+
+  const setSegmentLength = (seconds: number) => {
+    const newEnd = Math.min(duration, startTime + seconds);
+    setEndTime(newEnd);
+    if (newEnd - startTime < seconds) {
+      setStartTime(Math.max(0, newEnd - seconds));
+    }
+  };
+
+  const shiftSegment = (delta: number) => {
+    const segmentLen = endTime - startTime;
+    let newStart = startTime + delta;
+    let newEnd = endTime + delta;
+
+    if (newStart < 0) {
+      newStart = 0;
+      newEnd = segmentLen;
+    }
+    if (newEnd > duration) {
+      newEnd = duration;
+      newStart = Math.max(0, duration - segmentLen);
+    }
+
+    setStartTime(newStart);
+    setEndTime(newEnd);
+
+    if (ytPlayerRef.current && isPlayingLoop) {
+      ytPlayerRef.current.seekTo(newStart, true);
     }
   };
 
@@ -203,6 +251,14 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const parseTime = (timeStr: string) => {
+    const parts = timeStr.split(':').map(p => parseInt(p, 10));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return parts[0] * 60 + parts[1];
+    }
+    return parseInt(timeStr, 10) || 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -224,8 +280,9 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
         audio_url: youtubeUrl.trim(),
         youtube_id: youtubeId || undefined,
         thumbnail_url: thumbnailUrl || (youtubeId ? getYouTubeThumbnail(youtubeId) : undefined),
-        duration: duration || 240,
-        default_start_time: Math.min(defaultStartTime, duration),
+        duration: duration || 180,
+        default_start_time: startTime,
+        default_end_time: endTime,
       });
 
       onTrackCreated(created);
@@ -238,8 +295,9 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
     }
   };
 
-  // Liste des presets adaptés à la durée réelle de la chanson
-  const availablePresets = PRESET_TIMECODES.filter((t) => t < duration);
+  const segmentDuration = endTime - startTime;
+  const startPercent = duration > 0 ? (startTime / duration) * 100 : 0;
+  const endPercent = duration > 0 ? (endTime / duration) * 100 : 100;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto">
@@ -257,7 +315,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-white text-sm sm:text-base">Ajouter une Musique YouTube</h3>
-              <p className="text-[10px] sm:text-[11px] text-slate-400">Zéro stockage • Durée et pré-écoute synchronisées</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-400">Définissez le segment de scène avec boucle en direct</p>
             </div>
           </div>
           <button
@@ -295,7 +353,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </div>
           </div>
 
-          {/* Aperçu YouTube & Réglage du point fort par SLIDER avec PRÉ-ÉCOUTE EN DIRECT */}
+          {/* Aperçu YouTube & Réglage à 2 POINTS (Début / Fin) avec BOUCLE EN DIRECT */}
           {youtubeId && (
             <div className="bg-cinema-900/90 rounded-2xl border border-cinema-700/80 p-3.5 sm:p-4 space-y-4 animate-in fade-in duration-200">
               <div className="flex gap-3 sm:gap-4 items-center">
@@ -324,99 +382,122 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                 </div>
               </div>
 
-              {/* 🎚️ Sélecteur du Point de départ avec SLIDER & BOUTON D'ÉCOUTE */}
-              <div className="pt-3 border-t border-cinema-700/60 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
+              {/* 🎚️ SLIDER À DEUX POINTS (DÉBUT & FIN) & BOUCLE */}
+              <div className="pt-3 border-t border-cinema-700/60 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
                     <Clock className="w-3.5 h-3.5 text-brand-400" />
-                    <span className="text-xs font-bold text-brand-300">
-                      Début de scène :
-                    </span>
-                    <span className="font-mono text-sm font-bold text-brand-400 bg-cinema-800 px-2.5 py-0.5 rounded-lg border border-cinema-700 shadow-inner">
-                      {formatSeconds(defaultStartTime)}
+                    <span className="text-xs font-bold text-white">Segment de la scène :</span>
+                    <span className="font-mono text-xs font-bold text-brand-300 bg-cinema-800 px-2 py-0.5 rounded-lg border border-cinema-700">
+                      {formatSeconds(startTime)} → {formatSeconds(endTime)} ({segmentDuration}s)
                     </span>
                   </div>
 
-                  {/* Bouton Écouter / Pause en direct à ce moment */}
+                  {/* Bouton Boucle en direct */}
                   <button
                     type="button"
-                    onClick={togglePlayPreview}
+                    onClick={toggleLoopPlayback}
                     disabled={!isPlayerReady}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md ${
-                      isPlayingPreview
-                        ? 'bg-rose-500 text-white shadow-rose-500/30 animate-pulse'
+                      isPlayingLoop
+                        ? 'bg-rose-500 text-white shadow-rose-500/30 ring-2 ring-rose-400/50 animate-pulse'
                         : 'bg-brand-500 hover:bg-brand-400 text-cinema-950 shadow-brand-500/20 hover:scale-105'
                     } disabled:opacity-50`}
                   >
-                    {isPlayingPreview ? (
-                      <>
-                        <Pause className="w-3.5 h-3.5 fill-current" />
-                        <span>Pause</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>Écouter à {formatSeconds(defaultStartTime)}</span>
-                      </>
-                    )}
+                    <Repeat className={`w-3.5 h-3.5 ${isPlayingLoop ? 'animate-spin' : ''}`} />
+                    <span>{isPlayingLoop ? 'Arrêter la boucle' : 'Écouter en boucle'}</span>
                   </button>
                 </div>
 
-                {/* Slider interactif borné à la durée exacte */}
-                <div className="space-y-1">
-                  <input
-                    type="range"
-                    min="0"
-                    max={Math.max(1, duration)}
-                    step="1"
-                    value={Math.min(defaultStartTime, duration)}
-                    onChange={(e) => handleSliderChange(parseInt(e.target.value, 10))}
-                    onMouseUp={(e) => handleSliderCommit(parseInt((e.target as HTMLInputElement).value, 10))}
-                    onTouchEnd={(e) => handleSliderCommit(parseInt((e.target as HTMLInputElement).value, 10))}
-                    className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-brand-500 hover:accent-brand-400"
-                  />
-                  <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                    <span>00:00</span>
-                    <span>{formatSeconds(Math.floor(duration / 2))}</span>
-                    <span className="text-brand-400/80 font-bold">{formatSeconds(duration)} (Fin)</span>
+                {/* Barre Visuelle du Segment Sélectionné */}
+                <div className="space-y-2 pt-1">
+                  <div className="relative h-3 bg-cinema-700 rounded-full overflow-hidden">
+                    {/* Segment Actif en surbrillance Or */}
+                    <div
+                      className="absolute top-0 bottom-0 bg-gradient-to-r from-brand-500 to-brand-400 rounded-full transition-all"
+                      style={{
+                        left: `${startPercent}%`,
+                        width: `${Math.max(2, endPercent - startPercent)}%`,
+                      }}
+                    />
+                  </div>
+
+                  {/* Sliders Début et Fin */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 bg-cinema-800/60 p-3 rounded-2xl border border-cinema-700/60">
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] font-semibold">
+                        <span className="text-slate-300">Point de DÉBUT :</span>
+                        <span className="font-mono text-brand-300 font-bold">{formatSeconds(startTime)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={Math.max(0, duration - 3)}
+                        step="1"
+                        value={startTime}
+                        onChange={(e) => handleStartChange(parseInt(e.target.value, 10))}
+                        className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px] font-semibold">
+                        <span className="text-slate-300">Point de FIN :</span>
+                        <span className="font-mono text-brand-300 font-bold">{formatSeconds(endTime)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="3"
+                        max={Math.max(3, duration)}
+                        step="1"
+                        value={endTime}
+                        onChange={(e) => handleEndChange(parseInt(e.target.value, 10))}
+                        className="w-full h-2 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-brand-400"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Boutons d'ajustement rapide bornés */}
-                <div className="flex items-center justify-between gap-1 pt-1 overflow-x-auto">
-                  <button
-                    type="button"
-                    onClick={() => adjustStartTime(-10)}
-                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700 shrink-0"
-                  >
-                    -10s
-                  </button>
-
-                  {availablePresets.slice(0, 4).map((time) => (
+                {/* Boutons d'ajustement rapide de durée et décalage */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  {/* Décalage temporel */}
+                  <div className="flex items-center gap-1">
                     <button
-                      key={time}
                       type="button"
-                      onClick={() => {
-                        setDefaultStartTime(time);
-                        handleSliderCommit(time);
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-mono border shrink-0 transition-colors ${
-                        defaultStartTime === time
-                          ? 'bg-brand-500 text-cinema-950 font-bold border-brand-400'
-                          : 'bg-cinema-800 hover:bg-cinema-700 text-slate-300 border border-cinema-700'
-                      }`}
+                      onClick={() => shiftSegment(-5)}
+                      className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
+                      title="Décaler le segment de 5s vers la gauche"
                     >
-                      {formatSeconds(time)}
+                      ◀ -5s
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => shiftSegment(5)}
+                      className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700"
+                      title="Décaler le segment de 5s vers la droite"
+                    >
+                      +5s ▶
+                    </button>
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => adjustStartTime(10)}
-                    className="px-2 py-1 rounded bg-cinema-800 hover:bg-cinema-700 text-[10px] font-mono text-slate-300 border border-cinema-700 shrink-0"
-                  >
-                    +10s
-                  </button>
+                  {/* Tailles de boucle prédéfinies */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400 mr-1">Durée boucle :</span>
+                    {[15, 20, 30, 45, 60].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSegmentLength(s)}
+                        className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors ${
+                          segmentDuration === s
+                            ? 'bg-brand-500 text-cinema-950 font-bold border-brand-400'
+                            : 'bg-cinema-800 hover:bg-cinema-700 text-slate-300 border border-cinema-700'
+                        }`}
+                      >
+                        {s}s
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

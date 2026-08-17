@@ -85,6 +85,7 @@ export async function createTrack(track: Omit<Track, 'id' | 'created_at'>): Prom
     youtube_id: ytId || undefined,
     thumbnail_url: thumb,
     default_start_time: track.default_start_time || 0,
+    default_end_time: track.default_end_time || (track.duration ? Math.min(track.duration, (track.default_start_time || 0) + 30) : 60),
     created_at: new Date().toISOString(),
   };
 

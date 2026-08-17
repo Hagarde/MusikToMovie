@@ -10,6 +10,7 @@ export interface Track {
   thumbnail_url?: string; // Image de couverture YouTube
   duration: number; // in seconds
   default_start_time?: number; // Moment précis de début (en secondes)
+  default_end_time?: number; // Moment précis de fin du segment (en secondes)
   created_at: string;
   proposal_count?: number;
 }

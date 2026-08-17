@@ -54,8 +54,8 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
   const [contextAfter, setContextAfter] = useState('');
 
   // Scène Clé
-  const initialStartTime = track.default_start_time || Math.floor(track.duration * 0.25);
-  const initialEndTime = Math.min(Math.floor(track.duration), initialStartTime + 30);
+  const initialStartTime = track.default_start_time || 0;
+  const initialEndTime = track.default_end_time || Math.min(Math.floor(track.duration), initialStartTime + 30);
 
   const [keySceneTitle, setKeySceneTitle] = useState('Climax & Révélation Visuelle');
   const [keySceneDesc, setKeySceneDesc] = useState('');

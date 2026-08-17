@@ -28,9 +28,6 @@ export default function App() {
       ]);
       setTracks(fetchedTracks);
       setProposals(fetchedProposals);
-      if (fetchedTracks.length > 0 && !selectedTrack) {
-        setSelectedTrack(fetchedTracks[0]);
-      }
     } catch (err) {
       console.error(err);
     } finally {
