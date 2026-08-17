@@ -1,0 +1,35 @@
+export type SectionType = 'preceding' | 'main' | 'succeeding';
+
+export interface Track {
+  id: string;
+  title: string;
+  artist: string;
+  audio_url: string;
+  duration: number; // in seconds
+  created_at: string;
+  proposal_count?: number;
+}
+
+export interface Scene {
+  id?: string;
+  proposal_id?: string;
+  section_type: SectionType;
+  scene_title: string;
+  description: string;
+  image_data: string; // Base64 data URL or remote image URL
+  start_time: number; // in seconds
+  end_time: number; // in seconds
+  order_index: number;
+}
+
+export interface Proposal {
+  id: string;
+  track_id: string;
+  author_name: string;
+  movie_title: string;
+  genre: string;
+  logline: string;
+  created_at: string;
+  track?: Track;
+  scenes?: Scene[];
+}
