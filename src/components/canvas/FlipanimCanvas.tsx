@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   Paintbrush, 
   Eraser, 
@@ -10,7 +10,6 @@ import {
   Play, 
   Pause, 
   Layers,
-  GripVertical,
   ChevronLeft,
   ChevronRight,
   ArrowLeftToLine
@@ -71,35 +70,41 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   const [history, setHistory] = useState<ImageData[]>([]);
   const [historyStep, setHistoryStep] = useState<number>(-1);
 
-  // Charger ou réinitialiser le canvas sur la frame courante
-  const loadFrame = (index: number) => {
+  // Charger ou réinitialiser le canvas sur une frame précise
+  const loadFrame = useCallback((index: number, framesList: string[] = frames) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Fond cinéma sombre
     ctx.fillStyle = '#12141c';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Dessin de l'onion skin (frame précédente en filigrane)
-    if (onionSkin && index > 0 && frames[index - 1]) {
+    if (onionSkin && index > 0 && framesList[index - 1]) {
       const prevImg = new Image();
       prevImg.onload = () => {
         ctx.save();
         ctx.globalAlpha = 0.25;
         ctx.drawImage(prevImg, 0, 0, canvas.width, canvas.height);
         ctx.restore();
-        drawCurrentFrameContent(ctx, canvas, index);
+        drawCurrentFrameContent(ctx, canvas, index, framesList);
       };
-      prevImg.src = frames[index - 1];
+      prevImg.src = framesList[index - 1];
       return;
     }
 
-    drawCurrentFrameContent(ctx, canvas, index);
-  };
+    drawCurrentFrameContent(ctx, canvas, index, framesList);
+  }, [onionSkin, frames]);
 
-  const drawCurrentFrameContent = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, index: number) => {
-    const frameData = frames[index];
+  const drawCurrentFrameContent = (
+    ctx: CanvasRenderingContext2D, 
+    canvas: HTMLCanvasElement, 
+    index: number,
+    framesList: string[]
+  ) => {
+    const frameData = framesList[index];
     if (frameData) {
       const img = new Image();
       img.onload = () => {
@@ -114,7 +119,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
   useEffect(() => {
     if (!isPlayingAnim) {
-      loadFrame(currentFrameIndex);
+      loadFrame(currentFrameIndex, frames);
     }
   }, [currentFrameIndex, onionSkin]);
 
@@ -150,15 +155,16 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     setHistoryStep(newHistory.length - 1);
   };
 
-  const saveCurrentFrameToState = () => {
+  const saveCurrentFrameToState = (frameIdx: number = currentFrameIndex) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return frames;
 
     const dataUrl = canvas.toDataURL('image/webp', 0.85);
     const updated = [...frames];
-    updated[currentFrameIndex] = dataUrl;
+    updated[frameIdx] = dataUrl;
     setFrames(updated);
     if (onChange) onChange(updated);
+    return updated;
   };
 
   const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -217,7 +223,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     saveCurrentFrameToState();
   };
 
-  const undo = () => {
+  // 🔄 Annuler (Undo) & Rétablir (Redo)
+  const undo = useCallback(() => {
     if (historyStep > 0) {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -229,9 +236,9 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       setHistoryStep(prevStep);
       saveCurrentFrameToState();
     }
-  };
+  }, [historyStep, history, currentFrameIndex]);
 
-  const redo = () => {
+  const redo = useCallback(() => {
     if (historyStep < history.length - 1) {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -243,7 +250,38 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       setHistoryStep(nextStep);
       saveCurrentFrameToState();
     }
-  };
+  }, [historyStep, history, currentFrameIndex]);
+
+  // ⌨️ Raccourci Clavier Global Ctrl+Z / Cmd+Z et Ctrl+Y
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      if (isCtrlOrCmd && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if (isCtrlOrCmd && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        redo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
@@ -257,49 +295,77 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     saveCurrentFrameToState();
   };
 
-  // Actions de Gestion des Frames (Ajout, Duplication, Suppression, Déplacement)
+  // 🎬 Actions de Gestion des Frames (Ajout, Duplication, Déplacement)
   const addFrameAt = (index: number) => {
-    saveCurrentFrameToState();
-    const newFrames = [...frames];
+    const saved = saveCurrentFrameToState();
+    const newFrames = [...saved];
     newFrames.splice(index, 0, '');
     setFrames(newFrames);
     setCurrentFrameIndex(index);
     setHistory([]);
     setHistoryStep(-1);
     if (onChange) onChange(newFrames);
+    loadFrame(index, newFrames);
   };
 
   const duplicateFrame = () => {
-    saveCurrentFrameToState();
-    const currentFrameData = frames[currentFrameIndex];
-    const newFrames = [...frames];
+    const saved = saveCurrentFrameToState();
+    const currentFrameData = saved[currentFrameIndex];
+    const newFrames = [...saved];
     newFrames.splice(currentFrameIndex + 1, 0, currentFrameData);
     setFrames(newFrames);
     setCurrentFrameIndex(currentFrameIndex + 1);
+    setHistory([]);
+    setHistoryStep(-1);
     if (onChange) onChange(newFrames);
+    loadFrame(currentFrameIndex + 1, newFrames);
   };
 
-  const deleteFrame = (index: number) => {
+  // 🗑️ Suppression d'une frame (CORRECTION ROBUSTE DU BUG)
+  const deleteFrame = (indexToDelete: number) => {
     if (frames.length <= 1) {
       clearCanvas();
       return;
     }
-    const newFrames = frames.filter((_, i) => i !== index);
+
+    // 1. Sauvegarder l'état actuel si ce n'est pas la frame qu'on supprime
+    let baseFrames = frames;
+    if (indexToDelete !== currentFrameIndex) {
+      baseFrames = saveCurrentFrameToState();
+    }
+
+    // 2. Retirer exactement la frame ciblée
+    const newFrames = baseFrames.filter((_, i) => i !== indexToDelete);
+
+    // 3. Calculer précisément le nouvel index actif
+    let newIndex = currentFrameIndex;
+    if (indexToDelete === currentFrameIndex) {
+      newIndex = Math.min(indexToDelete, newFrames.length - 1);
+    } else if (indexToDelete < currentFrameIndex) {
+      newIndex = currentFrameIndex - 1;
+    }
+
+    // 4. Mettre à jour l'état et recharger directement le canvas
     setFrames(newFrames);
-    const newIdx = Math.min(currentFrameIndex, newFrames.length - 1);
-    setCurrentFrameIndex(newIdx);
+    setCurrentFrameIndex(newIndex);
+    setHistory([]);
+    setHistoryStep(-1);
     if (onChange) onChange(newFrames);
+    loadFrame(newIndex, newFrames);
   };
 
   const moveFrame = (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
-    saveCurrentFrameToState();
-    const newFrames = [...frames];
+    const saved = saveCurrentFrameToState();
+    const newFrames = [...saved];
     const [moved] = newFrames.splice(fromIndex, 1);
     newFrames.splice(toIndex, 0, moved);
     setFrames(newFrames);
     setCurrentFrameIndex(toIndex);
+    setHistory([]);
+    setHistoryStep(-1);
     if (onChange) onChange(newFrames);
+    loadFrame(toIndex, newFrames);
   };
 
   // Drag and Drop Handlers
@@ -395,7 +461,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             ))}
           </div>
 
-          {/* Pelure d'oignon & Actions */}
+          {/* Pelure d'oignon & Actions Undo/Redo avec indicateur Ctrl+Z */}
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -416,24 +482,26 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 type="button"
                 onClick={undo}
                 disabled={historyStep <= 0}
-                className="p-1.5 rounded hover:bg-cinema-700 text-slate-300 disabled:opacity-30"
-                title="Annuler"
+                className="p-1.5 rounded hover:bg-cinema-700 text-slate-300 disabled:opacity-30 flex items-center gap-1"
+                title="Annuler (Ctrl+Z)"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
+                <span className="text-[10px] text-slate-500 font-mono hidden lg:inline">Ctrl+Z</span>
               </button>
               <button
                 type="button"
                 onClick={redo}
                 disabled={historyStep >= history.length - 1}
-                className="p-1.5 rounded hover:bg-cinema-700 text-slate-300 disabled:opacity-30"
-                title="Rétablir"
+                className="p-1.5 rounded hover:bg-cinema-700 text-slate-300 disabled:opacity-30 flex items-center gap-1"
+                title="Rétablir (Ctrl+Y)"
               >
                 <RotateCw className="w-3.5 h-3.5" />
+                <span className="text-[10px] text-slate-500 font-mono hidden lg:inline">Ctrl+Y</span>
               </button>
               <button
                 type="button"
                 onClick={clearCanvas}
-                className="p-1.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300"
+                className="p-1.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300 ml-1"
                 title="Effacer la frame"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -520,7 +588,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </div>
 
           <div className="flex items-center gap-1 text-[11px] text-slate-400">
-            <span className="hidden sm:inline">Glissez-déposez (Drag & Drop) les vignettes pour réordonner</span>
+            <span className="hidden sm:inline">Glissez-déposez les vignettes pour réordonner • Ctrl+Z pour annuler</span>
           </div>
         </div>
 
