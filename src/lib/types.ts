@@ -5,7 +5,9 @@ export interface Track {
   title: string;
   artist: string;
   genre?: string;
-  audio_url: string;
+  audio_url: string; // URL YouTube ou audio
+  youtube_id?: string; // ID de la vidéo YouTube (ex: 'dQw4w9WgXcQ')
+  thumbnail_url?: string; // Image de couverture / miniature YouTube
   duration: number; // in seconds
   default_start_time?: number; // Moment précis de début (en secondes)
   created_at: string;

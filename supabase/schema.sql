@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS public.tracks (
     artist TEXT NOT NULL DEFAULT 'Inconnu',
     genre TEXT DEFAULT 'Cinématique',
     audio_url TEXT NOT NULL,
+    youtube_id TEXT, -- ID de la vidéo YouTube (ex: 'dQw4w9WgXcQ')
+    thumbnail_url TEXT, -- Miniature de la vidéo YouTube
     duration NUMERIC DEFAULT 0,
     default_start_time NUMERIC DEFAULT 0, -- Moment précis de début (timecode en secondes)
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -52,14 +54,3 @@ CREATE POLICY "Permettre la mise à jour des votes des proposals" ON public.prop
 
 CREATE POLICY "Permettre la lecture publique des scenes" ON public.scenes FOR SELECT USING (true);
 CREATE POLICY "Permettre l'insertion publique des scenes" ON public.scenes FOR INSERT WITH CHECK (true);
-
--- 5. Création des Buckets de Stockage Supabase pour Audio et Storyboards (Optionnel)
-INSERT INTO storage.buckets (id, name, public) 
-VALUES ('audio', 'audio', true), ('storyboards', 'storyboards', true)
-ON CONFLICT (id) DO NOTHING;
-
-CREATE POLICY "Permettre la lecture publique des fichiers audio" ON storage.objects FOR SELECT USING (bucket_id = 'audio');
-CREATE POLICY "Permettre l'upload public de fichiers audio" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'audio');
-
-CREATE POLICY "Permettre la lecture publique des storyboards" ON storage.objects FOR SELECT USING (bucket_id = 'storyboards');
-CREATE POLICY "Permettre l'upload public de storyboards" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'storyboards');

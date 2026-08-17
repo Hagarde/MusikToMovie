@@ -1,41 +1,48 @@
 import { createClient } from '@supabase/supabase-js';
 import { Track, Proposal, Scene } from './types';
+import { extractYouTubeId, getYouTubeThumbnail } from './youtube';
 
 const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 'https://hbxejvpynymcxghdkbkh.supabase.co';
 const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_nii-4wn98Yh4ESEzF_DkBw_qAYVzoIK';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Morceaux de démo inclus par défaut (Musiques libres de droits)
+// Morceaux de démo YouTube Cinématographiques & Épiques
 const DEMO_TRACKS: Track[] = [
   {
-    id: 'demo-1',
-    title: 'Interstellar Horizons (Cinematic Ambient)',
-    artist: 'Hans Echo',
-    genre: 'Science-Fiction',
-    audio_url: 'https://cdn.freesound.org/previews/612/612608_11861866-lq.mp3',
-    duration: 75,
-    default_start_time: 15,
+    id: 'demo-yt-1',
+    title: 'Time (Inception Soundtrack - Hans Zimmer)',
+    artist: 'Hans Zimmer',
+    genre: 'Cinématique / Épique',
+    audio_url: 'https://www.youtube.com/watch?v=RxabLA7UQ9k',
+    youtube_id: 'RxabLA7UQ9k',
+    thumbnail_url: getYouTubeThumbnail('RxabLA7UQ9k'),
+    duration: 275,
+    default_start_time: 120, // Moment d'explosion symphonique
     created_at: new Date().toISOString(),
   },
   {
-    id: 'demo-2',
-    title: 'Cyberpunk Chase (Dark Synthwave)',
-    artist: 'Neon Runner',
-    genre: 'Cyberpunk',
-    audio_url: 'https://cdn.freesound.org/previews/573/573379_11861866-lq.mp3',
-    duration: 90,
-    default_start_time: 25,
+    id: 'demo-yt-2',
+    title: 'Blade Runner 2049 - Tears in the Rain (Synth Atmosphere)',
+    artist: 'Vangelis & Hans Zimmer',
+    genre: 'Science-Fiction / Cyberpunk',
+    audio_url: 'https://www.youtube.com/watch?v=s36eQwgPNSE',
+    youtube_id: 's36eQwgPNSE',
+    thumbnail_url: getYouTubeThumbnail('s36eQwgPNSE'),
+    duration: 240,
+    default_start_time: 45,
     created_at: new Date().toISOString(),
   },
   {
-    id: 'demo-3',
-    title: 'Midnight Suspense (Piano & Strings)',
-    artist: 'Noir Chamber',
-    genre: 'Thriller / Film Noir',
-    audio_url: 'https://cdn.freesound.org/previews/686/686475_11861866-lq.mp3',
-    duration: 60,
-    default_start_time: 10,
+    id: 'demo-yt-3',
+    title: 'The Dark Knight - Why So Serious? (Tension & Chaos)',
+    artist: 'Hans Zimmer & James Newton Howard',
+    genre: 'Suspense / Thriller',
+    audio_url: 'https://www.youtube.com/watch?v=2r1pP294t44',
+    youtube_id: '2r1pP294t44',
+    thumbnail_url: getYouTubeThumbnail('2r1pP294t44'),
+    duration: 180,
+    default_start_time: 60,
     created_at: new Date().toISOString(),
   }
 ];
@@ -43,33 +50,6 @@ const DEMO_TRACKS: Track[] = [
 const LOCAL_STORAGE_TRACKS_KEY = 'musiktomovie_tracks';
 const LOCAL_STORAGE_PROPOSALS_KEY = 'musiktomovie_proposals';
 const LOCAL_STORAGE_VOTES_KEY = 'musiktomovie_user_votes';
-
-// Uploader un fichier audio vers Supabase Storage bucket 'audio'
-export async function uploadAudioFile(file: File): Promise<string> {
-  const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '')}`;
-  try {
-    const { data, error } = await supabase.storage
-      .from('audio')
-      .upload(fileName, file, {
-        cacheControl: '3600',
-        upsert: false
-      });
-
-    if (!error && data) {
-      const { data: publicUrlData } = supabase.storage.from('audio').getPublicUrl(fileName);
-      return publicUrlData.publicUrl;
-    }
-  } catch (err) {
-    console.warn('Upload Supabase Storage échoué, fallback DataURL:', err);
-  }
-
-  // Fallback client local DataURL si Supabase storage n'est pas encore initialisé
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.readAsDataURL(file);
-  });
-}
 
 // Récupérer tous les morceaux
 export async function getTracks(): Promise<Track[]> {
@@ -94,11 +74,16 @@ export async function getTracks(): Promise<Track[]> {
   }
 }
 
-// Ajouter un morceau avec point de départ précis
+// Ajouter un morceau avec lien YouTube et métadonnées automatiques
 export async function createTrack(track: Omit<Track, 'id' | 'created_at'>): Promise<Track> {
+  const ytId = track.youtube_id || extractYouTubeId(track.audio_url);
+  const thumb = track.thumbnail_url || (ytId ? getYouTubeThumbnail(ytId) : undefined);
+
   const newTrack: Track = {
     id: crypto.randomUUID(),
     ...track,
+    youtube_id: ytId || undefined,
+    thumbnail_url: thumb,
     default_start_time: track.default_start_time || 0,
     created_at: new Date().toISOString(),
   };
@@ -177,23 +162,18 @@ export async function getProposalById(id: string): Promise<Proposal | null> {
 
 // Voter pour une proposition (Like)
 export async function voteProposal(proposalId: string): Promise<number> {
-  // Vérifier si déjà voté localement
   const votes = JSON.parse(localStorage.getItem(LOCAL_STORAGE_VOTES_KEY) || '{}');
   const hasVoted = !!votes[proposalId];
 
   let newCount = 1;
-
-  // Récupérer le count actuel
   const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
   const allProposals: Proposal[] = local ? JSON.parse(local) : [];
   const target = allProposals.find(p => p.id === proposalId);
 
   if (hasVoted) {
-    // Annuler le vote
     delete votes[proposalId];
     newCount = Math.max(0, (target?.likes_count || 1) - 1);
   } else {
-    // Ajouter le vote
     votes[proposalId] = true;
     newCount = (target?.likes_count || 0) + 1;
   }
