@@ -9,8 +9,11 @@ import {
   Copy, 
   Play, 
   Pause, 
-  Music,
-  Layers
+  Layers,
+  GripVertical,
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeftToLine
 } from 'lucide-react';
 
 interface FlipanimCanvasProps {
@@ -54,6 +57,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   const [brushSize, setBrushSize] = useState<number>(3);
   const [isEraser, setIsEraser] = useState<boolean>(false);
   const [onionSkin, setOnionSkin] = useState<boolean>(true);
+
+  // Drag & Drop des frames
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Mode Lecture Animation (Flipbook)
   const [isPlayingAnim, setIsPlayingAnim] = useState<boolean>(false);
@@ -250,11 +257,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     saveCurrentFrameToState();
   };
 
-  const addFrame = () => {
+  // Actions de Gestion des Frames (Ajout, Duplication, Suppression, Déplacement)
+  const addFrameAt = (index: number) => {
     saveCurrentFrameToState();
-    const newFrames = [...frames, ''];
+    const newFrames = [...frames];
+    newFrames.splice(index, 0, '');
     setFrames(newFrames);
-    setCurrentFrameIndex(newFrames.length - 1);
+    setCurrentFrameIndex(index);
     setHistory([]);
     setHistoryStep(-1);
     if (onChange) onChange(newFrames);
@@ -280,6 +289,43 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const newIdx = Math.min(currentFrameIndex, newFrames.length - 1);
     setCurrentFrameIndex(newIdx);
     if (onChange) onChange(newFrames);
+  };
+
+  const moveFrame = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    saveCurrentFrameToState();
+    const newFrames = [...frames];
+    const [moved] = newFrames.splice(fromIndex, 1);
+    newFrames.splice(toIndex, 0, moved);
+    setFrames(newFrames);
+    setCurrentFrameIndex(toIndex);
+    if (onChange) onChange(newFrames);
+  };
+
+  // Drag and Drop Handlers
+  const handleDragStart = (index: number) => {
+    if (readOnly) return;
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    setDragOverIndex(index);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== targetIndex) {
+      moveFrame(draggedIndex, targetIndex);
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   return (
@@ -438,100 +484,174 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         </div>
       </div>
 
-      {/* Bandeau de contrôle des Frames & Animation Flipanim */}
-      <div className="p-2.5 sm:p-3 bg-cinema-900 border-t border-cinema-700/60 flex flex-wrap items-center justify-between gap-2.5">
-        {/* Contrôles de lecture Flipbook + Musique */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleAnimation}
-            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-transform hover:scale-105 shadow-md ${
-              isPlayingAnim
-                ? 'bg-rose-500 text-white shadow-rose-500/20'
-                : 'bg-brand-500 hover:bg-brand-400 text-cinema-950 shadow-brand-500/20'
-            }`}
-          >
-            {isPlayingAnim ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-            <span className="flex items-center gap-1">
-              {isPlayingAnim ? 'Arrêter' : 'Flipbook + Musique'}
-            </span>
-          </button>
+      {/* Bandeau de contrôle des Frames avec Drag & Drop et Ajout au début */}
+      <div className="p-2.5 sm:p-3 bg-cinema-900 border-t border-cinema-700/60 flex flex-col gap-2.5">
+        {/* Ligne 1 : Contrôles de lecture Flipbook */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleAnimation}
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-transform hover:scale-105 shadow-md ${
+                isPlayingAnim
+                  ? 'bg-rose-500 text-white shadow-rose-500/20'
+                  : 'bg-brand-500 hover:bg-brand-400 text-cinema-950 shadow-brand-500/20'
+              }`}
+            >
+              {isPlayingAnim ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+              <span>{isPlayingAnim ? 'Arrêter' : 'Flipbook + Musique'}</span>
+            </button>
 
-          {/* Vitesse FPS */}
-          <div className="flex items-center gap-1 bg-cinema-800 px-1.5 py-1 rounded-lg border border-cinema-700 text-xs">
-            {FPS_OPTIONS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setAnimFps(f)}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                  animFps === f ? 'bg-brand-500 text-cinema-950 font-bold' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {f}fps
-              </button>
-            ))}
+            {/* Vitesse FPS */}
+            <div className="flex items-center gap-1 bg-cinema-800 px-1.5 py-1 rounded-lg border border-cinema-700 text-xs">
+              {FPS_OPTIONS.map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setAnimFps(f)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    animFps === f ? 'bg-brand-500 text-cinema-950 font-bold' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {f}fps
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 text-[11px] text-slate-400">
+            <span className="hidden sm:inline">Glissez-déposez (Drag & Drop) les vignettes pour réordonner</span>
           </div>
         </div>
 
-        {/* Miniatures des Frames et Ajout */}
-        <div className="flex items-center gap-1.5 overflow-x-auto py-1 max-w-full">
-          {frames.map((f, i) => (
-            <div key={i} className="relative group shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  saveCurrentFrameToState();
-                  setCurrentFrameIndex(i);
-                  setIsPlayingAnim(false);
-                  if (onTogglePlayAnim) onTogglePlayAnim(false);
-                }}
-                className={`w-12 sm:w-14 h-8 sm:h-9 rounded-lg overflow-hidden border-2 transition-all flex items-center justify-center bg-black ${
-                  currentFrameIndex === i && !isPlayingAnim
-                    ? 'border-brand-400 ring-2 ring-brand-400/40 scale-105 shadow-md'
-                    : 'border-cinema-700 hover:border-slate-500 opacity-70 hover:opacity-100'
-                }`}
-              >
-                {f ? (
-                  <img src={f} alt={`Frame ${i + 1}`} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-[9px] text-slate-500 font-mono">#{i + 1}</span>
-                )}
-              </button>
-
-              {!readOnly && frames.length > 1 && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteFrame(i);
-                  }}
-                  className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow"
-                  title="Supprimer cette frame"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
-
+        {/* Ligne 2 : Bandeau de Vignettes avec Drag & Drop fluide */}
+        <div className="flex items-center gap-2 overflow-x-auto py-1.5 max-w-full">
+          {/* Bouton rapide : Insérer une frame au tout début (position 1) */}
           {!readOnly && (
-            <div className="flex items-center gap-1 shrink-0 ml-0.5">
+            <button
+              type="button"
+              onClick={() => addFrameAt(0)}
+              className="px-2.5 py-2 rounded-xl bg-cinema-800 hover:bg-cinema-750 border border-cinema-700/80 hover:border-brand-500/60 text-slate-300 hover:text-brand-300 text-[10px] font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+              title="Créer une nouvelle frame en 1ère position"
+            >
+              <ArrowLeftToLine className="w-3.5 h-3.5 text-brand-400" />
+              <span>+ Au début</span>
+            </button>
+          )}
+
+          {/* Liste des frames déplaçables */}
+          {frames.map((f, i) => {
+            const isDragged = draggedIndex === i;
+            const isOver = dragOverIndex === i;
+
+            return (
+              <div
+                key={i}
+                draggable={!readOnly && !isPlayingAnim}
+                onDragStart={() => handleDragStart(i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={(e) => handleDrop(e, i)}
+                onDragEnd={handleDragEnd}
+                className={`relative group shrink-0 transition-all ${
+                  isDragged ? 'opacity-40 scale-95' : ''
+                } ${isOver ? 'ring-2 ring-brand-400 scale-105 rounded-xl' : ''}`}
+              >
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      saveCurrentFrameToState();
+                      setCurrentFrameIndex(i);
+                      setIsPlayingAnim(false);
+                      if (onTogglePlayAnim) onTogglePlayAnim(false);
+                    }}
+                    className={`w-14 sm:w-16 h-9 sm:h-10 rounded-xl overflow-hidden border-2 transition-all flex items-center justify-center bg-black cursor-grab active:cursor-grabbing ${
+                      currentFrameIndex === i && !isPlayingAnim
+                        ? 'border-brand-400 ring-2 ring-brand-400/40 shadow-lg scale-105'
+                        : 'border-cinema-700 hover:border-slate-500 opacity-75 hover:opacity-100'
+                    }`}
+                  >
+                    {f ? (
+                      <img src={f} alt={`Frame ${i + 1}`} className="w-full h-full object-cover pointer-events-none select-none" />
+                    ) : (
+                      <span className="text-[10px] text-slate-500 font-mono font-bold">#{i + 1}</span>
+                    )}
+
+                    {/* Numéro de frame en coin */}
+                    <span className="absolute bottom-0.5 left-1 text-[9px] font-mono font-bold text-white bg-black/70 px-1 rounded">
+                      {i + 1}
+                    </span>
+                  </button>
+
+                  {/* Boutons de réarrangement fléchés pour mobile */}
+                  {!readOnly && frames.length > 1 && (
+                    <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-cinema-900 border border-cinema-700 rounded px-0.5 shadow z-10">
+                      {i > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveFrame(i, i - 1);
+                          }}
+                          className="text-slate-400 hover:text-white p-0.5"
+                          title="Déplacer vers la gauche"
+                        >
+                          <ChevronLeft className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                      {i < frames.length - 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveFrame(i, i + 1);
+                          }}
+                          className="text-slate-400 hover:text-white p-0.5"
+                          title="Déplacer vers la droite"
+                        >
+                          <ChevronRight className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Bouton Supprimer */}
+                  {!readOnly && frames.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteFrame(i);
+                      }}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 hover:bg-red-400 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow z-10"
+                      title="Supprimer cette frame"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Boutons d'ajout à la fin et duplication */}
+          {!readOnly && (
+            <div className="flex items-center gap-1.5 shrink-0 ml-1">
               <button
                 type="button"
-                onClick={addFrame}
-                className="px-2 py-1.5 rounded-lg bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition-colors"
-                title="Ajouter une frame"
+                onClick={() => addFrameAt(frames.length)}
+                className="px-3 py-2 rounded-xl bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                title="Ajouter une frame à la fin"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-3.5 h-3.5 text-brand-400" />
                 <span>Frame</span>
               </button>
 
               <button
                 type="button"
                 onClick={duplicateFrame}
-                className="p-1.5 rounded-lg bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-300 hover:text-white transition-colors"
-                title="Dupliquer la frame pour animer le mouvement"
+                className="p-2 rounded-xl bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-300 hover:text-white transition-colors"
+                title="Dupliquer la frame active pour animer le mouvement"
               >
                 <Copy className="w-3.5 h-3.5" />
               </button>
