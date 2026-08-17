@@ -64,8 +64,9 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
   const [frames, setFrames] = useState<string[]>(['']);
   const [animationFps, setAnimationFps] = useState<number>(3);
 
-  // État lecteur
+  // État lecteur et synchronisation Flipbook
   const [currentAudioTime, setCurrentAudioTime] = useState(0);
+  const [forcePlayTime, setForcePlayTime] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const formatSeconds = (sec: number) => {
@@ -185,6 +186,7 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
           track={track}
           onTimeUpdate={setCurrentAudioTime}
           highlightRange={{ start: startTime, end: endTime }}
+          forcePlayAtTime={forcePlayTime}
         />
       </div>
 
@@ -357,6 +359,13 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
             initialFrames={frames}
             fps={animationFps}
             onChange={(updatedFrames) => setFrames(updatedFrames)}
+            onTogglePlayAnim={(isPlaying) => {
+              if (isPlaying) {
+                setForcePlayTime(startTime);
+              } else {
+                setForcePlayTime(-1);
+              }
+            }}
           />
         </div>
 

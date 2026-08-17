@@ -19,6 +19,7 @@ interface AudioPlayerProps {
   onTimeUpdate?: (time: number) => void;
   highlightRange?: { start: number; end: number };
   autoPlay?: boolean;
+  forcePlayAtTime?: number | null;
 }
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
@@ -26,6 +27,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   onTimeUpdate,
   highlightRange,
   autoPlay = false,
+  forcePlayAtTime,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -41,6 +43,22 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isYtReady, setIsYtReady] = useState<boolean>(false);
 
   const isYouTube = !!track?.youtube_id;
+
+  // Déclenchement forcé (ex: lors de l'aperçu Flipbook + Musique)
+  useEffect(() => {
+    if (forcePlayAtTime !== undefined && forcePlayAtTime !== null) {
+      if (forcePlayAtTime >= 0) {
+        jumpToTime(forcePlayAtTime);
+      } else {
+        if (isYouTube && ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+          ytPlayerRef.current.pauseVideo();
+        } else if (audioRef.current) {
+          audioRef.current.pause();
+        }
+        setIsPlaying(false);
+      }
+    }
+  }, [forcePlayAtTime]);
 
   // Initialisation du lecteur YouTube
   useEffect(() => {

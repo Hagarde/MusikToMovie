@@ -9,17 +9,14 @@ import {
   Copy, 
   Play, 
   Pause, 
-  Eye, 
-  EyeOff, 
-  Sparkles,
-  ChevronLeft,
-  ChevronRight,
+  Music,
   Layers
 } from 'lucide-react';
 
 interface FlipanimCanvasProps {
   initialFrames?: string[];
   onChange?: (frames: string[]) => void;
+  onTogglePlayAnim?: (isPlaying: boolean) => void;
   fps?: number;
   readOnly?: boolean;
 }
@@ -41,6 +38,7 @@ const FPS_OPTIONS = [1, 2, 4, 6];
 export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   initialFrames = [],
   onChange,
+  onTogglePlayAnim,
   fps = 3,
   readOnly = false,
 }) => {
@@ -73,20 +71,17 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Fond cinéma sombre
     ctx.fillStyle = '#12141c';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Dessin de l'onion skin (frame précédente en filigrane) si activé
+    // Dessin de l'onion skin (frame précédente en filigrane)
     if (onionSkin && index > 0 && frames[index - 1]) {
       const prevImg = new Image();
       prevImg.onload = () => {
         ctx.save();
-        ctx.globalAlpha = 0.25; // Effet fantôme / pelure d'oignon
+        ctx.globalAlpha = 0.25;
         ctx.drawImage(prevImg, 0, 0, canvas.width, canvas.height);
         ctx.restore();
-
-        // Puis dessiner la frame actuelle par-dessus
         drawCurrentFrameContent(ctx, canvas, index);
       };
       prevImg.src = frames[index - 1];
@@ -121,14 +116,19 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     if (!isPlayingAnim || frames.length === 0) return;
 
     const interval = setInterval(() => {
-      setPlayFrameIndex((prev) => {
-        const next = (prev + 1) % frames.length;
-        return next;
-      });
+      setPlayFrameIndex((prev) => (prev + 1) % frames.length);
     }, 1000 / animFps);
 
     return () => clearInterval(interval);
   }, [isPlayingAnim, frames.length, animFps]);
+
+  const toggleAnimation = () => {
+    const nextState = !isPlayingAnim;
+    setIsPlayingAnim(nextState);
+    if (onTogglePlayAnim) {
+      onTogglePlayAnim(nextState);
+    }
+  };
 
   const saveHistoryState = () => {
     const canvas = canvasRef.current;
@@ -147,7 +147,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Export sans l'onion skin : on sauvegarde l'image WebP compressée
     const dataUrl = canvas.toDataURL('image/webp', 0.85);
     const updated = [...frames];
     updated[currentFrameIndex] = dataUrl;
@@ -251,7 +250,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     saveCurrentFrameToState();
   };
 
-  // Actions de Frames (Flipanim)
   const addFrame = () => {
     saveCurrentFrameToState();
     const newFrames = [...frames, ''];
@@ -286,11 +284,11 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
   return (
     <div className="flex flex-col bg-cinema-850 rounded-2xl border border-cinema-700/80 overflow-hidden shadow-2xl space-y-0">
-      {/* Barre d'outils supérieure */}
+      {/* Barre d'outils supérieure (Adaptée Mobile) */}
       {!readOnly && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-cinema-800/90 border-b border-cinema-700/60 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 bg-cinema-800/95 border-b border-cinema-700/60 text-xs">
           {/* Pinceau / Gomme */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setIsEraser(false)}
@@ -301,7 +299,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               }`}
             >
               <Paintbrush className="w-3.5 h-3.5" />
-              <span>Dessin</span>
+              <span className="hidden sm:inline">Dessin</span>
             </button>
             <button
               type="button"
@@ -313,19 +311,19 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               }`}
             >
               <Eraser className="w-3.5 h-3.5" />
-              <span>Gomme</span>
+              <span className="hidden sm:inline">Gomme</span>
             </button>
           </div>
 
           {/* Palette de couleurs */}
           {!isEraser && (
-            <div className="flex items-center gap-1.5 bg-cinema-900/80 px-2 py-1 rounded-lg border border-cinema-700/50">
+            <div className="flex items-center gap-1 sm:gap-1.5 bg-cinema-900/80 px-2 py-1 rounded-lg border border-cinema-700/50 overflow-x-auto max-w-[140px] sm:max-w-none">
               {COLOR_PALETTE.map((c) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
-                  className={`w-5 h-5 rounded-full border transition-transform ${
+                  className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border transition-transform shrink-0 ${
                     color === c ? 'scale-125 border-brand-400 ring-2 ring-brand-400/40' : 'border-cinema-600 hover:scale-110'
                   }`}
                   style={{ backgroundColor: c }}
@@ -336,13 +334,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           )}
 
           {/* Épaisseur */}
-          <div className="flex items-center gap-1 bg-cinema-900/80 px-2 py-1 rounded-lg border border-cinema-700/50">
+          <div className="hidden xs:flex items-center gap-1 bg-cinema-900/80 px-1.5 sm:px-2 py-1 rounded-lg border border-cinema-700/50">
             {BRUSH_SIZES.map((size) => (
               <button
                 key={size}
                 type="button"
                 onClick={() => setBrushSize(size)}
-                className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono transition-colors ${
                   brushSize === size ? 'bg-brand-500/30 text-brand-300 font-bold' : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -351,8 +349,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             ))}
           </div>
 
-          {/* Pelure d'oignon (Onion Skin) & Undo / Redo */}
-          <div className="flex items-center gap-2">
+          {/* Pelure d'oignon & Actions */}
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setOnionSkin(!onionSkin)}
@@ -361,13 +359,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   ? 'bg-brand-500/20 text-brand-300 border border-brand-500/40 font-semibold'
                   : 'bg-cinema-700 text-slate-400 hover:text-white'
               }`}
-              title="Afficher la frame précédente en filigrane (pelure d'oignon)"
+              title="Afficher la frame précédente en filigrane"
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Pelure d'oignon</span>
+              <span className="hidden md:inline">Pelure d'oignon</span>
             </button>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={undo}
@@ -389,8 +387,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               <button
                 type="button"
                 onClick={clearCanvas}
-                className="p-1.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300 ml-1"
-                title="Effacer cette frame"
+                className="p-1.5 rounded hover:bg-red-500/20 text-red-400 hover:text-red-300"
+                title="Effacer la frame"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -399,21 +397,22 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         </div>
       )}
 
-      {/* Surface du Canvas ou Prévisualisation Animation */}
-      <div className="relative aspect-video w-full bg-[#12141c] flex items-center justify-center overflow-hidden">
+      {/* Surface du Canvas (Tactile fluide sur Mobile) */}
+      <div className="relative aspect-video w-full bg-[#12141c] flex items-center justify-center overflow-hidden touch-none">
         {isPlayingAnim ? (
           <div className="w-full h-full flex items-center justify-center bg-black relative">
             {frames[playFrameIndex] ? (
               <img
                 src={frames[playFrameIndex]}
                 alt={`Frame ${playFrameIndex + 1}`}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain pointer-events-none select-none"
               />
             ) : (
               <span className="text-xs text-slate-500">Frame vide</span>
             )}
-            <div className="absolute top-3 left-3 bg-red-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow">
-              ● LECTURE FLIPBOOK ({playFrameIndex + 1}/{frames.length})
+            <div className="absolute top-3 left-3 bg-red-600 text-white font-bold text-[10px] px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-lg">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+              <span>FLIPBOOK + MUSIQUE ({playFrameIndex + 1}/{frames.length})</span>
             </div>
           </div>
         ) : (
@@ -440,12 +439,12 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       </div>
 
       {/* Bandeau de contrôle des Frames & Animation Flipanim */}
-      <div className="p-3 bg-cinema-900 border-t border-cinema-700/60 flex flex-wrap items-center justify-between gap-3">
-        {/* Contrôles de lecture Flipbook */}
+      <div className="p-2.5 sm:p-3 bg-cinema-900 border-t border-cinema-700/60 flex flex-wrap items-center justify-between gap-2.5">
+        {/* Contrôles de lecture Flipbook + Musique */}
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setIsPlayingAnim(!isPlayingAnim)}
+            onClick={toggleAnimation}
             className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-transform hover:scale-105 shadow-md ${
               isPlayingAnim
                 ? 'bg-rose-500 text-white shadow-rose-500/20'
@@ -453,12 +452,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             }`}
           >
             {isPlayingAnim ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-            <span>{isPlayingAnim ? 'Arrêter' : 'Aperçu Animation'}</span>
+            <span className="flex items-center gap-1">
+              {isPlayingAnim ? 'Arrêter' : 'Flipbook + Musique'}
+            </span>
           </button>
 
-          {/* Sélecteur de vitesse FPS */}
-          <div className="flex items-center gap-1 bg-cinema-800 px-2 py-1 rounded-lg border border-cinema-700 text-xs">
-            <span className="text-[11px] text-slate-400 mr-1">Vitesse :</span>
+          {/* Vitesse FPS */}
+          <div className="flex items-center gap-1 bg-cinema-800 px-1.5 py-1 rounded-lg border border-cinema-700 text-xs">
             {FPS_OPTIONS.map((f) => (
               <button
                 key={f}
@@ -475,7 +475,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         </div>
 
         {/* Miniatures des Frames et Ajout */}
-        <div className="flex items-center gap-2 overflow-x-auto py-1 max-w-full">
+        <div className="flex items-center gap-1.5 overflow-x-auto py-1 max-w-full">
           {frames.map((f, i) => (
             <div key={i} className="relative group shrink-0">
               <button
@@ -484,8 +484,9 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   saveCurrentFrameToState();
                   setCurrentFrameIndex(i);
                   setIsPlayingAnim(false);
+                  if (onTogglePlayAnim) onTogglePlayAnim(false);
                 }}
-                className={`w-14 h-9 rounded-lg overflow-hidden border-2 transition-all flex items-center justify-center bg-black ${
+                className={`w-12 sm:w-14 h-8 sm:h-9 rounded-lg overflow-hidden border-2 transition-all flex items-center justify-center bg-black ${
                   currentFrameIndex === i && !isPlayingAnim
                     ? 'border-brand-400 ring-2 ring-brand-400/40 scale-105 shadow-md'
                     : 'border-cinema-700 hover:border-slate-500 opacity-70 hover:opacity-100'
@@ -515,14 +516,14 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           ))}
 
           {!readOnly && (
-            <div className="flex items-center gap-1 shrink-0 ml-1">
+            <div className="flex items-center gap-1 shrink-0 ml-0.5">
               <button
                 type="button"
                 onClick={addFrame}
-                className="px-2.5 py-1.5 rounded-lg bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition-colors"
-                title="Ajouter une frame blanche"
+                className="px-2 py-1.5 rounded-lg bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition-colors"
+                title="Ajouter une frame"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3 h-3" />
                 <span>Frame</span>
               </button>
 
@@ -530,7 +531,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 type="button"
                 onClick={duplicateFrame}
                 className="p-1.5 rounded-lg bg-cinema-800 hover:bg-cinema-700 border border-cinema-700 text-slate-300 hover:text-white transition-colors"
-                title="Dupliquer la frame active pour animer le mouvement"
+                title="Dupliquer la frame pour animer le mouvement"
               >
                 <Copy className="w-3.5 h-3.5" />
               </button>
