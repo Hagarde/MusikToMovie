@@ -1,5 +1,5 @@
-import React from 'react';
-import { Play, Film, Plus, Music, Sparkles, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, Film, Plus, Music, Sparkles, Clock, Trash2, ShieldAlert, Check, X, Settings2 } from 'lucide-react';
 import { Track } from '../../lib/types';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
 
@@ -9,6 +9,7 @@ interface TrackListProps {
   onSelectTrack: (track: Track) => void;
   onCreateProposal: (track: Track) => void;
   onOpenUploadModal: () => void;
+  onDeleteTrack?: (trackId: string) => void;
 }
 
 export const TrackList: React.FC<TrackListProps> = ({
@@ -17,15 +18,27 @@ export const TrackList: React.FC<TrackListProps> = ({
   onSelectTrack,
   onCreateProposal,
   onOpenUploadModal,
+  onDeleteTrack,
 }) => {
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
+  const [trackToDelete, setTrackToDelete] = useState<Track | null>(null);
+
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const confirmDelete = () => {
+    if (trackToDelete && onDeleteTrack) {
+      onDeleteTrack(trackToDelete.id);
+      setTrackToDelete(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* En-tête de la Bibliothèque */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -37,16 +50,34 @@ export const TrackList: React.FC<TrackListProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenUploadModal}
-          className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-cinema-900 font-semibold text-xs transition-transform hover:scale-105 shadow-md shadow-brand-500/20 flex items-center gap-1.5"
-        >
-          <Plus className="w-4 h-4" />
-          Ajouter un lien YouTube
-        </button>
+        <div className="flex items-center gap-2.5">
+          {/* Mode Admin / Gestion */}
+          <button
+            type="button"
+            onClick={() => setIsAdminMode(!isAdminMode)}
+            className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              isAdminMode
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
+                : 'bg-cinema-850 hover:bg-cinema-800 text-slate-400 hover:text-white border border-cinema-700'
+            }`}
+            title="Activer le mode gestion pour supprimer des musiques"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            <span>{isAdminMode ? 'Mode Gestion Actif' : 'Gérer / Supprimer'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenUploadModal}
+            className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-cinema-950 font-bold text-xs transition-transform hover:scale-105 shadow-md shadow-brand-500/20 flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Ajouter un morceau</span>
+          </button>
+        </div>
       </div>
 
+      {/* Grille des morceaux */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {tracks.map((track) => {
           const isSelected = selectedTrack?.id === track.id;
@@ -55,12 +86,26 @@ export const TrackList: React.FC<TrackListProps> = ({
           return (
             <div
               key={track.id}
-              className={`group bg-cinema-850 rounded-2xl border overflow-hidden transition-all flex flex-col justify-between hover:shadow-2xl ${
+              className={`group bg-cinema-850 rounded-2xl border overflow-hidden transition-all flex flex-col justify-between hover:shadow-2xl relative ${
                 isSelected
                   ? 'border-brand-500/80 bg-cinema-800 ring-1 ring-brand-500/40 shadow-brand-500/10'
                   : 'border-cinema-700/60 hover:border-cinema-600'
               }`}
             >
+              {/* Bouton de Suppression en Mode Gestion ou au survol */}
+              {(isAdminMode || onDeleteTrack) && (
+                <button
+                  type="button"
+                  onClick={() => setTrackToDelete(track)}
+                  className={`absolute top-3 right-3 z-20 p-2 rounded-xl bg-black/80 hover:bg-rose-600 text-slate-300 hover:text-white border border-white/10 backdrop-blur-md transition-all shadow-lg ${
+                    isAdminMode ? 'opacity-100 ring-2 ring-rose-500/50 scale-105' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title="Supprimer ce morceau de la bibliothèque"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+
               {/* Miniature YouTube ou Illustration Audio */}
               <div className="relative aspect-video bg-cinema-900 flex items-center justify-center overflow-hidden border-b border-cinema-700/60">
                 {track.thumbnail_url ? (
@@ -129,7 +174,7 @@ export const TrackList: React.FC<TrackListProps> = ({
                   <button
                     type="button"
                     onClick={() => onCreateProposal(track)}
-                    className="px-3.5 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-cinema-900 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm hover:scale-105"
+                    className="px-3.5 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-cinema-950 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm hover:scale-105"
                   >
                     <Film className="w-3.5 h-3.5" />
                     <span>Créer Scénario</span>
@@ -140,6 +185,55 @@ export const TrackList: React.FC<TrackListProps> = ({
           );
         })}
       </div>
+
+      {/* Modale de Confirmation de Suppression */}
+      {trackToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-cinema-850 rounded-3xl border border-cinema-700 p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 flex items-center justify-center border border-rose-500/30">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base">Supprimer cette musique ?</h3>
+                <p className="text-xs text-slate-400">Cette action est irréversible.</p>
+              </div>
+            </div>
+
+            <div className="bg-cinema-900/90 rounded-2xl p-4 border border-cinema-700/60 flex items-center gap-3">
+              {trackToDelete.thumbnail_url && (
+                <img
+                  src={trackToDelete.thumbnail_url}
+                  alt={trackToDelete.title}
+                  className="w-16 aspect-video rounded-lg object-cover border border-cinema-700 shrink-0"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <h4 className="text-xs font-bold text-white truncate">{trackToDelete.title}</h4>
+                <p className="text-[11px] text-slate-400 truncate">{trackToDelete.artist}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setTrackToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-300 hover:bg-cinema-700 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-transform hover:scale-105 shadow-md flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Confirmer la suppression</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Track, Proposal } from './lib/types';
-import { getTracks, getProposals } from './lib/supabase';
+import { getTracks, getProposals, deleteTrack } from './lib/supabase';
 import { Navbar } from './components/Navbar';
 import { TrackList } from './components/tracks/TrackList';
 import { TrackUploadModal } from './components/tracks/TrackUploadModal';
@@ -9,7 +9,7 @@ import { ProposalViewer } from './components/storyboard/ProposalViewer';
 import { ProposalsGallery } from './components/storyboard/ProposalsGallery';
 import { AudioPlayer } from './components/audio/AudioPlayer';
 
-export function App() {
+export default function App() {
   const [currentView, setCurrentView] = useState<'tracks' | 'proposals' | 'create' | 'view'>('tracks');
   const [tracks, setTracks] = useState<Track[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -66,6 +66,14 @@ export function App() {
     setCurrentView('create'); // Ouverture immédiate du studio de storyboard pour cette musique
   };
 
+  const handleDeleteTrack = async (trackId: string) => {
+    await deleteTrack(trackId);
+    setTracks((prev) => prev.filter((t) => t.id !== trackId));
+    if (selectedTrack?.id === trackId) {
+      setSelectedTrack(null);
+    }
+  };
+
   const handleVoteUpdated = (proposalId: string, newCount: number) => {
     setProposals((prev) =>
       prev.map((p) => (p.id === proposalId ? { ...p, likes_count: newCount } : p))
@@ -96,6 +104,7 @@ export function App() {
             onSelectTrack={(t) => setSelectedTrack(t)}
             onCreateProposal={handleCreateProposal}
             onOpenUploadModal={() => setIsUploadModalOpen(true)}
+            onDeleteTrack={handleDeleteTrack}
           />
         )}
 
@@ -117,13 +126,12 @@ export function App() {
           />
         )}
 
-        {/* Vue 4 : Galerie des Scénarios de la communauté */}
+        {/* Vue 4 : Galerie des Scénarios & Storyboards */}
         {currentView === 'proposals' && (
           <ProposalsGallery
             proposals={proposals}
             tracks={tracks}
             onSelectProposal={handleSelectProposal}
-            onVoteUpdated={handleVoteUpdated}
             onCreateNew={() => {
               if (tracks.length > 0) {
                 handleCreateProposal(tracks[0]);
@@ -131,14 +139,12 @@ export function App() {
                 setIsUploadModalOpen(true);
               }
             }}
+            onVoteUpdated={handleVoteUpdated}
           />
         )}
       </main>
 
-      <footer className="border-t border-cinema-700/50 py-6 text-center text-xs text-slate-500">
-        <p>MusikToMovie — Conçu avec la méthodologie Spec-Driven Development & Philosophie Ponytail</p>
-      </footer>
-
+      {/* Modale d'ajout de morceau YouTube */}
       <TrackUploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
@@ -147,5 +153,3 @@ export function App() {
     </div>
   );
 }
-
-export default App;

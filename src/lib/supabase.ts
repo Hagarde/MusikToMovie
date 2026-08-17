@@ -104,6 +104,30 @@ export async function createTrack(track: Omit<Track, 'id' | 'created_at'>): Prom
   return newTrack;
 }
 
+// Supprimer un morceau
+export async function deleteTrack(trackId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('tracks').delete().eq('id', trackId);
+    if (error) {
+      console.warn('Erreur suppression Supabase:', error);
+    }
+  } catch (e) {
+    console.warn('Erreur suppression Supabase:', e);
+  }
+
+  // Suppression du stockage local
+  try {
+    const local = localStorage.getItem(LOCAL_STORAGE_TRACKS_KEY);
+    if (local) {
+      const parsed: Track[] = JSON.parse(local);
+      const filtered = parsed.filter(t => t.id !== trackId);
+      localStorage.setItem(LOCAL_STORAGE_TRACKS_KEY, JSON.stringify(filtered));
+    }
+  } catch (e) {}
+
+  return true;
+}
+
 // Récupérer les propositions avec support de tri
 export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' = 'likes'): Promise<Proposal[]> {
   try {
