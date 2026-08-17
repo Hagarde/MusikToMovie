@@ -101,7 +101,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             }
           },
           onStateChange: (event: any) => {
-            // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0
             if (event.data === 1) setIsPlaying(true);
             if (event.data === 2 || event.data === 0) setIsPlaying(false);
           }
@@ -219,19 +218,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   if (!track) {
     return (
-      <div className="flex items-center justify-center p-4 bg-cinema-850 rounded-xl border border-cinema-700/50 text-slate-400 text-sm">
-        <Music className="w-4 h-4 mr-2 text-brand-400 animate-pulse" />
-        Sélectionnez une musique pour commencer
+      <div className="flex items-center justify-center p-4 bg-white rounded-2xl border border-stone-200 text-stone-500 text-xs shadow-gallery">
+        <Music className="w-4 h-4 mr-2 text-stone-700" />
+        Sélectionnez une bande originale pour commencer l'écoute
       </div>
     );
   }
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
   const rangeStartPercent = highlightRange && duration > 0 ? (highlightRange.start / duration) * 100 : 0;
   const rangeWidthPercent = highlightRange && duration > 0 ? ((highlightRange.end - highlightRange.start) / duration) * 100 : 0;
 
   return (
-    <div className="bg-gradient-to-r from-cinema-850 via-cinema-800 to-cinema-850 rounded-2xl border border-cinema-700/80 p-4 shadow-xl text-slate-200">
+    <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-gallery text-stone-800 transition-colors">
       {/* Lecteur HTML5 Standard si ce n'est pas YouTube */}
       {!isYouTube && (
         <audio
@@ -258,7 +256,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
       {/* Conteneur YouTube IFrame (affiché ou masqué) */}
       {isYouTube && (
-        <div className={`overflow-hidden rounded-xl border border-cinema-700/60 mb-4 transition-all ${
+        <div className={`overflow-hidden rounded-xl border border-stone-200 mb-4 transition-all ${
           showVideo ? 'aspect-video w-full max-h-64 mx-auto' : 'hidden'
         }`}>
           <div ref={ytContainerRef} className="w-full h-full" />
@@ -269,28 +267,28 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         {/* Infos du Morceau */}
         <div className="flex items-center gap-3 w-full sm:w-auto">
           {track.thumbnail_url ? (
-            <div className="relative w-12 h-12 rounded-xl overflow-hidden border border-cinema-700 shrink-0 shadow-inner group">
+            <div className="relative w-12 h-12 rounded-xl overflow-hidden border border-stone-200 shrink-0 shadow-sm group">
               <img
                 src={track.thumbnail_url}
                 alt={track.title}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
                 <YouTubeIcon className="w-4 h-4 text-red-500 fill-current" />
               </div>
             </div>
           ) : (
-            <div className="w-12 h-12 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-400 shrink-0 shadow-inner">
+            <div className="w-12 h-12 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center text-stone-700 shrink-0">
               <Music className="w-6 h-6" />
             </div>
           )}
 
           <div className="min-w-0">
-            <h4 className="text-sm font-semibold text-white truncate">{track.title}</h4>
-            <p className="text-xs text-slate-400 truncate flex items-center gap-1.5">
+            <h4 className="text-sm font-bold text-stone-900 truncate">{track.title}</h4>
+            <p className="text-xs text-stone-500 truncate flex items-center gap-1.5">
               <span>{track.artist}</span>
               {isYouTube && (
-                <span className="inline-flex items-center gap-0.5 text-[10px] text-red-400 font-bold bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                   <YouTubeIcon className="w-3 h-3" /> YouTube
                 </span>
               )}
@@ -303,7 +301,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           <button
             type="button"
             onClick={() => jumpToTime(track.default_start_time || 0)}
-            className="p-2 rounded-full hover:bg-cinema-700 text-slate-400 hover:text-white transition-colors"
+            className="p-2 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-900 transition-colors"
             title="Revenir au point de départ du morceau"
           >
             <RotateCcw className="w-4 h-4" />
@@ -312,7 +310,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           <button
             type="button"
             onClick={togglePlay}
-            className="w-11 h-11 rounded-full bg-brand-500 hover:bg-brand-400 text-cinema-900 font-bold flex items-center justify-center transition-transform hover:scale-105 shadow-md shadow-brand-500/20"
+            className="w-11 h-11 rounded-full bg-stone-900 hover:bg-stone-800 text-white font-bold flex items-center justify-center transition-transform hover:scale-105 shadow-md"
             title={isPlaying ? 'Pause' : 'Lecture'}
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
@@ -324,8 +322,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
               onClick={() => setIsLoopingRange(!isLoopingRange)}
               className={`p-2 rounded-full transition-colors ${
                 isLoopingRange
-                  ? 'bg-brand-500/20 text-brand-400 border border-brand-500/40'
-                  : 'hover:bg-cinema-700 text-slate-400 hover:text-white'
+                  ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                  : 'hover:bg-stone-100 text-stone-400 hover:text-stone-900'
               }`}
               title="Boucler sur l'intervalle de la scène"
             >
@@ -339,8 +337,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
               onClick={() => setShowVideo(!showVideo)}
               className={`p-2 rounded-full transition-colors ${
                 showVideo
-                  ? 'bg-red-500/20 text-red-400 border border-red-500/40'
-                  : 'hover:bg-cinema-700 text-slate-400 hover:text-white'
+                  ? 'bg-red-50 text-red-600 border border-red-200'
+                  : 'hover:bg-stone-100 text-stone-400 hover:text-stone-900'
               }`}
               title={showVideo ? 'Masquer la vidéo' : 'Afficher la vidéo YouTube'}
             >
@@ -350,16 +348,16 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         </div>
 
         {/* Volume & Timecode */}
-        <div className="flex items-center gap-3 text-xs font-mono text-slate-300 w-full sm:w-auto justify-end">
-          <span className="text-brand-300 font-semibold">{formatTime(currentTime)}</span>
-          <span className="text-slate-600">/</span>
-          <span className="text-slate-400">{formatTime(duration)}</span>
+        <div className="flex items-center gap-3 text-xs font-mono text-stone-600 w-full sm:w-auto justify-end">
+          <span className="text-stone-900 font-bold">{formatTime(currentTime)}</span>
+          <span className="text-stone-300">/</span>
+          <span className="text-stone-400">{formatTime(duration)}</span>
 
           <div className="flex items-center gap-1.5 ml-2">
             <button
               type="button"
               onClick={() => setIsMuted(!isMuted)}
-              className="p-1 text-slate-400 hover:text-white"
+              className="p-1 text-stone-400 hover:text-stone-900"
             >
               {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
@@ -373,7 +371,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                 setVolume(parseFloat(e.target.value));
                 setIsMuted(false);
               }}
-              className="w-16 h-1.5 bg-cinema-700 rounded-lg appearance-none cursor-pointer accent-brand-500"
+              className="w-16 h-1.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-stone-900"
             />
           </div>
         </div>
@@ -383,7 +381,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       <div className="relative mt-3 pt-2">
         {highlightRange && duration > 0 && rangeWidthPercent > 0 && (
           <div
-            className="absolute top-2 h-2.5 bg-brand-500/30 border-x border-brand-400/80 rounded z-0 pointer-events-none"
+            className="absolute top-2 h-2.5 bg-rose-100 border-x-2 border-rose-500 rounded z-0 pointer-events-none"
             style={{
               left: `${Math.max(0, rangeStartPercent)}%`,
               width: `${Math.min(100 - rangeStartPercent, rangeWidthPercent)}%`
@@ -400,7 +398,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           onChange={handleSeek}
           onMouseUp={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
           onTouchEnd={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
-          className="relative z-10 w-full h-2 bg-cinema-700/80 rounded-lg appearance-none cursor-pointer accent-brand-500 hover:accent-brand-400"
+          className="relative z-10 w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-stone-900 hover:accent-stone-700"
         />
       </div>
     </div>

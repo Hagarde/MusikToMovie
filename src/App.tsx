@@ -8,6 +8,7 @@ import { ProposalCreator } from './components/storyboard/ProposalCreator';
 import { ProposalViewer } from './components/storyboard/ProposalViewer';
 import { ProposalsGallery } from './components/storyboard/ProposalsGallery';
 import { AudioPlayer } from './components/audio/AudioPlayer';
+import { CineClippy } from './components/clippy/CineClippy';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'tracks' | 'proposals' | 'create' | 'view'>('tracks');
@@ -78,7 +79,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0b0c10] text-slate-100">
+    <div className="min-h-screen flex flex-col bg-gallery-canvas text-stone-900 transition-colors">
       <Navbar
         currentView={currentView}
         onNavigate={(view) => setCurrentView(view)}
@@ -147,6 +148,9 @@ export default function App() {
         onClose={() => setIsUploadModalOpen(false)}
         onTrackCreated={handleTrackCreated}
       />
+
+      {/* 🎬 Mascotte Ciné-Clippy (Anecdotes & Hot Takes) */}
+      <CineClippy />
     </div>
   );
 }
