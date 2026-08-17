@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, MessageSquare, X, ChevronRight, RefreshCw, Film } from 'lucide-react';
+import { Sparkles, X, RefreshCw, Clapperboard } from 'lucide-react';
 
 const CINE_ANECDOTES = [
   {
     title: "Le Saviez-vous ? (Évidemment)",
-    text: "Dans Les Deux Tours, quand Aragorn donne un coup de pied rageur dans le casque d'Uruk-hai, Viggo Mortensen s'est VRAIMENT brisé deux orteils. Le cri de douleur dans le film est 100% authentique. Tout vrai cinéphile DOIT le répéter à chaque visionnage.",
+    text: "Dans Les Deux Tours, quand Aragorn donne un coup de pied dans le casque d'Uruk-hai, Viggo Mortensen s'est VRAIMENT brisé deux orteils. Le cri de douleur dans le film est 100% authentique. Tout vrai cinéphile DOIT le répéter à chaque visionnage.",
     category: "Anecdote Sacrée",
   },
   {
@@ -44,7 +44,7 @@ const CINE_ANECDOTES = [
   },
   {
     title: "Le Saviez-vous ? #4",
-    text: "Dans Le Parrain, le chat sur les genoux de Marlon Brando n'était pas dans le scénario : c'était un chat errant des studios Paramount qu'il a pris sur ses genoux. Son ronronnement a presque ruiné la prise de son.",
+    text: "Dans Le Parrain, le chat sur les genoux de Marlon Brando n'était pas dans le scénario : c'était un chat errant des studios Paramount qu'il a pris spontanément. Son ronronnement a presque ruiné la prise de son.",
     category: "Improvisation Féline",
   }
 ];
@@ -53,28 +53,35 @@ export const CineClippy: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isOpen, setIsOpen] = useState(true);
   const [isBlinking, setIsBlinking] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  const [isClapping, setIsClapping] = useState(false);
 
   // Changement automatique de citation toutes les 16 secondes si la bulle est ouverte
   useEffect(() => {
     if (!isOpen) return;
     const timer = setInterval(() => {
+      triggerClap();
       setCurrentIndex((prev) => (prev + 1) % CINE_ANECDOTES.length);
     }, 16000);
     return () => clearInterval(timer);
   }, [isOpen]);
 
-  // Clignement d'yeux aléatoire de Clippy
+  // Clignement d'yeux de la mascotte
   useEffect(() => {
     const blinkInterval = setInterval(() => {
       setIsBlinking(true);
-      setTimeout(() => setIsBlinking(false), 200);
-    }, 3500);
+      setTimeout(() => setIsBlinking(false), 220);
+    }, 3200);
     return () => clearInterval(blinkInterval);
   }, []);
 
+  const triggerClap = () => {
+    setIsClapping(true);
+    setTimeout(() => setIsClapping(false), 300);
+  };
+
   const nextAnecdote = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    triggerClap();
     setCurrentIndex((prev) => (prev + 1) % CINE_ANECDOTES.length);
   };
 
@@ -82,7 +89,7 @@ export const CineClippy: React.FC = () => {
 
   return (
     <aside 
-      aria-label="Ciné-Clippy, anecdotes et avis de cinéma"
+      aria-label="Clap-Clippy, anecdotes et avis de cinéma"
       className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end pointer-events-none select-none max-w-[340px] sm:max-w-[380px]"
     >
       {/* Bulle de dialogue interactive */}
@@ -101,7 +108,7 @@ export const CineClippy: React.FC = () => {
               type="button"
               onClick={() => setIsOpen(false)}
               className="text-stone-400 hover:text-stone-900 p-0.5 rounded hover:bg-stone-100 transition-colors"
-              title="Réduire Clippy"
+              title="Réduire Clap-Clippy"
             >
               <X className="w-4 h-4" />
             </button>
@@ -129,94 +136,130 @@ export const CineClippy: React.FC = () => {
               className="px-2.5 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-bold text-[10px] flex items-center gap-1 transition-transform hover:scale-105"
             >
               <RefreshCw className="w-3 h-3" />
-              <span>Autre pépite</span>
+              <span>Autre pépite 🎬</span>
             </button>
           </div>
 
-          {/* Pointe de bulle vers Clippy */}
+          {/* Pointe de bulle vers Clap-Clippy */}
           <div className="absolute -bottom-2 right-8 w-4 h-4 bg-white border-r-2 border-b-2 border-stone-900 transform rotate-45" />
         </div>
       )}
 
-      {/* Mascotte Clippy Réalisateur / Cinéphile */}
+      {/* Mascotte "Clap-Clippy" (Le Clap de Tournage Expressif façon Clippy) */}
       <button
         type="button"
         onClick={() => {
           if (!isOpen) {
             setIsOpen(true);
+            triggerClap();
           } else {
             nextAnecdote();
           }
         }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         className="pointer-events-auto group relative flex items-center justify-center p-2 rounded-2xl bg-white border-2 border-stone-900 shadow-arty hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer"
-        title={isOpen ? "Clique pour une autre anecdote !" : "Ouvrir Ciné-Clippy"}
+        title={isOpen ? "Clique pour clapper une autre anecdote !" : "Ouvrir Clap-Clippy"}
       >
-        <div className="relative w-11 h-11 flex items-center justify-center">
-          {/* Dessin SVG de Clippy en Lunettes 3D Rétro / Réalisateur */}
+        <div className="relative w-12 h-12 flex items-center justify-center">
+          {/* Dessin SVG de Clap-Clippy */}
           <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow">
-            {/* Corps du Trombone en Métal */}
-            <path
-              d="M 50 15 
-                 C 30 15, 20 28, 20 48 
-                 C 20 72, 35 88, 55 88 
-                 C 75 88, 85 75, 85 55 
-                 C 85 35, 75 25, 60 25 
-                 C 45 25, 35 35, 35 52 
-                 C 35 68, 42 76, 52 76 
-                 C 62 76, 70 68, 70 55
-                 L 70 42"
-              fill="none"
+            <defs>
+              {/* Motif rayé cinéma pour le clap (noir et blanc biseauté) */}
+              <pattern id="clapperStripes" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="8" height="16" fill="#1c1917" />
+                <rect x="8" width="8" height="16" fill="#ffffff" />
+              </pattern>
+            </defs>
+
+            {/* 1. Corps de l'ardoise (Le rectangle du bas) */}
+            <rect
+              x="14"
+              y="38"
+              width="72"
+              height="52"
+              rx="8"
+              fill="#1c1917"
               stroke="#1c1917"
-              strokeWidth="7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              strokeWidth="3"
             />
 
-            {/* Berêt de réalisateur noir posé sur la tête */}
-            <ellipse cx="48" cy="18" rx="20" ry="6" fill="#1c1917" />
-            <circle cx="48" cy="13" r="3" fill="#e11d48" />
+            {/* Lignes de repères cinéma sur l'ardoise */}
+            <line x1="20" y1="52" x2="80" y2="52" stroke="#44403c" strokeWidth="1.5" strokeDasharray="3 3" />
+            <text x="20" y="48" fill="#a8a29e" fontSize="7" fontFamily="monospace" fontWeight="bold">SCENE 1</text>
+            <text x="56" y="48" fill="#a8a29e" fontSize="7" fontFamily="monospace" fontWeight="bold">TAKE 24</text>
 
-            {/* Yeux expressifs avec lunettes 3D rétro (Verre Cyan & Verre Rouge) */}
+            {/* 2. Barre supérieure fixe (base du clap) */}
+            <rect
+              x="14"
+              y="28"
+              width="72"
+              height="11"
+              rx="2"
+              fill="url(#clapperStripes)"
+              stroke="#1c1917"
+              strokeWidth="2.5"
+            />
+
+            {/* 3. Bras articulé du Clap (S'ouvre et claque !) */}
+            <g
+              style={{
+                transformOrigin: '16px 28px',
+                transform: isClapping ? 'rotate(-24deg)' : 'rotate(-6deg)',
+                transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+            >
+              <rect
+                x="14"
+                y="17"
+                width="72"
+                height="11"
+                rx="3"
+                fill="url(#clapperStripes)"
+                stroke="#1c1917"
+                strokeWidth="2.5"
+              />
+              {/* Vis / Charnière de fixation */}
+              <circle cx="19" cy="22" r="3" fill="#e11d48" stroke="#1c1917" strokeWidth="1.5" />
+            </g>
+
+            {/* 4. Les Yeux expressifs façon Clippy */}
             {isBlinking ? (
-              // Yeux fermés / clin d'œil
-              <g stroke="#1c1917" strokeWidth="3" strokeLinecap="round">
-                <line x1="38" y1="36" x2="48" y2="36" />
-                <line x1="56" y1="36" x2="66" y2="36" />
+              // Yeux fermés / clignement
+              <g stroke="#ffffff" strokeWidth="3" strokeLinecap="round">
+                <line x1="32" y1="68" x2="44" y2="68" />
+                <line x1="56" y1="68" x2="68" y2="68" />
               </g>
             ) : (
-              // Lunettes 3D Stéréoscopiques
+              // Grands yeux expressifs et sympathiques
               <g>
-                {/* Monture */}
-                <rect x="34" y="30" width="36" height="15" rx="3" fill="#ffffff" stroke="#1c1917" strokeWidth="2.5" />
-                <line x1="52" y1="30" x2="52" y2="45" stroke="#1c1917" strokeWidth="2" />
-                
-                {/* Verre Gauche (Rouge/Magenta) */}
-                <rect x="36" y="32" width="14" height="11" rx="2" fill="#ef4444" fillOpacity="0.85" />
-                <circle cx="43" cy="37" r="2.5" fill="#ffffff" />
-                <circle cx="44" cy="37" r="1.5" fill="#000000" />
+                {/* Oeil Gauche */}
+                <ellipse cx="38" cy="67" rx="9" ry="11" fill="#ffffff" stroke="#1c1917" strokeWidth="2" />
+                <circle cx="40" cy="66" r="4.5" fill="#1c1917" />
+                <circle cx="42" cy="64" r="1.8" fill="#ffffff" />
 
-                {/* Verre Droit (Cyan/Bleu) */}
-                <rect x="54" y="32" width="14" height="11" rx="2" fill="#06b6d4" fillOpacity="0.85" />
-                <circle cx="61" cy="37" r="2.5" fill="#ffffff" />
-                <circle cx="62" cy="37" r="1.5" fill="#000000" />
+                {/* Oeil Droit */}
+                <ellipse cx="62" cy="67" rx="9" ry="11" fill="#ffffff" stroke="#1c1917" strokeWidth="2" />
+                <circle cx="64" cy="66" r="4.5" fill="#1c1917" />
+                <circle cx="66" cy="64" r="1.8" fill="#ffffff" />
+
+                {/* Sourcils façon Clippy (un sourcil levé curieux) */}
+                <path d="M 31 54 Q 38 49 45 53" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
+                <path d="M 55 53 Q 62 48 69 52" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
               </g>
             )}
 
-            {/* Bouche souriante / narquoise */}
+            {/* 5. Bouche souriante */}
             <path
-              d="M 44 54 Q 52 60 60 54"
+              d="M 44 80 Q 50 85 56 80"
               fill="none"
-              stroke="#1c1917"
+              stroke="#ffffff"
               strokeWidth="2.5"
               strokeLinecap="round"
             />
           </svg>
         </div>
 
-        {/* Badge indicateur de présence */}
-        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center text-[8px] text-white font-bold">
+        {/* Petit badge caméra en coin */}
+        <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-rose-600 border-2 border-white flex items-center justify-center text-[8px] text-white font-bold shadow">
           🎬
         </span>
       </button>
