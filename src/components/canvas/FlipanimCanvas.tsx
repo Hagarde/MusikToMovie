@@ -1,6 +1,14 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   Paintbrush, 
+  Highlighter, 
+  PaintBucket, 
+  Square, 
+  Circle as CircleIcon, 
+  Minus, 
+  ArrowUpRight, 
+  Pipette, 
+  Grid3X3, 
   Eraser, 
   RotateCcw, 
   RotateCw, 
@@ -24,15 +32,28 @@ interface FlipanimCanvasProps {
   readOnly?: boolean;
 }
 
+type CanvasTool = 
+  | 'pen' 
+  | 'marker' 
+  | 'fill' 
+  | 'rect' 
+  | 'circle' 
+  | 'line' 
+  | 'arrow' 
+  | 'eraser' 
+  | 'pipette';
+
 const COLOR_PALETTE = [
-  '#ffffff', // Blanc
+  '#ffffff', // Blanc pur
   '#cbd5e1', // Gris clair
   '#64748b', // Gris moyen
-  '#0f172a', // Noir
+  '#0f172a', // Noir d'encre
   '#e11d48', // Rouge cinéma
   '#f97316', // Orange
+  '#fbbf24', // Jaune doré
   '#3b82f6', // Bleu
   '#22c55e', // Vert
+  '#a855f7', // Violet
 ];
 
 const BRUSH_SIZES = [2, 4, 8, 16];
@@ -53,12 +74,18 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   );
   const [currentFrameIndex, setCurrentFrameIndex] = useState<number>(0);
   
-  // Outils de dessin
-  const [isDrawing, setIsDrawing] = useState(false);
+  // Outils et modes
+  const [activeTool, setActiveTool] = useState<CanvasTool>('pen');
   const [color, setColor] = useState<string>('#ffffff');
   const [brushSize, setBrushSize] = useState<number>(3);
-  const [isEraser, setIsEraser] = useState<boolean>(false);
   const [onionSkin, setOnionSkin] = useState<boolean>(true);
+  const [showGrid, setShowGrid] = useState<boolean>(false);
+  const [showShapeMenu, setShowShapeMenu] = useState<boolean>(false);
+
+  // État de dessin
+  const [isDrawing, setIsDrawing] = useState<boolean>(false);
+  const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
+  const [previewSnapshot, setPreviewSnapshot] = useState<ImageData | null>(null);
 
   // Drag & Drop des frames
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -72,6 +99,35 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   // Historique Undo/Redo pour la frame active
   const [history, setHistory] = useState<ImageData[]>([]);
   const [historyStep, setHistoryStep] = useState<number>(-1);
+
+  // Sauvegarder l'état dans l'historique
+  const saveHistoryState = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    setHistory((prev) => {
+      const newHist = prev.slice(0, historyStep + 1);
+      newHist.push(imageData);
+      return newHist;
+    });
+    setHistoryStep((prev) => prev + 1);
+  }, [historyStep]);
+
+  // Sauvegarder la frame active dans la liste
+  const saveCurrentFrameToState = useCallback((frameIdx: number = currentFrameIndex) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return frames;
+
+    const dataUrl = canvas.toDataURL('image/webp', 0.85);
+    const updated = [...frames];
+    updated[frameIdx] = dataUrl;
+    setFrames(updated);
+    if (onChange) onChange(updated);
+    return updated;
+  }, [currentFrameIndex, frames, onChange]);
 
   // Charger ou réinitialiser le canvas sur une frame précise
   const loadFrame = useCallback((index: number, framesList: string[] = frames) => {
@@ -126,7 +182,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     }
   }, [currentFrameIndex, onionSkin]);
 
-  // Boucle de lecture d'animation
+  // Boucle de lecture d'animation Flipbook
   useEffect(() => {
     if (!isPlayingAnim || frames.length === 0) return;
 
@@ -145,31 +201,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     }
   }, [isPlayingAnim, onTogglePlayAnim]);
 
-  const saveHistoryState = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const newHistory = history.slice(0, historyStep + 1);
-    newHistory.push(imageData);
-    setHistory(newHistory);
-    setHistoryStep(newHistory.length - 1);
-  };
-
-  const saveCurrentFrameToState = (frameIdx: number = currentFrameIndex) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return frames;
-
-    const dataUrl = canvas.toDataURL('image/webp', 0.80);
-    const updated = [...frames];
-    updated[frameIdx] = dataUrl;
-    setFrames(updated);
-    if (onChange) onChange(updated);
-    return updated;
-  };
-
   const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -179,16 +210,95 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
     if ('touches' in e) {
       return {
-        x: (e.touches[0].clientX - rect.left) * scaleX,
-        y: (e.touches[0].clientY - rect.top) * scaleY
+        x: Math.round((e.touches[0].clientX - rect.left) * scaleX),
+        y: Math.round((e.touches[0].clientY - rect.top) * scaleY)
       };
     }
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY
+      x: Math.round((e.clientX - rect.left) * scaleX),
+      y: Math.round((e.clientY - rect.top) * scaleY)
     };
   };
 
+  // 🪣 Algorithme du Pot de Peinture (Flood Fill)
+  const applyFloodFill = (startX: number, startY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    const a = 255;
+
+    const startPos = (startY * width + startX) * 4;
+    const startR = data[startPos];
+    const startG = data[startPos + 1];
+    const startB = data[startPos + 2];
+    const startA = data[startPos + 3];
+
+    if (Math.abs(startR - r) < 5 && Math.abs(startG - g) < 5 && Math.abs(startB - b) < 5) {
+      return;
+    }
+
+    const colorMatch = (pos: number) => {
+      const dr = Math.abs(data[pos] - startR);
+      const dg = Math.abs(data[pos + 1] - startG);
+      const db = Math.abs(data[pos + 2] - startB);
+      const da = Math.abs(data[pos + 3] - startA);
+      return dr + dg + db + da < 45;
+    };
+
+    const queue: number[] = [startX + startY * width];
+    const visited = new Uint8Array(width * height);
+
+    while (queue.length > 0) {
+      const idx = queue.pop()!;
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+
+      const pos = idx * 4;
+      if (!colorMatch(pos)) continue;
+
+      data[pos] = r;
+      data[pos + 1] = g;
+      data[pos + 2] = b;
+      data[pos + 3] = a;
+
+      const cx = idx % width;
+      const cy = Math.floor(idx / width);
+
+      if (cx > 0 && !visited[idx - 1]) queue.push(idx - 1);
+      if (cx < width - 1 && !visited[idx + 1]) queue.push(idx + 1);
+      if (cy > 0 && !visited[idx - width]) queue.push(idx - width);
+      if (cy < height - 1 && !visited[idx + width]) queue.push(idx + width);
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    saveHistoryState();
+    saveCurrentFrameToState();
+  };
+
+  // 💧 Pipette (EyeDropper)
+  const applyPipette = (x: number, y: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const pixel = ctx.getImageData(x, y, 1, 1).data;
+    const hex = `#${((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1)}`;
+    setColor(hex);
+    setActiveTool('pen');
+  };
+
+  // Début d'action de dessin
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (readOnly || isPlayingAnim) return;
     const canvas = canvasRef.current;
@@ -196,17 +306,52 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    setIsDrawing(true);
-    const { x, y } = getCoordinates(e);
+    const coords = getCoordinates(e);
 
+    // 🪣 Pot de peinture
+    if (activeTool === 'fill') {
+      applyFloodFill(coords.x, coords.y);
+      return;
+    }
+
+    // 💧 Pipette
+    if (activeTool === 'pipette') {
+      applyPipette(coords.x, coords.y);
+      return;
+    }
+
+    setIsDrawing(true);
+    setStartPoint(coords);
+
+    // Snapshot pour la prévisualisation des formes géométriques
+    if (['rect', 'circle', 'line', 'arrow'].includes(activeTool)) {
+      setPreviewSnapshot(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      return;
+    }
+
+    // Outils continus (crayon, marqueur, gomme)
     ctx.beginPath();
-    ctx.moveTo(x, y);
+    ctx.moveTo(coords.x, coords.y);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = isEraser ? '#1c1917' : color;
-    ctx.lineWidth = isEraser ? brushSize * 3 : brushSize;
+
+    if (activeTool === 'eraser') {
+      ctx.strokeStyle = '#1c1917';
+      ctx.lineWidth = brushSize * 3;
+      ctx.globalAlpha = 1.0;
+    } else if (activeTool === 'marker') {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = brushSize * 2.5;
+      ctx.globalAlpha = 0.35; // Surlignage / Ombrage cinématographique
+    } else {
+      // Pinceau standard
+      ctx.strokeStyle = color;
+      ctx.lineWidth = brushSize;
+      ctx.globalAlpha = 1.0;
+    }
   };
 
+  // Tracé en cours
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isDrawing || readOnly || isPlayingAnim) return;
     const canvas = canvasRef.current;
@@ -214,14 +359,73 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { x, y } = getCoordinates(e);
-    ctx.lineTo(x, y);
+    const coords = getCoordinates(e);
+
+    // Tracé de formes géométriques avec prévisualisation en temps réel
+    if (['rect', 'circle', 'line', 'arrow'].includes(activeTool) && startPoint && previewSnapshot) {
+      ctx.putImageData(previewSnapshot, 0, 0);
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = brushSize;
+      ctx.globalAlpha = 1.0;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (activeTool === 'rect') {
+        const w = coords.x - startPoint.x;
+        const h = coords.y - startPoint.y;
+        ctx.strokeRect(startPoint.x, startPoint.y, w, h);
+      } else if (activeTool === 'circle') {
+        const rx = Math.abs(coords.x - startPoint.x) / 2;
+        const ry = Math.abs(coords.y - startPoint.y) / 2;
+        const cx = Math.min(startPoint.x, coords.x) + rx;
+        const cy = Math.min(startPoint.y, coords.y) + ry;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (activeTool === 'line') {
+        ctx.beginPath();
+        ctx.moveTo(startPoint.x, startPoint.y);
+        ctx.lineTo(coords.x, coords.y);
+        ctx.stroke();
+      } else if (activeTool === 'arrow') {
+        // Flèche directionnelle (mouvement de caméra / personnage)
+        ctx.beginPath();
+        ctx.moveTo(startPoint.x, startPoint.y);
+        ctx.lineTo(coords.x, coords.y);
+        ctx.stroke();
+
+        // Pointe de flèche
+        const angle = Math.atan2(coords.y - startPoint.y, coords.x - startPoint.x);
+        const headLen = Math.max(10, brushSize * 3);
+        ctx.beginPath();
+        ctx.moveTo(coords.x, coords.y);
+        ctx.lineTo(coords.x - headLen * Math.cos(angle - Math.PI / 6), coords.y - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.moveTo(coords.x, coords.y);
+        ctx.lineTo(coords.x - headLen * Math.cos(angle + Math.PI / 6), coords.y - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.stroke();
+      }
+      return;
+    }
+
+    // Pinceau continu
+    ctx.lineTo(coords.x, coords.y);
     ctx.stroke();
   };
 
+  // Fin d'action de dessin
   const stopDrawing = () => {
     if (!isDrawing || readOnly || isPlayingAnim) return;
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.globalAlpha = 1.0;
+      }
+    }
     setIsDrawing(false);
+    setStartPoint(null);
+    setPreviewSnapshot(null);
     saveHistoryState();
     saveCurrentFrameToState();
   };
@@ -239,7 +443,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       setHistoryStep(prevStep);
       saveCurrentFrameToState();
     }
-  }, [historyStep, history, currentFrameIndex]);
+  }, [historyStep, history, saveCurrentFrameToState]);
 
   const redo = useCallback(() => {
     if (historyStep < history.length - 1) {
@@ -253,7 +457,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       setHistoryStep(nextStep);
       saveCurrentFrameToState();
     }
-  }, [historyStep, history, currentFrameIndex]);
+  }, [historyStep, history, saveCurrentFrameToState]);
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
@@ -267,7 +471,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     saveCurrentFrameToState();
   };
 
-  // 🖼️ Importer une image externe comme calque de référence sur la frame active
+  // 🖼️ Importer une image externe comme référence
   const handleImageImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -324,9 +528,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     setHistoryStep(-1);
     if (onChange) onChange(newFrames);
     loadFrame(currentFrameIndex + 1, newFrames);
-  }, [currentFrameIndex, frames, onChange]);
+  }, [currentFrameIndex, saveCurrentFrameToState, onChange, loadFrame]);
 
-  // 🗑️ Suppression d'une frame
   const deleteFrame = (indexToDelete: number) => {
     if (frames.length <= 1) {
       clearCanvas();
@@ -409,12 +612,18 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         }
       } else if (e.key === 'd' || e.key === 'D') {
         duplicateFrame();
+      } else if (e.key === 'b' || e.key === 'B') {
+        setActiveTool('pen');
+      } else if (e.key === 'e' || e.key === 'E') {
+        setActiveTool('eraser');
+      } else if (e.key === 'g' || e.key === 'G') {
+        setActiveTool('fill');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, toggleAnimation, duplicateFrame, currentFrameIndex, frames.length]);
+  }, [undo, redo, toggleAnimation, duplicateFrame, currentFrameIndex, frames.length, saveCurrentFrameToState]);
 
   // Drag and Drop Handlers
   const handleDragStart = (index: number) => {
@@ -442,8 +651,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     setDragOverIndex(null);
   };
 
+  const isShapeTool = ['rect', 'circle', 'line', 'arrow'].includes(activeTool);
+
   return (
-    <div className="flex flex-col bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-gallery space-y-0">
+    <div className="flex flex-col bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-gallery space-y-0">
       <input
         type="file"
         ref={fileInputRef}
@@ -452,63 +663,192 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         className="hidden"
       />
 
-      {/* Barre d'outils supérieure */}
+      {/* 🎨 BARRE D'OUTILS DE DESSIN STYLE STUDIO & PAINT */}
       {!readOnly && (
-        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 bg-stone-50 border-b border-stone-200 text-xs">
-          {/* Pinceau / Gomme */}
-          <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-stone-50 border-b border-stone-200 text-xs">
+          {/* Groupe 1 : Outils Principaux (Crayon, Marqueur, Pot, Formes, Gomme, Pipette) */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {/* Crayon standard */}
             <button
               type="button"
-              onClick={() => setIsEraser(false)}
-              className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-semibold ${
-                !isEraser
+              onClick={() => { setActiveTool('pen'); setShowShapeMenu(false); }}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                activeTool === 'pen'
                   ? 'bg-stone-900 text-white shadow-sm'
-                  : 'bg-stone-200/70 text-stone-700 hover:bg-stone-200'
+                  : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
               }`}
+              title="Crayon / Pinceau net (B)"
             >
-              <Paintbrush className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Dessin</span>
+              <Paintbrush className="w-4 h-4" />
+              <span className="hidden md:inline text-[11px]">Crayon</span>
             </button>
+
+            {/* Marqueur ombrage / surlignage */}
             <button
               type="button"
-              onClick={() => setIsEraser(true)}
-              className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 font-semibold ${
-                isEraser
+              onClick={() => { setActiveTool('marker'); setShowShapeMenu(false); }}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                activeTool === 'marker'
                   ? 'bg-stone-900 text-white shadow-sm'
-                  : 'bg-stone-200/70 text-stone-700 hover:bg-stone-200'
+                  : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
               }`}
+              title="Marqueur ombrage & volume (semi-transparent)"
             >
-              <Eraser className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Gomme</span>
+              <Highlighter className="w-4 h-4 text-amber-500" />
+              <span className="hidden md:inline text-[11px]">Ombrage</span>
+            </button>
+
+            {/* Pot de peinture */}
+            <button
+              type="button"
+              onClick={() => { setActiveTool('fill'); setShowShapeMenu(false); }}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                activeTool === 'fill'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
+              }`}
+              title="Pot de peinture / Remplissage (G)"
+            >
+              <PaintBucket className="w-4 h-4 text-rose-500" />
+              <span className="hidden md:inline text-[11px]">Remplir</span>
+            </button>
+
+            {/* Menu Formes Géométriques */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowShapeMenu(!showShapeMenu)}
+                className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                  isShapeTool
+                    ? 'bg-stone-900 text-white shadow-sm'
+                    : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
+                }`}
+                title="Formes géométriques simples & flèches"
+              >
+                {activeTool === 'circle' && <CircleIcon className="w-4 h-4" />}
+                {activeTool === 'line' && <Minus className="w-4 h-4" />}
+                {activeTool === 'arrow' && <ArrowUpRight className="w-4 h-4 text-sky-400" />}
+                {(!isShapeTool || activeTool === 'rect') && <Square className="w-4 h-4" />}
+                <span className="hidden md:inline text-[11px]">Formes</span>
+              </button>
+
+              {/* Menu déroulant des formes */}
+              {showShapeMenu && (
+                <div className="absolute top-full left-0 mt-1.5 z-30 bg-white rounded-2xl border border-stone-200 shadow-xl p-1.5 flex items-center gap-1 animate-in fade-in zoom-in-95 duration-100">
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTool('rect'); setShowShapeMenu(false); }}
+                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
+                      activeTool === 'rect' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
+                    }`}
+                    title="Rectangle / Cadre de plan"
+                  >
+                    <Square className="w-4 h-4" />
+                    <span className="text-[10px]">Cadre</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTool('circle'); setShowShapeMenu(false); }}
+                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
+                      activeTool === 'circle' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
+                    }`}
+                    title="Cercle / Tête / Viseur"
+                  >
+                    <CircleIcon className="w-4 h-4" />
+                    <span className="text-[10px]">Cercle</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTool('line'); setShowShapeMenu(false); }}
+                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
+                      activeTool === 'line' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
+                    }`}
+                    title="Ligne droite"
+                  >
+                    <Minus className="w-4 h-4" />
+                    <span className="text-[10px]">Ligne</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTool('arrow'); setShowShapeMenu(false); }}
+                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
+                      activeTool === 'arrow' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
+                    }`}
+                    title="Flèche de mouvement caméra / travelling"
+                  >
+                    <ArrowUpRight className="w-4 h-4 text-sky-500" />
+                    <span className="text-[10px]">Flèche Cam</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Gomme */}
+            <button
+              type="button"
+              onClick={() => { setActiveTool('eraser'); setShowShapeMenu(false); }}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                activeTool === 'eraser'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
+              }`}
+              title="Gomme (E)"
+            >
+              <Eraser className="w-4 h-4" />
+              <span className="hidden md:inline text-[11px]">Gomme</span>
+            </button>
+
+            {/* Pipette */}
+            <button
+              type="button"
+              onClick={() => { setActiveTool('pipette'); setShowShapeMenu(false); }}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                activeTool === 'pipette'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
+              }`}
+              title="Pipette / Choisir une couleur sur l'image"
+            >
+              <Pipette className="w-4 h-4" />
             </button>
           </div>
 
           {/* Palette de couleurs */}
-          {!isEraser && (
-            <div className="flex items-center gap-1 sm:gap-1.5 bg-white px-2 py-1 rounded-lg border border-stone-200 overflow-x-auto max-w-[140px] sm:max-w-none shadow-sm">
+          {activeTool !== 'eraser' && (
+            <div className="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-2xl border border-stone-200 overflow-x-auto max-w-[160px] sm:max-w-none shadow-sm">
               {COLOR_PALETTE.map((c) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
-                  className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border transition-transform shrink-0 ${
+                  className={`w-5 h-5 rounded-full border transition-transform shrink-0 ${
                     color === c ? 'scale-125 border-stone-900 ring-2 ring-stone-900/30' : 'border-stone-300 hover:scale-110'
                   }`}
                   style={{ backgroundColor: c }}
                   title={`Couleur ${c}`}
                 />
               ))}
+              {/* Sélecteur natif de couleur libre */}
+              <label className="w-5 h-5 rounded-full border border-stone-300 flex items-center justify-center cursor-pointer overflow-hidden relative shrink-0 hover:scale-110 transition-transform">
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                />
+                <span className="text-[10px] font-bold text-stone-700">+</span>
+              </label>
             </div>
           )}
 
-          {/* Épaisseur */}
-          <div className="hidden xs:flex items-center gap-1 bg-white px-1.5 sm:px-2 py-1 rounded-lg border border-stone-200 shadow-sm">
+          {/* Épaisseur du trait */}
+          <div className="hidden xs:flex items-center gap-1 bg-white px-2 py-1.5 rounded-2xl border border-stone-200 shadow-sm">
             {BRUSH_SIZES.map((size) => (
               <button
                 key={size}
                 type="button"
                 onClick={() => setBrushSize(size)}
-                className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-mono transition-colors ${
+                className={`px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-mono transition-colors ${
                   brushSize === size ? 'bg-stone-900 text-white font-bold' : 'text-stone-600 hover:text-stone-900'
                 }`}
               >
@@ -517,39 +857,56 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             ))}
           </div>
 
-          {/* Pelure d'oignon, Import Image & Actions Undo/Redo */}
+          {/* Outils secondaires : Grille 16:9, Pelure d'oignon, Import, Undo/Redo */}
           <div className="flex items-center gap-1.5">
+            {/* Grille de composition cinéma (Règle des tiers) */}
+            <button
+              type="button"
+              onClick={() => setShowGrid(!showGrid)}
+              className={`p-2 rounded-xl text-xs flex items-center gap-1 transition-all ${
+                showGrid
+                  ? 'bg-stone-900 text-white font-semibold shadow-sm'
+                  : 'bg-white hover:bg-stone-100 text-stone-600 border border-stone-200'
+              }`}
+              title="Afficher la grille de composition cinéma (Règle des tiers)"
+            >
+              <Grid3X3 className="w-4 h-4" />
+              <span className="hidden lg:inline text-[11px]">Grille</span>
+            </button>
+
+            {/* Pelure d'oignon */}
             <button
               type="button"
               onClick={() => setOnionSkin(!onionSkin)}
-              className={`px-2 py-1 rounded-lg text-xs flex items-center gap-1 transition-colors ${
+              className={`p-2 rounded-xl text-xs flex items-center gap-1 transition-all ${
                 onionSkin
-                  ? 'bg-stone-900 text-white font-semibold'
-                  : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                  ? 'bg-stone-900 text-white font-semibold shadow-sm'
+                  : 'bg-white hover:bg-stone-100 text-stone-600 border border-stone-200'
               }`}
               title="Afficher la frame précédente en filigrane (Pelure d'oignon)"
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Oignon</span>
+              <Layers className="w-4 h-4" />
+              <span className="hidden lg:inline text-[11px]">Oignon</span>
             </button>
 
             {/* Importer Image */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-2 py-1 rounded-lg text-xs flex items-center gap-1 bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors"
+              className="p-2 rounded-xl text-xs flex items-center gap-1 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 transition-colors shadow-sm"
               title="Importer un croquis ou une image de référence"
             >
-              <ImageIcon className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Importer</span>
+              <ImageIcon className="w-4 h-4" />
+              <span className="hidden lg:inline text-[11px]">Image</span>
             </button>
 
-            <div className="flex items-center gap-0.5">
+            {/* Undo / Redo / Trash */}
+            <div className="flex items-center gap-0.5 bg-white p-1 rounded-2xl border border-stone-200 shadow-sm">
               <button
                 type="button"
                 onClick={undo}
                 disabled={historyStep <= 0}
-                className="p-1.5 rounded hover:bg-stone-200 text-stone-700 disabled:opacity-30 flex items-center gap-1"
+                className="p-1 rounded hover:bg-stone-100 text-stone-700 disabled:opacity-30 flex items-center"
                 title="Annuler (Ctrl+Z)"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -558,7 +915,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 type="button"
                 onClick={redo}
                 disabled={historyStep >= history.length - 1}
-                className="p-1.5 rounded hover:bg-stone-200 text-stone-700 disabled:opacity-30 flex items-center gap-1"
+                className="p-1 rounded hover:bg-stone-100 text-stone-700 disabled:opacity-30 flex items-center"
                 title="Rétablir (Ctrl+Y)"
               >
                 <RotateCw className="w-3.5 h-3.5" />
@@ -566,7 +923,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               <button
                 type="button"
                 onClick={clearCanvas}
-                className="p-1.5 rounded hover:bg-red-50 text-red-600 ml-1"
+                className="p-1 rounded hover:bg-red-50 text-red-600 ml-0.5"
                 title="Effacer la frame"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -576,8 +933,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         </div>
       )}
 
-      {/* Surface du Canvas avec repères */}
-      <div className="relative aspect-video w-full bg-[#1c1917] flex items-center justify-center overflow-hidden touch-none">
+      {/* Surface du Canvas avec repères et Grille */}
+      <div className="relative aspect-video w-full bg-[#1c1917] flex items-center justify-center overflow-hidden touch-none select-none">
         {isPlayingAnim ? (
           <div className="w-full h-full flex items-center justify-center bg-black relative">
             {frames[playFrameIndex] ? (
@@ -595,54 +952,79 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             </div>
           </div>
         ) : (
-          <canvas
-            ref={canvasRef}
-            width={640}
-            height={360}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
-            className={`w-full h-full object-contain ${
-              readOnly ? 'cursor-default' : isEraser ? 'canvas-cursor-eraser' : 'canvas-cursor-brush'
-            }`}
-          />
+          <>
+            <canvas
+              ref={canvasRef}
+              width={640}
+              height={360}
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={startDrawing}
+              onTouchMove={draw}
+              onTouchEnd={stopDrawing}
+              className={`w-full h-full object-contain ${
+                readOnly 
+                  ? 'cursor-default' 
+                  : activeTool === 'eraser' 
+                    ? 'canvas-cursor-eraser' 
+                    : activeTool === 'fill' 
+                      ? 'cursor-crosshair' 
+                      : activeTool === 'pipette' 
+                        ? 'cursor-help' 
+                        : 'canvas-cursor-brush'
+              }`}
+            />
+
+            {/* Grille de Composition Cinématographique (Règle des tiers) */}
+            {showGrid && (
+              <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 border border-white/10">
+                <div className="border-r border-b border-white/15" />
+                <div className="border-r border-b border-white/15" />
+                <div className="border-b border-white/15" />
+                <div className="border-r border-b border-white/15" />
+                <div className="border-r border-b border-white/15" />
+                <div className="border-b border-white/15" />
+                <div className="border-r border-white/15" />
+                <div className="border-r border-white/15" />
+                <div />
+              </div>
+            )}
+          </>
         )}
 
-        <div className="absolute bottom-2 right-2 text-[10px] font-mono text-stone-400 pointer-events-none bg-black/60 px-2 py-0.5 rounded backdrop-blur-sm">
+        <div className="absolute bottom-2 right-2 text-[10px] font-mono text-stone-400 pointer-events-none bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-sm">
           16:9 • Frame {currentFrameIndex + 1} / {frames.length}
         </div>
       </div>
 
-      {/* Bandeau de contrôle des Frames */}
-      <div className="p-2.5 sm:p-3 bg-stone-50 border-t border-stone-200 flex flex-col gap-2.5">
+      {/* Bandeau de contrôle des Frames & Lecture Flipbook */}
+      <div className="p-3 bg-stone-50 border-t border-stone-200 flex flex-col gap-2.5">
         {/* Ligne 1 : Contrôles de lecture Flipbook */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={toggleAnimation}
-              className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-transform hover:scale-105 shadow-sm ${
+              className={`px-4 py-2 rounded-2xl font-bold text-xs flex items-center gap-1.5 transition-transform hover:scale-105 shadow-sm ${
                 isPlayingAnim
                   ? 'bg-rose-600 text-white'
                   : 'bg-stone-900 hover:bg-stone-800 text-white'
               }`}
             >
               {isPlayingAnim ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-              <span>{isPlayingAnim ? 'Arrêter' : 'Flipbook + Musique'}</span>
+              <span>{isPlayingAnim ? 'Arrêter l\'animation' : 'Flipbook + Musique'}</span>
             </button>
 
             {/* Vitesse FPS */}
-            <div className="flex items-center gap-1 bg-white px-1.5 py-1 rounded-lg border border-stone-200 text-xs shadow-sm">
+            <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-xl border border-stone-200 text-xs shadow-sm">
               {FPS_OPTIONS.map((f) => (
                 <button
                   key={f}
                   type="button"
                   onClick={() => setAnimFps(f)}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-mono transition-colors ${
                     animFps === f ? 'bg-stone-900 text-white font-bold' : 'text-stone-600 hover:text-stone-900'
                   }`}
                 >
@@ -653,8 +1035,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </div>
 
           <div className="flex items-center gap-2 text-[11px] text-stone-500">
-            <span className="hidden lg:inline bg-white px-2 py-0.5 rounded border border-stone-200 font-mono text-[10px] shadow-sm">
-              Espace (Play) • ◀ ▶ (Frames) • D (Dupliquer)
+            <span className="hidden lg:inline bg-white px-2.5 py-1 rounded-xl border border-stone-200 font-mono text-[10px] shadow-sm">
+              B (Crayon) • G (Remplir) • E (Gomme) • Espace (Play) • D (Dupliquer)
             </span>
           </div>
         </div>
@@ -665,7 +1047,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             <button
               type="button"
               onClick={() => addFrameAt(0)}
-              className="px-2.5 py-2 rounded-xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-700 hover:text-stone-900 text-[10px] font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+              className="px-3 py-2 rounded-2xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-800 text-[11px] font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
               title="Créer une nouvelle frame en 1ère position"
             >
               <ArrowLeftToLine className="w-3.5 h-3.5 text-stone-900" />
@@ -769,7 +1151,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               <button
                 type="button"
                 onClick={() => addFrameAt(frames.length)}
-                className="px-3 py-2 rounded-xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-800 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                className="px-3 py-2 rounded-2xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-800 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                 title="Ajouter une frame à la fin"
               >
                 <Plus className="w-3.5 h-3.5 text-stone-900" />
@@ -779,7 +1161,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               <button
                 type="button"
                 onClick={duplicateFrame}
-                className="p-2 rounded-xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-700 hover:text-stone-900 transition-colors shadow-sm"
+                className="p-2 rounded-2xl bg-white hover:bg-stone-100 border border-stone-200 text-stone-700 hover:text-stone-900 transition-colors shadow-sm"
                 title="Dupliquer la frame active (Raccourci: Touche D)"
               >
                 <Copy className="w-3.5 h-3.5" />
