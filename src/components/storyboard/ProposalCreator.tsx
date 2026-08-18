@@ -373,31 +373,65 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
           />
         </div>
 
-        {/* Détails du texte de la Scène Clé */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+        {/* Détails du Climax & Grand Espace d'Intentions / Monde Intérieur */}
+        <div className="space-y-4 pt-3 border-t border-stone-100">
           <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+            <label className="block text-xs font-bold text-stone-900 mb-1.5 font-display">
               Titre du Plan / Climax
             </label>
             <input
               type="text"
               value={keySceneTitle}
               onChange={(e) => setKeySceneTitle(e.target.value)}
-              placeholder="Ex: Le face-à-face sous la verrière..."
-              className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-2.5 text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 transition-colors shadow-sm"
+              placeholder="Ex: Le face-à-face sous la verrière, Le regard avant le départ..."
+              className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 transition-colors shadow-sm font-medium"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1.5">
-              Intentions de mise en scène & caméra
-            </label>
+          <div className="space-y-2 bg-stone-50/80 p-4 sm:p-5 rounded-2xl border border-stone-200/80">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+              <div>
+                <label className="block text-xs font-bold text-stone-900 font-display">
+                  Intentions de Réalisation, Sentiments & l'Indicible
+                </label>
+                <p className="text-[11px] text-stone-500">
+                  Donnez une dimension émotionnelle au dessin : ce que ressentent les personnages, les silences, le sous-texte invisible, l'éclairage et la résonance avec la musique.
+                </p>
+              </div>
+
+              {/* Raccourcis d'inspiration */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-mono text-stone-400">Pistes :</span>
+                <button
+                  type="button"
+                  onClick={() => setKeySceneDesc(prev => prev ? `${prev}\n\n[Regard & Non-dit] : ` : `[Regard & Non-dit] : `)}
+                  className="text-[10px] bg-white hover:bg-stone-200 text-stone-700 px-2 py-0.5 rounded-lg border border-stone-200 transition-colors font-medium"
+                >
+                  👁️ Non-dits
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKeySceneDesc(prev => prev ? `${prev}\n\n[Lumière & Atmosphère] : ` : `[Lumière & Atmosphère] : `)}
+                  className="text-[10px] bg-white hover:bg-stone-200 text-stone-700 px-2 py-0.5 rounded-lg border border-stone-200 transition-colors font-medium"
+                >
+                  💡 Lumière
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKeySceneDesc(prev => prev ? `${prev}\n\n[Mouvement Caméra & Rythme] : ` : `[Mouvement Caméra & Rythme] : `)}
+                  className="text-[10px] bg-white hover:bg-stone-200 text-stone-700 px-2 py-0.5 rounded-lg border border-stone-200 transition-colors font-medium"
+                >
+                  🎥 Caméra
+                </button>
+              </div>
+            </div>
+
             <textarea
-              rows={2}
+              rows={6}
               value={keySceneDesc}
               onChange={(e) => setKeySceneDesc(e.target.value)}
-              placeholder="Ex: Cadrage serré sur les yeux, ralenti synchrone avec le solo de cuivre, travelling arrière..."
-              className="w-full bg-stone-50 border border-stone-200 rounded-2xl p-3 text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 resize-none leading-relaxed transition-colors shadow-sm"
+              placeholder="Ex: Cadrage serré sur le regard d'Éléna. Aucun dialogue n'est prononcé, mais la montée en puissance des violons trahit son déchirement intérieur et la certitude qu'elle ne reverra jamais Marcus. Une lumière crépusculaire découpe son visage à contre-jour tandis que la caméra opère un lent travelling arrière, l'abandonnant seule dans l'immensité de la gare déserte..."
+              className="w-full bg-white border border-stone-200 rounded-2xl p-4 text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 resize-none leading-relaxed transition-colors shadow-sm font-sans"
             />
           </div>
         </div>

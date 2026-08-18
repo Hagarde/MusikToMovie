@@ -293,14 +293,18 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
           )}
         </div>
 
-        {/* Intentions de mise en scène */}
+        {/* Intentions de Réalisation & Monde Intérieur (Dire l'Indicible) */}
         {keyDesc && (
-          <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 shadow-sm">
-            <h4 className="text-xs font-bold text-stone-900 uppercase tracking-wider mb-1 font-display">
-              Intentions de réalisation & synchronisation
-            </h4>
-            <p className="text-sm text-stone-700 leading-relaxed whitespace-pre-line">
-              {keyDesc}
+          <div className="bg-stone-50 rounded-2xl p-5 sm:p-6 border border-stone-200 shadow-sm space-y-2">
+            <div className="flex items-center justify-between border-b border-stone-200/80 pb-2.5">
+              <h4 className="text-xs font-bold text-stone-900 uppercase tracking-wider font-display flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose-600" />
+                <span>Intentions de Réalisation, Sentiments & l'Indicible</span>
+              </h4>
+              <span className="text-[10px] text-stone-400 font-mono italic">Sous-texte & dimension émotionnelle</span>
+            </div>
+            <p className="text-sm sm:text-base text-stone-800 leading-relaxed whitespace-pre-line font-serif italic pl-1 border-l-2 border-rose-500 my-1">
+              "{keyDesc}"
             </p>
           </div>
         )}
@@ -361,8 +365,8 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
               )}
 
               {keyDesc && (
-                <div className="absolute bottom-6 inset-x-8 max-w-2xl mx-auto text-center bg-black/80 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 text-white text-xs sm:text-sm leading-relaxed shadow-2xl">
-                  {keyDesc}
+                <div className="absolute bottom-6 inset-x-6 max-w-3xl mx-auto text-center bg-black/85 backdrop-blur-lg px-6 py-3.5 rounded-2xl border border-white/15 text-stone-100 text-xs sm:text-sm leading-relaxed shadow-2xl font-serif italic max-h-32 overflow-y-auto">
+                  "{keyDesc}"
                 </div>
               )}
             </div>
