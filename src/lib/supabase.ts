@@ -129,6 +129,30 @@ export async function deleteTrack(trackId: string): Promise<boolean> {
   return true;
 }
 
+// Supprimer une proposition de scénario / storyboard
+export async function deleteProposal(proposalId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('proposals').delete().eq('id', proposalId);
+    if (error) {
+      console.warn('Erreur suppression proposal Supabase:', error);
+    }
+  } catch (e) {
+    console.warn('Erreur suppression proposal Supabase:', e);
+  }
+
+  // Suppression du stockage local
+  try {
+    const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
+    if (local) {
+      const parsed: Proposal[] = JSON.parse(local);
+      const filtered = parsed.filter(p => p.id !== proposalId);
+      localStorage.setItem(LOCAL_STORAGE_PROPOSALS_KEY, JSON.stringify(filtered));
+    }
+  } catch (e) {}
+
+  return true;
+}
+
 // Récupérer les propositions avec support de tri
 export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' = 'likes'): Promise<Proposal[]> {
   try {

@@ -12,7 +12,9 @@ import {
   Pause,
   Maximize2,
   Minimize2,
-  Music
+  Music,
+  Trash2,
+  ShieldAlert
 } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { AudioPlayer } from '../audio/AudioPlayer';
@@ -22,13 +24,18 @@ interface ProposalViewerProps {
   proposal: Proposal;
   track: Track | null;
   onBack: () => void;
+  isAdmin?: boolean;
+  onDeleteProposal?: (proposalId: string) => void;
 }
 
 export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   proposal,
   track,
   onBack,
+  isAdmin = false,
+  onDeleteProposal,
 }) => {
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const theatreRef = useRef<HTMLDivElement | null>(null);
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -145,6 +152,18 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             <Heart className={`w-4 h-4 ${isVoted ? 'fill-current' : 'text-rose-500'}`} />
             <span>{isVoted ? 'Voté !' : 'Voter'} ({likesCount})</span>
           </button>
+
+          {/* Bouton de suppression Admin */}
+          {isAdmin && onDeleteProposal && (
+            <button
+              type="button"
+              onClick={() => setIsDeleting(true)}
+              className="p-2 rounded-2xl bg-white hover:bg-rose-600 text-stone-600 hover:text-white border border-stone-200 shadow-sm transition-colors"
+              title="Supprimer ce storyboard (Admin)"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
 
           <span className="text-xs font-mono text-stone-500 bg-white px-3 py-1.5 rounded-xl border border-stone-200 shadow-sm">
             {new Date(proposal.created_at).toLocaleDateString('fr-FR')}
@@ -412,6 +431,52 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
                 <span className="truncate max-w-xs">{track.title}</span>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modale de Confirmation de Suppression (Admin) */}
+      {isDeleting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl border border-stone-200 max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-stone-900 text-base font-display">Supprimer ce storyboard ?</h4>
+                <p className="text-xs text-stone-500">Action irréversible (Mode Administrateur)</p>
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
+              Êtes-vous sûr de vouloir supprimer définitivement le storyboard{' '}
+              <strong className="text-stone-900 font-bold">"{proposal.movie_title}"</strong> par{' '}
+              <strong className="text-stone-900">{proposal.author_name}</strong> ?
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsDeleting(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteProposal) {
+                    onDeleteProposal(proposal.id);
+                    onBack();
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all hover:scale-105 shadow-sm flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Supprimer définitivement</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

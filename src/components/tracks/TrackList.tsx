@@ -22,6 +22,7 @@ interface TrackListProps {
   onCreateProposal: (track: Track) => void;
   onOpenUploadModal: () => void;
   onDeleteTrack?: (trackId: string) => void;
+  isAdmin?: boolean;
 }
 
 export const TrackList: React.FC<TrackListProps> = ({
@@ -31,8 +32,8 @@ export const TrackList: React.FC<TrackListProps> = ({
   onCreateProposal,
   onOpenUploadModal,
   onDeleteTrack,
+  isAdmin = false,
 }) => {
-  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
   const [trackToDelete, setTrackToDelete] = useState<Track | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
@@ -129,7 +130,7 @@ export const TrackList: React.FC<TrackListProps> = ({
 
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             {/* Barre de Recherche */}
-            <div className="relative flex-1 sm:w-64">
+            <div className="relative flex-1 sm:w-72">
               <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
               <input
                 type="text"
@@ -148,21 +149,6 @@ export const TrackList: React.FC<TrackListProps> = ({
                 </button>
               )}
             </div>
-
-            {/* Mode Admin / Gestion */}
-            <button
-              type="button"
-              onClick={() => setIsAdminMode(!isAdminMode)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 ${
-                isAdminMode
-                  ? 'bg-rose-50 text-rose-700 border border-rose-300 shadow-sm'
-                  : 'bg-white hover:bg-stone-100 text-stone-600 hover:text-stone-900 border border-stone-200'
-              }`}
-              title="Activer le mode gestion pour supprimer des musiques"
-            >
-              <Settings2 className="w-3.5 h-3.5" />
-              <span>{isAdminMode ? 'Mode Gestion' : 'Gérer'}</span>
-            </button>
           </div>
         </div>
 
@@ -234,15 +220,13 @@ export const TrackList: React.FC<TrackListProps> = ({
                     : 'border-stone-200 hover:border-stone-400 shadow-gallery'
                 }`}
               >
-                {/* Bouton de Suppression */}
-                {(isAdminMode || onDeleteTrack) && (
+                {/* Bouton de Suppression (Admin uniquement) */}
+                {isAdmin && onDeleteTrack && (
                   <button
                     type="button"
                     onClick={() => setTrackToDelete(track)}
-                    className={`absolute top-3 right-3 z-20 p-2 rounded-xl bg-white/90 hover:bg-rose-600 text-stone-700 hover:text-white border border-stone-200 shadow-md backdrop-blur-sm transition-all ${
-                      isAdminMode ? 'opacity-100 ring-2 ring-rose-500/50 scale-105' : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                    title="Supprimer ce morceau de la bibliothèque"
+                    className="absolute top-3 right-3 z-20 p-2 rounded-xl bg-white/90 hover:bg-rose-600 text-stone-700 hover:text-white border border-stone-200 shadow-md backdrop-blur-sm transition-all opacity-100 ring-2 ring-rose-500/50 scale-105"
+                    title="Supprimer ce morceau de la bibliothèque (Admin)"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

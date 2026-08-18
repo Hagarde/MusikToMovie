@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Track, Proposal } from './lib/types';
-import { getTracks, getProposals, deleteTrack } from './lib/supabase';
+import { getTracks, getProposals, deleteTrack, deleteProposal } from './lib/supabase';
 import { Navbar } from './components/Navbar';
 import { TrackList } from './components/tracks/TrackList';
 import { TrackUploadModal } from './components/tracks/TrackUploadModal';
@@ -8,17 +8,49 @@ import { ProposalCreator } from './components/storyboard/ProposalCreator';
 import { ProposalViewer } from './components/storyboard/ProposalViewer';
 import { ProposalsGallery } from './components/storyboard/ProposalsGallery';
 import { ConceptPage } from './components/about/ConceptPage';
+import { AdminModal } from './components/admin/AdminModal';
 import { AudioPlayer } from './components/audio/AudioPlayer';
 import { CineClippy } from './components/clippy/CineClippy';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'tracks' | 'proposals' | 'concept' | 'create' | 'view'>('tracks');
+  // L'onglet de base par défaut est 'concept'
+  const [currentView, setCurrentView] = useState<'concept' | 'tracks' | 'proposals' | 'create' | 'view'>('concept');
   const [tracks, setTracks] = useState<Track[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Authentification Mode Admin (persistance en session)
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('admin') === 'cineaste' || urlParams.get('admin') === 'true' || urlParams.get('admin') === '1234') {
+        sessionStorage.setItem('m2m_admin_session', 'true');
+        return true;
+      }
+      return sessionStorage.getItem('m2m_admin_session') === 'true';
+    }
+    return false;
+  });
+
+  const handleAuthenticateAdmin = (passcode: string): boolean => {
+    // Mots de passe valides
+    const validCodes = ['cineaste', 'admin', 'admin2026', '1234'];
+    if (validCodes.includes(passcode.toLowerCase())) {
+      setIsAdmin(true);
+      sessionStorage.setItem('m2m_admin_session', 'true');
+      return true;
+    }
+    return false;
+  };
+
+  const handleLogoutAdmin = () => {
+    setIsAdmin(false);
+    sessionStorage.removeItem('m2m_admin_session');
+  };
 
   // Chargement initial des données
   const loadData = async () => {
@@ -73,6 +105,15 @@ export default function App() {
     }
   };
 
+  const handleDeleteProposal = async (proposalId: string) => {
+    await deleteProposal(proposalId);
+    setProposals((prev) => prev.filter((p) => p.id !== proposalId));
+    if (selectedProposal?.id === proposalId) {
+      setSelectedProposal(null);
+      setCurrentView('proposals');
+    }
+  };
+
   const handleVoteUpdated = (proposalId: string, newCount: number) => {
     setProposals((prev) =>
       prev.map((p) => (p.id === proposalId ? { ...p, likes_count: newCount } : p))
@@ -85,6 +126,9 @@ export default function App() {
         currentView={currentView}
         onNavigate={(view) => setCurrentView(view)}
         onOpenUpload={() => setIsUploadModalOpen(true)}
+        isAdmin={isAdmin}
+        onToggleAdminModal={() => setIsAdminModalOpen(true)}
+        onLogoutAdmin={handleLogoutAdmin}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -95,7 +139,16 @@ export default function App() {
           </div>
         )}
 
-        {/* Vue 1 : Bibliothèque de morceaux */}
+        {/* Vue 1 (Onglet de base) : Le Concept & Manifeste MusikToMovie */}
+        {currentView === 'concept' && (
+          <ConceptPage
+            onExploreTracks={() => setCurrentView('tracks')}
+            onExploreProposals={() => setCurrentView('proposals')}
+            onOpenUpload={() => setIsUploadModalOpen(true)}
+          />
+        )}
+
+        {/* Vue 2 : Bibliothèque de morceaux */}
         {currentView === 'tracks' && (
           <TrackList
             tracks={tracks}
@@ -104,10 +157,11 @@ export default function App() {
             onCreateProposal={handleCreateProposal}
             onOpenUploadModal={() => setIsUploadModalOpen(true)}
             onDeleteTrack={handleDeleteTrack}
+            isAdmin={isAdmin}
           />
         )}
 
-        {/* Vue 2 : Studio de Création de Scénario & Storyboard */}
+        {/* Vue 3 : Studio de Création de Scénario & Storyboard */}
         {currentView === 'create' && selectedTrack && (
           <ProposalCreator
             track={selectedTrack}
@@ -116,16 +170,18 @@ export default function App() {
           />
         )}
 
-        {/* Vue 3 : Visionneuse immersive du Film / Storyboard */}
+        {/* Vue 4 : Visionneuse immersive du Film / Storyboard */}
         {currentView === 'view' && selectedProposal && (
           <ProposalViewer
             proposal={selectedProposal}
             track={selectedTrack}
             onBack={() => setCurrentView('proposals')}
+            isAdmin={isAdmin}
+            onDeleteProposal={handleDeleteProposal}
           />
         )}
 
-        {/* Vue 4 : Galerie des Scénarios & Storyboards */}
+        {/* Vue 5 : Galerie des Scénarios & Storyboards */}
         {currentView === 'proposals' && (
           <ProposalsGallery
             proposals={proposals}
@@ -139,15 +195,8 @@ export default function App() {
               }
             }}
             onVoteUpdated={handleVoteUpdated}
-          />
-        )}
-
-        {/* Vue 5 : Le Concept & Guide Méthodologique */}
-        {currentView === 'concept' && (
-          <ConceptPage
-            onExploreTracks={() => setCurrentView('tracks')}
-            onExploreProposals={() => setCurrentView('proposals')}
-            onOpenUpload={() => setIsUploadModalOpen(true)}
+            isAdmin={isAdmin}
+            onDeleteProposal={handleDeleteProposal}
           />
         )}
       </main>
@@ -157,6 +206,13 @@ export default function App() {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onTrackCreated={handleTrackCreated}
+      />
+
+      {/* Modale d'authentification Administrateur */}
+      <AdminModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        onAuthenticate={handleAuthenticateAdmin}
       />
 
       {/* 🎬 Mascotte Ciné-Clippy (Anecdotes & Hot Takes) */}

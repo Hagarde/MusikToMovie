@@ -1,24 +1,30 @@
 import React from 'react';
-import { Film, Music, Compass, Sparkles, Plus } from 'lucide-react';
+import { Film, Music, Compass, Sparkles, Plus, Shield, ShieldCheck, LogOut } from 'lucide-react';
 
 interface NavbarProps {
-  currentView: 'tracks' | 'proposals' | 'concept' | 'create' | 'view';
-  onNavigate: (view: 'tracks' | 'proposals' | 'concept') => void;
+  currentView: 'concept' | 'tracks' | 'proposals' | 'create' | 'view';
+  onNavigate: (view: 'concept' | 'tracks' | 'proposals') => void;
   onOpenUpload: () => void;
+  isAdmin: boolean;
+  onToggleAdminModal: () => void;
+  onLogoutAdmin: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentView,
   onNavigate,
   onOpenUpload,
+  isAdmin,
+  onToggleAdminModal,
+  onLogoutAdmin,
 }) => {
   return (
     <header className="border-b border-stone-200 bg-white/95 backdrop-blur-md sticky top-0 z-50 transition-colors shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Logo & Titre Arty */}
+        {/* Logo & Titre Arty (clic ramène sur Le Concept) */}
         <button
           type="button"
-          onClick={() => onNavigate('tracks')}
+          onClick={() => onNavigate('concept')}
           className="flex items-center gap-3 group text-left"
         >
           <div className="w-10 h-10 rounded-2xl bg-stone-900 flex items-center justify-center text-white font-black shadow-md group-hover:scale-105 transition-transform">
@@ -34,8 +40,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </button>
 
-        {/* Navigation principale minimaliste */}
+        {/* Navigation principale avec Le Concept en 1er */}
         <nav className="flex items-center gap-1 sm:gap-1.5 bg-stone-100/90 p-1 rounded-2xl border border-stone-200 text-xs">
+          <button
+            type="button"
+            onClick={() => onNavigate('concept')}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              currentView === 'concept'
+                ? 'bg-stone-900 text-white shadow-sm'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+            <span>Le Concept</span>
+          </button>
+
           <button
             type="button"
             onClick={() => onNavigate('tracks')}
@@ -61,31 +80,45 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Compass className="w-3.5 h-3.5" />
             <span>Galerie Scénarios</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => onNavigate('concept')}
-            className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
-              currentView === 'concept'
-                ? 'bg-stone-900 text-white shadow-sm'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-rose-500" />
-            <span>Le Concept</span>
-          </button>
         </nav>
 
-        {/* Bouton d'action minimaliste */}
-        <div className="flex items-center gap-2.5">
+        {/* Actions : Ajouter Musique, Mode Admin & GitHub */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onOpenUpload}
-            className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-all hover:scale-105 shadow-sm flex items-center gap-1.5"
+            className="px-3.5 sm:px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-all hover:scale-105 shadow-sm flex items-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             <span className="hidden sm:inline">Ajouter Musique</span>
           </button>
+
+          {/* Bouton / Badge Mode Admin */}
+          {isAdmin ? (
+            <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-xl px-2.5 py-1 text-xs">
+              <span className="flex items-center gap-1 font-bold text-rose-700 text-[11px]">
+                <ShieldCheck className="w-3.5 h-3.5 text-rose-600" />
+                <span className="hidden md:inline">Mode Admin</span>
+              </span>
+              <button
+                type="button"
+                onClick={onLogoutAdmin}
+                className="p-1 text-rose-500 hover:text-rose-800 rounded hover:bg-rose-100 transition-colors ml-0.5"
+                title="Quitter le mode administrateur"
+              >
+                <LogOut className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggleAdminModal}
+              className="p-2 rounded-xl text-stone-500 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 border border-stone-200 transition-colors flex items-center gap-1 text-xs"
+              title="Connexion Administrateur"
+            >
+              <Shield className="w-4 h-4" />
+            </button>
+          )}
 
           <a
             href="https://github.com/Hagarde/MusikToMovie"
