@@ -1,9 +1,9 @@
 import React from 'react';
-import { Film, Music, Compass, Plus } from 'lucide-react';
+import { Film, Music, Compass, Sparkles, Plus } from 'lucide-react';
 
 interface NavbarProps {
-  currentView: 'tracks' | 'proposals' | 'create' | 'view';
-  onNavigate: (view: 'tracks' | 'proposals') => void;
+  currentView: 'tracks' | 'proposals' | 'concept' | 'create' | 'view';
+  onNavigate: (view: 'tracks' | 'proposals' | 'concept') => void;
   onOpenUpload: () => void;
 }
 
@@ -35,11 +35,11 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         {/* Navigation principale minimaliste */}
-        <nav className="flex items-center gap-1.5 sm:gap-2 bg-stone-100/90 p-1 rounded-2xl border border-stone-200 text-xs">
+        <nav className="flex items-center gap-1 sm:gap-1.5 bg-stone-100/90 p-1 rounded-2xl border border-stone-200 text-xs">
           <button
             type="button"
             onClick={() => onNavigate('tracks')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
               currentView === 'tracks'
                 ? 'bg-stone-900 text-white shadow-sm'
                 : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
@@ -52,7 +52,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('proposals')}
-            className={`px-3.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
               currentView === 'proposals' || currentView === 'view'
                 ? 'bg-stone-900 text-white shadow-sm'
                 : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
@@ -60,6 +60,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Compass className="w-3.5 h-3.5" />
             <span>Galerie Scénarios</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('concept')}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+              currentView === 'concept'
+                ? 'bg-stone-900 text-white shadow-sm'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+            <span>Le Concept</span>
           </button>
         </nav>
 

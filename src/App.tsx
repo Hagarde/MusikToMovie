@@ -7,11 +7,12 @@ import { TrackUploadModal } from './components/tracks/TrackUploadModal';
 import { ProposalCreator } from './components/storyboard/ProposalCreator';
 import { ProposalViewer } from './components/storyboard/ProposalViewer';
 import { ProposalsGallery } from './components/storyboard/ProposalsGallery';
+import { ConceptPage } from './components/about/ConceptPage';
 import { AudioPlayer } from './components/audio/AudioPlayer';
 import { CineClippy } from './components/clippy/CineClippy';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'tracks' | 'proposals' | 'create' | 'view'>('tracks');
+  const [currentView, setCurrentView] = useState<'tracks' | 'proposals' | 'concept' | 'create' | 'view'>('tracks');
   const [tracks, setTracks] = useState<Track[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
@@ -138,6 +139,15 @@ export default function App() {
               }
             }}
             onVoteUpdated={handleVoteUpdated}
+          />
+        )}
+
+        {/* Vue 5 : Le Concept & Guide Méthodologique */}
+        {currentView === 'concept' && (
+          <ConceptPage
+            onExploreTracks={() => setCurrentView('tracks')}
+            onExploreProposals={() => setCurrentView('proposals')}
+            onOpenUpload={() => setIsUploadModalOpen(true)}
           />
         )}
       </main>
