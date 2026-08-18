@@ -177,8 +177,8 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
         </button>
       </div>
 
-      {/* Lecteur Audio persistant centré sur l'intervalle de la Scène Clé */}
-      <div className="sticky top-4 z-40">
+      {/* Lecteur Audio persistant centré sous la navbar sticky */}
+      <div className="sticky top-20 z-30">
         <AudioPlayer
           track={track}
           onTimeUpdate={setCurrentAudioTime}

@@ -151,9 +151,9 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
         </div>
       </div>
 
-      {/* Lecteur Audio/Vidéo YouTube */}
+      {/* Lecteur Audio/Vidéo YouTube sous la navbar sticky */}
       {track && (
-        <div className="sticky top-4 z-40">
+        <div className="sticky top-20 z-30">
           <AudioPlayer
             track={track}
             onTimeUpdate={setCurrentTime}
