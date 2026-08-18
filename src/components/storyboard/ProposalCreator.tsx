@@ -13,7 +13,7 @@ import {
   Layers
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Track, Proposal } from '../../lib/types';
+import { Track, Proposal, GENRES } from '../../lib/types';
 import { FlipanimCanvas } from '../canvas/FlipanimCanvas';
 import { AudioPlayer } from '../audio/AudioPlayer';
 import { createProposal } from '../../lib/supabase';
@@ -23,18 +23,6 @@ interface ProposalCreatorProps {
   onBack: () => void;
   onProposalSaved: (proposal: Proposal) => void;
 }
-
-const GENRES = [
-  'Drame',
-  'Thriller / Suspense',
-  'Science-Fiction',
-  'Cyberpunk',
-  'Action / Course-poursuite',
-  'Horreur / Mystère',
-  'Romance / Poésie',
-  'Film Noir',
-  'Animation',
-];
 
 export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
   track,

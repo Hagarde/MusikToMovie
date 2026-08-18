@@ -8,7 +8,7 @@ import {
   RotateCcw,
   Disc
 } from 'lucide-react';
-import { Track } from '../../lib/types';
+import { Track, GENRES } from '../../lib/types';
 import { createTrack } from '../../lib/supabase';
 import { extractYouTubeId, fetchYouTubeMetadata, getYouTubeThumbnail, loadYouTubeAPI } from '../../lib/youtube';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
@@ -18,16 +18,6 @@ interface TrackUploadModalProps {
   onClose: () => void;
   onTrackCreated: (newTrack: Track) => void;
 }
-
-const GENRES = [
-  'Cinématique / Épique',
-  'Suspense / Thriller',
-  'Science-Fiction / Cyberpunk',
-  'Drame / Émotion',
-  'Film Noir / Jazz',
-  'Action / Course-poursuite',
-  'Ambiance / Planant',
-];
 
 export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   isOpen,

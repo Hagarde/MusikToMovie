@@ -1,5 +1,29 @@
 export type SectionType = 'preceding' | 'main' | 'succeeding';
 
+export const GENRES = [
+  'Cinématique / Épique',
+  'Classique / Orchestral',
+  'Science-Fiction',
+  'Thriller / Suspense',
+  'Drame / Émotion',
+  'Action / Aventure',
+  'Horreur / Épouvante',
+  'Film Noir / Policier',
+  'Électronique / Synth',
+  'Rock / Metal',
+  'Jazz / Blues / Soul',
+  'Hip-Hop / Urbain',
+  'Western',
+  'Fantastique / Fantasy',
+  'Animation / Poésie',
+  'Romance / Sentimental',
+  'Ambiance / Minimaliste',
+  'Comédie / Léger',
+  'Musiques du Monde / Folk',
+  'Expérimental / Avant-Garde',
+  'Autre / Inclassable',
+];
+
 export interface Track {
   id: string;
   title: string;
