@@ -43,6 +43,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
   const [activeFrameIndex, setActiveFrameIndex] = useState<number>(0);
   const [isPlayingFlipbook, setIsPlayingFlipbook] = useState<boolean>(true);
+  const [viewerFps, setViewerFps] = useState<number>(proposal.animation_fps || 1);
 
   // Timecodes de la scène clé
   const startTime = proposal.key_scene_start_time || proposal.scenes?.find(s => s.section_type === 'main')?.start_time || 0;
@@ -53,13 +54,13 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   // Boucle d'animation flipbook
   useEffect(() => {
     if (!isPlayingFlipbook || frames.length <= 1) return;
-    const fps = proposal.animation_fps || 3;
+    const speed = viewerFps > 0 ? viewerFps : (proposal.animation_fps || 1);
     const interval = setInterval(() => {
       setActiveFrameIndex((prev) => (prev + 1) % frames.length);
-    }, 1000 / fps);
+    }, Math.max(50, 1000 / speed));
 
     return () => clearInterval(interval);
-  }, [isPlayingFlipbook, frames.length, proposal.animation_fps]);
+  }, [isPlayingFlipbook, frames.length, viewerFps, proposal.animation_fps]);
 
   // Écoute de la touche Échap pour quitter le mode projection
   useEffect(() => {
@@ -253,8 +254,25 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
                   {isPlayingFlipbook ? <Pause className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
                 </button>
                 <span className="font-mono text-stone-800 text-xs font-bold">
-                  Frame {activeFrameIndex + 1} / {frames.length} ({proposal.animation_fps || 3} fps)
+                  Frame {activeFrameIndex + 1} / {frames.length} ({viewerFps === 0.25 ? '1/4 fps • 4s/plan' : viewerFps === 0.5 ? '1/2 fps • 2s/plan' : viewerFps === 0.75 ? '3/4 fps' : `${viewerFps} fps`})
                 </span>
+
+                {/* Sélecteur rapide de vitesse en visionnage */}
+                <div className="hidden sm:flex items-center gap-1 border-l border-stone-200 pl-2">
+                  {[0.25, 0.5, 1, 2, 4].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setViewerFps(s)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                        viewerFps === s ? 'bg-stone-900 text-white font-bold' : 'text-stone-500 hover:text-stone-900'
+                      }`}
+                      title={`Cadence : ${s} images par seconde`}
+                    >
+                      {s === 0.25 ? '1/4' : s === 0.5 ? '1/2' : `${s}`}fps
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -384,7 +402,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
               </button>
 
               <span className="text-stone-400">
-                Frame {activeFrameIndex + 1} / {frames.length}
+                Frame {activeFrameIndex + 1} / {frames.length} ({viewerFps === 0.25 ? '1/4 fps' : viewerFps === 0.5 ? '1/2 fps' : `${viewerFps} fps`})
               </span>
             </div>
 

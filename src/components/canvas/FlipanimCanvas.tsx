@@ -29,6 +29,7 @@ interface FlipanimCanvasProps {
   onChange?: (frames: string[]) => void;
   onTogglePlayAnim?: (isPlaying: boolean) => void;
   fps?: number;
+  onFpsChange?: (fps: number) => void;
   readOnly?: boolean;
 }
 
@@ -64,6 +65,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   onChange,
   onTogglePlayAnim,
   fps = 3,
+  onFpsChange,
   readOnly = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1035,20 +1037,49 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               <span>{isPlayingAnim ? 'Arrêter l\'animation' : 'Flipbook + Musique'}</span>
             </button>
 
-            {/* Vitesse FPS */}
-            <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-xl border border-stone-200 text-xs shadow-sm">
-              {FPS_OPTIONS.map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setAnimFps(f)}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-mono transition-colors ${
-                    animFps === f ? 'bg-stone-900 text-white font-bold' : 'text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  {f}fps
-                </button>
-              ))}
+            {/* Slider de Cadence d'Animation (1/4 fps à 4 fps) */}
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-2xl border border-stone-200 text-xs shadow-sm">
+              <span className="text-stone-500 font-semibold text-[11px] shrink-0">Cadence :</span>
+              
+              {/* Curseur de vitesse */}
+              <input
+                type="range"
+                min="0.25"
+                max="4"
+                step="0.25"
+                value={animFps}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setAnimFps(val);
+                  if (onFpsChange) onFpsChange(val);
+                }}
+                className="w-20 sm:w-28 h-1.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-stone-900"
+                title={`Vitesse d'animation : ${animFps} images/seconde`}
+              />
+
+              {/* Affichage lisible de la vitesse et de la durée par image */}
+              <span className="font-mono text-[11px] font-bold text-stone-900 shrink-0 min-w-[90px]">
+                {animFps === 0.25 ? '1/4 fps (4s/plan)' : animFps === 0.5 ? '1/2 fps (2s/plan)' : animFps === 0.75 ? '3/4 fps (1.3s)' : `${animFps} fps (${(1 / animFps).toFixed(1)}s)`}
+              </span>
+
+              {/* Pilules de raccourcis de vitesse */}
+              <div className="hidden sm:flex items-center gap-1 border-l border-stone-200 pl-2">
+                {[0.25, 0.5, 1, 2, 4].map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => {
+                      setAnimFps(f);
+                      if (onFpsChange) onFpsChange(f);
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                      animFps === f ? 'bg-stone-900 text-white font-bold' : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                    }`}
+                  >
+                    {f === 0.25 ? '1/4' : f === 0.5 ? '1/2' : `${f}`}fps
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

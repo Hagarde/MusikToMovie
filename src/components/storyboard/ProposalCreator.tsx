@@ -60,7 +60,7 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
   const [startTime, setStartTime] = useState<number>(initialStartTime);
   const [endTime, setEndTime] = useState<number>(initialEndTime);
   const [frames, setFrames] = useState<string[]>(['']);
-  const [animationFps, setAnimationFps] = useState<number>(3);
+  const [animationFps, setAnimationFps] = useState<number>(0.5);
 
   // État lecteur et synchronisation Flipbook
   const [currentAudioTime, setCurrentAudioTime] = useState(0);
@@ -362,6 +362,7 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
           <FlipanimCanvas
             initialFrames={frames}
             fps={animationFps}
+            onFpsChange={setAnimationFps}
             onChange={(updatedFrames) => setFrames(updatedFrames)}
             onTogglePlayAnim={(isPlaying) => {
               if (isPlaying) {
