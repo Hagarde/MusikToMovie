@@ -618,6 +618,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         setActiveTool('eraser');
       } else if (e.key === 'g' || e.key === 'G') {
         setActiveTool('fill');
+      } else if (e.key === '[' || e.key === '-') {
+        setBrushSize(prev => Math.max(1, prev - 2));
+      } else if (e.key === ']' || e.key === '+' || e.key === '=') {
+        setBrushSize(prev => Math.min(64, prev + 2));
       }
     };
 
@@ -841,20 +845,34 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             </div>
           )}
 
-          {/* Épaisseur du trait */}
-          <div className="hidden xs:flex items-center gap-1 bg-white px-2 py-1.5 rounded-2xl border border-stone-200 shadow-sm">
-            {BRUSH_SIZES.map((size) => (
-              <button
-                key={size}
-                type="button"
-                onClick={() => setBrushSize(size)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-mono transition-colors ${
-                  brushSize === size ? 'bg-stone-900 text-white font-bold' : 'text-stone-600 hover:text-stone-900'
-                }`}
-              >
-                {size}px
-              </button>
-            ))}
+          {/* Contrôle Continu de l'Épaisseur du trait (Slider + Indicateur de taille) */}
+          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-2xl border border-stone-200 shadow-sm">
+            {/* Aperçu visuel circulaire de l'épaisseur du pinceau */}
+            <div className="w-5 h-5 flex items-center justify-center bg-stone-100 rounded-full shrink-0" title={`Taille : ${brushSize}px`}>
+              <span
+                className="rounded-full transition-all duration-75"
+                style={{
+                  width: `${Math.max(2, Math.min(18, brushSize))}px`,
+                  height: `${Math.max(2, Math.min(18, brushSize))}px`,
+                  backgroundColor: activeTool === 'eraser' ? '#78716c' : color === '#ffffff' ? '#1c1917' : color,
+                }}
+              />
+            </div>
+
+            {/* Slider d'ajustement continu (1px à 50px) */}
+            <input
+              type="range"
+              min="1"
+              max="50"
+              value={brushSize}
+              onChange={(e) => setBrushSize(parseInt(e.target.value, 10))}
+              className="w-16 sm:w-20 h-1.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-stone-900"
+              title={`Épaisseur : ${brushSize}px (Raccourcis : [ ou ])`}
+            />
+
+            <span className="font-mono text-[11px] font-bold text-stone-900 w-8 text-right shrink-0">
+              {brushSize}px
+            </span>
           </div>
 
           {/* Outils secondaires : Grille 16:9, Pelure d'oignon, Import, Undo/Redo */}
@@ -1036,7 +1054,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
           <div className="flex items-center gap-2 text-[11px] text-stone-500">
             <span className="hidden lg:inline bg-white px-2.5 py-1 rounded-xl border border-stone-200 font-mono text-[10px] shadow-sm">
-              B (Crayon) • G (Remplir) • E (Gomme) • Espace (Play) • D (Dupliquer)
+              B (Crayon) • G (Remplir) • E (Gomme) • [ / ] (Taille) • Espace (Play) • D (Dupliquer)
             </span>
           </div>
         </div>
