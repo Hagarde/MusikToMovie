@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS public.proposals (
     key_scene_start_time NUMERIC DEFAULT 0,
     key_scene_end_time NUMERIC DEFAULT 0,
     frames JSONB DEFAULT '[]'::jsonb, -- Tableau des images frames d'animation
-    animation_fps INT DEFAULT 3,
+    animation_fps NUMERIC DEFAULT 0.5,
 
     likes_count INT DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
