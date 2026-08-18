@@ -187,13 +187,7 @@ export default function App() {
             proposals={proposals}
             tracks={tracks}
             onSelectProposal={handleSelectProposal}
-            onCreateNew={() => {
-              if (tracks.length > 0) {
-                handleCreateProposal(tracks[0]);
-              } else {
-                setIsUploadModalOpen(true);
-              }
-            }}
+            onCreateNew={() => setCurrentView('tracks')}
             onVoteUpdated={handleVoteUpdated}
             isAdmin={isAdmin}
             onDeleteProposal={handleDeleteProposal}
