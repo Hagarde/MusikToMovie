@@ -311,39 +311,62 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
             </div>
           </div>
 
-          {/* Timecodes de synchronisation */}
-          <div className="flex items-center gap-2 text-xs font-mono bg-stone-50 px-4 py-2 rounded-2xl border border-stone-200 shadow-sm">
-            <Clock className="w-3.5 h-3.5 text-stone-600" />
-            <span className="text-stone-500">Timecode :</span>
-            <input
-              type="text"
-              value={formatSeconds(startTime)}
-              onChange={(e) => setStartTime(parseTime(e.target.value))}
-              className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
-              placeholder="01:20"
-              title="Début"
-            />
-            <span className="text-stone-400">→</span>
-            <input
-              type="text"
-              value={formatSeconds(endTime)}
-              onChange={(e) => setEndTime(parseTime(e.target.value))}
-              className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
-              placeholder="01:50"
-              title="Fin"
-            />
+          {/* Timecodes & Cadence de projection par défaut */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Cadence de publication associée */}
+            <div className="flex items-center gap-2 text-xs bg-stone-50 px-3.5 py-2 rounded-2xl border border-stone-200 shadow-sm">
+              <span className="text-stone-500 font-semibold">Cadence par défaut :</span>
+              <select
+                value={animationFps}
+                onChange={(e) => setAnimationFps(parseFloat(e.target.value))}
+                className="bg-white border border-stone-200 text-stone-900 font-mono font-bold rounded-xl px-2.5 py-1 text-xs shadow-sm cursor-pointer focus:outline-none focus:border-stone-900"
+                title="Cadence de défilement enregistrée et associée à votre storyboard"
+              >
+                <option value={0.25}>1/4 fps (4.0s / plan - Très contemplatif)</option>
+                <option value={0.33}>1/3 fps (3.0s / plan - Contemplatif)</option>
+                <option value={0.5}>1/2 fps (2.0s / plan - Recommandé)</option>
+                <option value={0.75}>3/4 fps (1.3s / plan)</option>
+                <option value={1}>1.0 fps (1.0s / plan)</option>
+                <option value={2}>2.0 fps (0.5s / plan - Dynamique)</option>
+                <option value={3}>3.0 fps (Animation fluide)</option>
+                <option value={4}>4.0 fps (Animation rapide)</option>
+              </select>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setStartTime(Math.floor(currentAudioTime));
-                setEndTime(Math.floor(currentAudioTime) + 25);
-              }}
-              className="text-[10px] bg-stone-200 hover:bg-stone-900 hover:text-white text-stone-700 px-2.5 py-1 rounded-lg transition-colors font-bold ml-1"
-              title="Caler le timecode sur le lecteur audio actuel"
-            >
-              Prendre ({formatSeconds(currentAudioTime)})
-            </button>
+            {/* Timecodes de synchronisation */}
+            <div className="flex items-center gap-2 text-xs font-mono bg-stone-50 px-3.5 py-2 rounded-2xl border border-stone-200 shadow-sm">
+              <Clock className="w-3.5 h-3.5 text-stone-600" />
+              <span className="text-stone-500">Timecode :</span>
+              <input
+                type="text"
+                value={formatSeconds(startTime)}
+                onChange={(e) => setStartTime(parseTime(e.target.value))}
+                className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
+                placeholder="01:20"
+                title="Début"
+              />
+              <span className="text-stone-400">→</span>
+              <input
+                type="text"
+                value={formatSeconds(endTime)}
+                onChange={(e) => setEndTime(parseTime(e.target.value))}
+                className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
+                placeholder="01:50"
+                title="Fin"
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStartTime(Math.floor(currentAudioTime));
+                  setEndTime(Math.floor(currentAudioTime) + 25);
+                }}
+                className="text-[10px] bg-stone-200 hover:bg-stone-900 hover:text-white text-stone-700 px-2.5 py-1 rounded-lg transition-colors font-bold ml-1 font-sans"
+                title="Caler le timecode sur le lecteur audio actuel"
+              >
+                Prendre ({formatSeconds(currentAudioTime)})
+              </button>
+            </div>
           </div>
         </div>
 

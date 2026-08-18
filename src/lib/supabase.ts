@@ -258,7 +258,7 @@ export async function createProposal(
       key_scene_start_time: newProposal.key_scene_start_time || 0,
       key_scene_end_time: newProposal.key_scene_end_time || 0,
       frames: newProposal.frames || [],
-      animation_fps: newProposal.animation_fps || 3,
+      animation_fps: typeof newProposal.animation_fps === 'number' && newProposal.animation_fps > 0 ? newProposal.animation_fps : 0.5,
       likes_count: 0,
     }]);
 
