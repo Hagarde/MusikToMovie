@@ -17,6 +17,7 @@ interface AudioPlayerProps {
   track: Track | null;
   currentTime?: number;
   onTimeUpdate?: (time: number) => void;
+  onPlayStateChange?: (isPlaying: boolean) => void;
   highlightRange?: { start: number; end: number };
   autoPlay?: boolean;
   forcePlayAtTime?: number | null;
@@ -25,6 +26,7 @@ interface AudioPlayerProps {
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   track,
   onTimeUpdate,
+  onPlayStateChange,
   highlightRange,
   autoPlay = false,
   forcePlayAtTime,
@@ -44,6 +46,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isYtReady, setIsYtReady] = useState<boolean>(false);
 
   const isYouTube = !!track?.youtube_id;
+
+  // Notifier le parent des changements de statut de lecture (synchro storyboard / son)
+  useEffect(() => {
+    if (onPlayStateChange) {
+      onPlayStateChange(isPlaying);
+    }
+  }, [isPlaying, onPlayStateChange]);
 
   // Coordination Globale : un seul lecteur audio actif dans toute l'application à la fois
   useEffect(() => {
@@ -251,7 +260,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   }
 
   const rangeStartPercent = highlightRange && duration > 0 ? (highlightRange.start / duration) * 100 : 0;
-  const rangeWidthPercent = highlightRange && duration > 0 ? ((highlightRange.end - highlightRange.start) / duration) * 100 : 0;
+  const rangeEndPercent = highlightRange && duration > 0 ? (highlightRange.end / duration) * 100 : 0;
+  const rangeWidthPercent = highlightRange && duration > 0 ? Math.max(0, rangeEndPercent - rangeStartPercent) : 0;
+
+  const playheadPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+  const isInLoop = highlightRange ? (currentTime >= highlightRange.start && currentTime <= highlightRange.end) : false;
+  const loopDuration = highlightRange ? Math.max(1, highlightRange.end - highlightRange.start) : 0;
+  const loopElapsed = highlightRange && isInLoop ? Math.max(0, currentTime - highlightRange.start) : 0;
+  const loopProgressPercent = highlightRange && loopDuration > 0 ? Math.min(100, Math.max(0, (loopElapsed / loopDuration) * 100)) : 0;
 
   return (
     <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-gallery text-stone-800 transition-colors">
@@ -402,15 +418,52 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         </div>
       </div>
 
-      {/* Barre de timeline interactive avec marqueur d'intervalle */}
+      {/* Barre de timeline interactive avec marqueur d'intervalle et aiguille curseur (bâton) */}
       <div className="relative mt-3 pt-2">
+        {/* Intervalle de boucle de la scène */}
         {highlightRange && duration > 0 && rangeWidthPercent > 0 && (
           <div
-            className="absolute top-2 h-2.5 bg-rose-100 border-x-2 border-rose-500 rounded z-0 pointer-events-none"
+            className="absolute top-2 h-2.5 bg-rose-100 border-x-2 border-rose-600 rounded z-0 pointer-events-none overflow-hidden"
             style={{
               left: `${Math.max(0, rangeStartPercent)}%`,
               width: `${Math.min(100 - rangeStartPercent, rangeWidthPercent)}%`
             }}
+          >
+            {/* Progression interne dans la boucle */}
+            {isInLoop && (
+              <div
+                className="h-full bg-rose-300/80 transition-all"
+                style={{ width: `${loopProgressPercent}%` }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Repère vertical début de boucle */}
+        {highlightRange && duration > 0 && (
+          <div
+            className="absolute top-0.5 h-5 w-0.5 bg-rose-600 z-10 pointer-events-none"
+            style={{ left: `${rangeStartPercent}%` }}
+            title={`Début de boucle : ${formatTime(highlightRange.start)}`}
+          />
+        )}
+
+        {/* Repère vertical fin de boucle */}
+        {highlightRange && duration > 0 && (
+          <div
+            className="absolute top-0.5 h-5 w-0.5 bg-rose-600 z-10 pointer-events-none"
+            style={{ left: `${rangeEndPercent}%` }}
+            title={`Fin de boucle : ${formatTime(highlightRange.end)}`}
+          />
+        )}
+
+        {/* 📍 Aiguille / Bâton de position de lecture (Playhead Needle) */}
+        {duration > 0 && (
+          <div
+            className={`absolute top-0 h-6 w-1 rounded-full shadow-md z-20 pointer-events-none transition-all ${
+              isInLoop ? 'bg-rose-600 ring-2 ring-rose-300' : 'bg-stone-900 ring-2 ring-white'
+            }`}
+            style={{ left: `calc(${playheadPercent}% - 2px)` }}
           />
         )}
 
@@ -425,6 +478,22 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           onTouchEnd={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
           className="relative z-10 w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-stone-900 hover:accent-stone-700"
         />
+
+        {/* Statut précis de placement dans la boucle */}
+        {highlightRange && duration > 0 && (
+          <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-stone-100 text-[10px] sm:text-[11px] font-mono text-stone-500">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+              <span>Boucle Scène : <strong>{formatTime(highlightRange.start)}</strong> ➔ <strong>{formatTime(highlightRange.end)}</strong> ({Math.round(loopDuration)}s)</span>
+            </span>
+
+            <span className={isInLoop ? 'text-rose-600 font-bold' : 'text-stone-400'}>
+              {isInLoop 
+                ? `Dans la boucle : ${formatTime(loopElapsed)} / ${formatTime(loopDuration)} (${Math.round(loopProgressPercent)}%)` 
+                : `Position : ${formatTime(currentTime)} (hors boucle)`}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

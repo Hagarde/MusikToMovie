@@ -50,7 +50,10 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
   const [activeFrameIndex, setActiveFrameIndex] = useState<number>(0);
   const [isPlayingFlipbook, setIsPlayingFlipbook] = useState<boolean>(true);
-  const [viewerFps, setViewerFps] = useState<number>(proposal.animation_fps || 1);
+  const [viewerFps, setViewerFps] = useState<number>(
+    proposal.animation_fps ? Number(proposal.animation_fps) : 0.5
+  );
+  const [forcePlayTime, setForcePlayTime] = useState<number | null>(null);
 
   // Timecodes de la scène clé
   const startTime = proposal.key_scene_start_time || proposal.scenes?.find(s => s.section_type === 'main')?.start_time || 0;
@@ -58,31 +61,53 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
   const isScenePlayingNow = currentTime >= startTime && currentTime <= endTime;
 
-  // Boucle d'animation flipbook
+  // Changer les FPS avec feedback visuel instantané
+  const changeViewerFps = (fps: number) => {
+    setViewerFps(fps);
+    if (frames.length > 1) {
+      setActiveFrameIndex((prev) => (prev + 1) % frames.length);
+    }
+  };
+
+  // Basculer la lecture synchronisée : Pause ou relance Image ET Son en même temps
+  const togglePlaySync = () => {
+    if (isPlayingFlipbook) {
+      setIsPlayingFlipbook(false);
+      setForcePlayTime(-1); // Coupe le son
+    } else {
+      setIsPlayingFlipbook(true);
+      const targetTime = (currentTime >= startTime && currentTime < endTime) ? currentTime : startTime;
+      setForcePlayTime(targetTime); // Lance le son dans la scène
+    }
+  };
+
+  // Boucle d'animation flipbook avec réactivité instantanée à la vitesse
   useEffect(() => {
     if (!isPlayingFlipbook || frames.length <= 1) return;
-    const speed = viewerFps > 0 ? viewerFps : (proposal.animation_fps || 1);
+    const speed = viewerFps > 0 ? viewerFps : 0.5;
+    const intervalMs = Math.max(50, Math.round(1000 / speed));
+
     const interval = setInterval(() => {
       setActiveFrameIndex((prev) => (prev + 1) % frames.length);
-    }, Math.max(50, 1000 / speed));
+    }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [isPlayingFlipbook, frames.length, viewerFps, proposal.animation_fps]);
+  }, [isPlayingFlipbook, frames.length, viewerFps]);
 
-  // Écoute de la touche Échap pour quitter le mode projection
+  // Écoute de la touche Échap et Espace
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isTheatreMode) {
         setIsTheatreMode(false);
       }
-      if (e.code === 'Space' && isTheatreMode) {
+      if (e.code === 'Space' && (isTheatreMode || document.activeElement === document.body)) {
         e.preventDefault();
-        setIsPlayingFlipbook(!isPlayingFlipbook);
+        togglePlaySync();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isTheatreMode, isPlayingFlipbook]);
+  }, [isTheatreMode, isPlayingFlipbook, currentTime, startTime, endTime]);
 
   const toggleTheatreMode = () => {
     if (!isTheatreMode) {
@@ -173,12 +198,14 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 
       {/* Lecteur Audio/Vidéo YouTube sous la navbar sticky */}
       {track && (
-        <div className="sticky top-20 z-30">
+        <div className="sticky top-20 z-30 shadow-2xl rounded-2xl">
           <AudioPlayer
             track={track}
             onTimeUpdate={setCurrentTime}
+            onPlayStateChange={(playing) => setIsPlayingFlipbook(playing)}
             highlightRange={{ start: startTime, end: endTime }}
             autoPlay
+            forcePlayAtTime={forcePlayTime}
           />
         </div>
       )}
@@ -264,33 +291,57 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             )}
 
             {frames.length > 1 && (
-              <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-stone-200 flex items-center gap-2.5 text-xs shadow-lg">
+              <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-stone-200 flex flex-wrap items-center gap-2.5 text-xs shadow-xl max-w-[calc(100%-4rem)]">
+                {/* Bouton Play/Pause Synchronisé Image & Son */}
                 <button
                   type="button"
-                  onClick={() => setIsPlayingFlipbook(!isPlayingFlipbook)}
-                  className="p-1 rounded-lg bg-stone-900 text-white hover:bg-stone-800 transition-colors font-bold"
+                  onClick={togglePlaySync}
+                  className="px-2.5 py-1.5 rounded-xl bg-stone-900 text-white hover:bg-stone-800 transition-transform hover:scale-105 font-bold flex items-center gap-1.5 shadow-sm"
+                  title={isPlayingFlipbook ? 'Mettre en pause image et musique' : 'Lancer le flipbook et la musique'}
                 >
-                  {isPlayingFlipbook ? <Pause className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                  {isPlayingFlipbook ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
+                  <span>{isPlayingFlipbook ? 'Pause' : 'Lecture'}</span>
                 </button>
-                <span className="font-mono text-stone-800 text-xs font-bold">
-                  Frame {activeFrameIndex + 1} / {frames.length} ({viewerFps === 0.25 ? '1/4 fps • 4s/plan' : viewerFps === 0.5 ? '1/2 fps • 2s/plan' : viewerFps === 0.75 ? '3/4 fps' : `${viewerFps} fps`})
+
+                <span className="font-mono text-stone-800 text-xs font-bold shrink-0">
+                  Plan {activeFrameIndex + 1}/{frames.length}
                 </span>
 
-                {/* Sélecteur rapide de vitesse en visionnage */}
-                <div className="hidden sm:flex items-center gap-1 border-l border-stone-200 pl-2">
-                  {[0.25, 0.5, 1, 2, 4].map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setViewerFps(s)}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                        viewerFps === s ? 'bg-stone-900 text-white font-bold' : 'text-stone-500 hover:text-stone-900'
-                      }`}
-                      title={`Cadence : ${s} images par seconde`}
-                    >
-                      {s === 0.25 ? '1/4' : s === 0.5 ? '1/2' : `${s}`}fps
-                    </button>
-                  ))}
+                {/* Sélecteur et slider de cadence d'animation (FPS) */}
+                <div className="flex items-center gap-1.5 border-l border-stone-200 pl-2">
+                  <span className="text-[10px] text-stone-500 font-semibold hidden md:inline">Cadence :</span>
+                  
+                  <input
+                    type="range"
+                    min="0.25"
+                    max="4"
+                    step="0.25"
+                    value={viewerFps}
+                    onChange={(e) => changeViewerFps(parseFloat(e.target.value))}
+                    className="w-16 sm:w-20 h-1.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-stone-900"
+                    title={`Vitesse d'animation : ${viewerFps} fps`}
+                  />
+
+                  <span className="font-mono text-[11px] font-bold text-stone-900 min-w-[55px]">
+                    {viewerFps === 0.25 ? '1/4 fps' : viewerFps === 0.5 ? '1/2 fps' : viewerFps === 0.75 ? '3/4 fps' : `${viewerFps} fps`}
+                  </span>
+
+                  {/* Pilules de raccourcis FPS */}
+                  <div className="hidden lg:flex items-center gap-0.5 border-l border-stone-200 pl-1.5">
+                    {[0.25, 0.5, 1, 2, 4].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => changeViewerFps(s)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                          viewerFps === s ? 'bg-stone-900 text-white font-bold' : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
+                        }`}
+                        title={`Cadence : ${s} images par seconde`}
+                      >
+                        {s === 0.25 ? '1/4' : s === 0.5 ? '1/2' : `${s}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -409,20 +460,53 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-4 text-xs font-mono text-stone-300">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-4 text-xs font-mono text-stone-300">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => setIsPlayingFlipbook(!isPlayingFlipbook)}
-                className="px-4 py-2 rounded-xl bg-white text-stone-900 font-black flex items-center gap-2 hover:scale-105 transition-transform"
+                onClick={togglePlaySync}
+                className="px-4 py-2 rounded-xl bg-white text-stone-900 font-black flex items-center gap-2 hover:scale-105 transition-transform shadow-md"
+                title={isPlayingFlipbook ? 'Mettre en pause image et musique (Espace)' : 'Lancer image et musique (Espace)'}
               >
-                {isPlayingFlipbook ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+                {isPlayingFlipbook ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
                 <span>{isPlayingFlipbook ? 'Pause' : 'Lecture'}</span>
               </button>
 
-              <span className="text-stone-400">
-                Frame {activeFrameIndex + 1} / {frames.length} ({viewerFps === 0.25 ? '1/4 fps' : viewerFps === 0.5 ? '1/2 fps' : `${viewerFps} fps`})
+              <span className="text-stone-300 font-bold">
+                Plan {activeFrameIndex + 1} / {frames.length}
               </span>
+
+              {/* Contrôleur de vitesse en mode Théâtre */}
+              <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+                <span className="text-stone-400 text-[11px]">Vitesse :</span>
+                <input
+                  type="range"
+                  min="0.25"
+                  max="4"
+                  step="0.25"
+                  value={viewerFps}
+                  onChange={(e) => changeViewerFps(parseFloat(e.target.value))}
+                  className="w-20 h-1.5 bg-stone-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                />
+                <span className="font-bold text-white min-w-[55px]">
+                  {viewerFps === 0.25 ? '1/4 fps' : viewerFps === 0.5 ? '1/2 fps' : `${viewerFps} fps`}
+                </span>
+
+                <div className="flex items-center gap-1 border-l border-white/15 pl-2">
+                  {[0.25, 0.5, 1, 2, 4].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => changeViewerFps(s)}
+                      className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                        viewerFps === s ? 'bg-white text-stone-900 font-bold' : 'text-stone-400 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {s === 0.25 ? '1/4' : s === 0.5 ? '1/2' : `${s}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {track && (
