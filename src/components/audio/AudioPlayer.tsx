@@ -29,6 +29,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   autoPlay = false,
   forcePlayAtTime,
 }) => {
+  const playerId = useRef(`player-${Math.random().toString(36).substring(2, 9)}`).current;
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ytPlayerRef = useRef<any>(null);
   const ytContainerRef = useRef<HTMLDivElement | null>(null);
@@ -43,6 +44,27 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isYtReady, setIsYtReady] = useState<boolean>(false);
 
   const isYouTube = !!track?.youtube_id;
+
+  // Coordination Globale : un seul lecteur audio actif dans toute l'application à la fois
+  useEffect(() => {
+    const handleOtherAudioPlay = (e: any) => {
+      if (e.detail?.id && e.detail.id !== playerId) {
+        if (isYouTube && ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+          try { ytPlayerRef.current.pauseVideo(); } catch (_) {}
+        } else if (audioRef.current) {
+          audioRef.current.pause();
+        }
+        setIsPlaying(false);
+      }
+    };
+
+    window.addEventListener('m2m-audio-play', handleOtherAudioPlay);
+    return () => window.removeEventListener('m2m-audio-play', handleOtherAudioPlay);
+  }, [playerId, isYouTube]);
+
+  const notifyAudioPlay = () => {
+    window.dispatchEvent(new CustomEvent('m2m-audio-play', { detail: { id: playerId } }));
+  };
 
   // Déclenchement forcé (ex: lors de l'aperçu Flipbook + Musique)
   useEffect(() => {
@@ -164,6 +186,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         ytPlayerRef.current.pauseVideo();
         setIsPlaying(false);
       } else {
+        notifyAudioPlay();
         ytPlayerRef.current.playVideo();
         setIsPlaying(true);
       }
@@ -175,6 +198,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
+      notifyAudioPlay();
       audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
     }
   };
@@ -200,6 +224,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   const jumpToTime = (time: number) => {
     setCurrentTime(time);
+    notifyAudioPlay();
     if (isYouTube && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
       ytPlayerRef.current.seekTo(time, true);
       if (!isPlaying) ytPlayerRef.current.playVideo();

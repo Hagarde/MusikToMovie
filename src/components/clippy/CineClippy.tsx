@@ -95,14 +95,14 @@ export const CineClippy: React.FC = () => {
   return (
     <aside 
       aria-label="Clappy, le clap de tournage cinéphile"
-      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end pointer-events-none select-none max-w-[320px] sm:max-w-[360px]"
+      className="fixed bottom-3 right-3 sm:bottom-6 sm:right-6 z-40 flex flex-col items-end pointer-events-none select-none max-w-[calc(100vw-1.5rem)] sm:max-w-[360px]"
     >
       {/* Bulle de dialogue flottante style bande dessinée */}
       {isOpen && (
-        <div className="pointer-events-auto mb-2 p-4 bg-white rounded-3xl border border-stone-200 shadow-xl text-stone-900 animate-in fade-in slide-in-from-bottom-2 duration-200 relative backdrop-blur-md">
+        <div className="pointer-events-auto mb-2 p-3.5 sm:p-4 bg-white rounded-3xl border border-stone-200 shadow-xl text-stone-900 animate-in fade-in slide-in-from-bottom-2 duration-200 relative backdrop-blur-md">
           {/* En-tête discret */}
-          <div className="flex items-center justify-between gap-2 border-b border-stone-100 pb-2 mb-2">
-            <span className="text-[10px] font-bold text-stone-500 font-mono uppercase tracking-wider">
+          <div className="flex items-center justify-between gap-2 border-b border-stone-100 pb-1.5 mb-1.5">
+            <span className="text-[9px] sm:text-[10px] font-bold text-stone-500 font-mono uppercase tracking-wider">
               {current.category}
             </span>
 
@@ -121,24 +121,22 @@ export const CineClippy: React.FC = () => {
             <h4 className="text-xs font-extrabold text-stone-900 font-display">
               {current.title}
             </h4>
-            <p className="text-xs text-stone-700 leading-relaxed">
+            <p className="text-[11px] sm:text-xs text-stone-700 leading-relaxed">
               "{current.text}"
             </p>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-between gap-2 pt-2.5 mt-2 border-t border-stone-100 text-[11px]">
-            <span className="text-[10px] text-stone-400 font-mono">
-              {currentIndex + 1} / {CINE_OBSERVATIONS.length}
-            </span>
-
+          {/* Bouton Suivant discret */}
+          <div className="flex items-center justify-between pt-2 mt-2 border-t border-stone-100 text-[10px] text-stone-400">
+            <span className="font-mono">Clappy • Le Cinéphile</span>
             <button
               type="button"
               onClick={nextObservation}
-              className="px-2.5 py-1 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-[10px] flex items-center gap-1 transition-transform hover:scale-105 shadow-sm"
+              className="flex items-center gap-1 font-bold text-stone-700 hover:text-stone-900 p-1 rounded-lg hover:bg-stone-100 transition-colors"
+              title="Anecdote suivante"
             >
               <RefreshCw className="w-3 h-3" />
-              <span>Suivant 🎬</span>
+              <span>Autre vérité</span>
             </button>
           </div>
 
@@ -147,19 +145,17 @@ export const CineClippy: React.FC = () => {
         </div>
       )}
 
-      {/* Mascotte "Clappy" : Clap de tournage libre, mignon & expressif (NON enfermé dans une boîte) */}
+      {/* 🎬 Personnage Clappy vectoriel sans boîte, libre et mignon */}
       <button
         type="button"
         onClick={() => {
           if (!isOpen) {
             setIsOpen(true);
-            triggerClap();
-          } else {
-            nextObservation();
           }
+          nextObservation();
         }}
-        className="pointer-events-auto group relative flex items-center justify-center p-1 transition-transform hover:scale-110 active:scale-95 cursor-pointer"
-        title={isOpen ? "Clique pour clapper !" : "Ouvrir Clappy"}
+        className="pointer-events-auto group focus:outline-none transition-transform hover:scale-110 active:scale-95 drop-shadow-lg cursor-pointer"
+        title="Cliquez sur Clappy pour une vérité cinématographique !"
       >
         <div className="relative w-16 h-16 sm:w-20 sm:h-20 drop-shadow-xl filter">
           {/* Dessin SVG mignon et détaillé de Clappy */}

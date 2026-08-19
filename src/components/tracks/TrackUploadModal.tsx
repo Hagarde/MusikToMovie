@@ -171,10 +171,30 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
       }
     }
 
-    return () => {
-      if (loopIntervalRef.current) clearInterval(loopIntervalRef.current);
+    if (isOpen) {
+      // Couper immédiatement la musique d'arrière-plan dès l'ouverture de la modale d'ajout
+      window.dispatchEvent(new CustomEvent('m2m-audio-play', { detail: { id: 'upload-modal-preview' } }));
+    }
+  }, [isOpen]);
+
+  // Coordination Globale : couper la pré-écoute de la modale si un autre lecteur est activé
+  useEffect(() => {
+    const handleOtherPlay = (e: any) => {
+      if (e.detail?.id && e.detail.id !== 'upload-modal-preview') {
+        if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+          try { ytPlayerRef.current.pauseVideo(); } catch (_) {}
+        }
+        setIsPlayingLoop(false);
+      }
     };
-  }, [isPlayingLoop, isPlayerReady, startTime, endTime]);
+
+    window.addEventListener('m2m-audio-play', handleOtherPlay);
+    return () => window.removeEventListener('m2m-audio-play', handleOtherPlay);
+  }, []);
+
+  const notifyModalAudioPlay = () => {
+    window.dispatchEvent(new CustomEvent('m2m-audio-play', { detail: { id: 'upload-modal-preview' } }));
+  };
 
   const toggleLoopPlayback = () => {
     if (!ytPlayerRef.current || !isPlayerReady) return;
@@ -183,6 +203,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
       ytPlayerRef.current.pauseVideo();
       setIsPlayingLoop(false);
     } else {
+      notifyModalAudioPlay();
       updateExactDuration(ytPlayerRef.current);
       const targetSeek = (currentPlayTime >= startTime && currentPlayTime < endTime) ? currentPlayTime : startTime;
       ytPlayerRef.current.seekTo(targetSeek, true);
@@ -201,6 +222,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
 
   const jumpToLoopStart = () => {
     setCurrentPlayTime(startTime);
+    notifyModalAudioPlay();
     if (ytPlayerRef.current) {
       ytPlayerRef.current.seekTo(startTime, true);
       if (!isPlayingLoop) {

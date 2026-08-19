@@ -142,29 +142,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     ctx.fillStyle = '#1c1917';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Dessin de l'onion skin (frame précédente en filigrane)
-    if (onionSkin && index > 0 && framesList[index - 1]) {
-      const prevImg = new Image();
-      prevImg.onload = () => {
-        ctx.save();
-        ctx.globalAlpha = 0.25;
-        ctx.drawImage(prevImg, 0, 0, canvas.width, canvas.height);
-        ctx.restore();
-        drawCurrentFrameContent(ctx, canvas, index, framesList);
-      };
-      prevImg.src = framesList[index - 1];
-      return;
-    }
-
-    drawCurrentFrameContent(ctx, canvas, index, framesList);
-  }, [onionSkin, frames]);
-
-  const drawCurrentFrameContent = (
-    ctx: CanvasRenderingContext2D, 
-    canvas: HTMLCanvasElement, 
-    index: number,
-    framesList: string[]
-  ) => {
+    // Dessin UNIQUEMENT du contenu réel de la frame courante (L'oignon est un calque d'affichage indépendant !)
     const frameData = framesList[index];
     if (frameData) {
       const img = new Image();
@@ -176,13 +154,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     } else {
       saveHistoryState();
     }
-  };
+  }, [frames, saveHistoryState]);
 
   useEffect(() => {
     if (!isPlayingAnim) {
       loadFrame(currentFrameIndex, frames);
     }
-  }, [currentFrameIndex, onionSkin]);
+  }, [currentFrameIndex]);
 
   // Boucle de lecture d'animation Flipbook
   useEffect(() => {
@@ -203,6 +181,26 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     }
   }, [isPlayingAnim, onTogglePlayAnim]);
 
+  // Bloquer le défilement tactile natif sur le canvas pour un tracé ultra-fluide sur mobile
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const preventTouchScroll = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    canvas.addEventListener('touchstart', preventTouchScroll, { passive: false });
+    canvas.addEventListener('touchmove', preventTouchScroll, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('touchstart', preventTouchScroll);
+      canvas.removeEventListener('touchmove', preventTouchScroll);
+    };
+  }, []);
+
   const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -210,15 +208,21 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
-    if ('touches' in e) {
+    if ('touches' in e && e.touches.length > 0) {
       return {
         x: Math.round((e.touches[0].clientX - rect.left) * scaleX),
         y: Math.round((e.touches[0].clientY - rect.top) * scaleY)
       };
+    } else if ('changedTouches' in e && e.changedTouches.length > 0) {
+      return {
+        x: Math.round((e.changedTouches[0].clientX - rect.left) * scaleX),
+        y: Math.round((e.changedTouches[0].clientY - rect.top) * scaleY)
+      };
     }
+    const mouseEvent = e as React.MouseEvent<HTMLCanvasElement>;
     return {
-      x: Math.round((e.clientX - rect.left) * scaleX),
-      y: Math.round((e.clientY - rect.top) * scaleY)
+      x: Math.round((mouseEvent.clientX - rect.left) * scaleX),
+      y: Math.round((mouseEvent.clientY - rect.top) * scaleY)
     };
   };
 
@@ -973,6 +977,24 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </div>
         ) : (
           <>
+            {/* 🧅 Calque Pelure d'Oignon Indépendant (Visuel uniquement - JAMAIS fusionné ni copié dans la frame) */}
+            {onionSkin && currentFrameIndex > 0 && frames[currentFrameIndex - 1] && (
+              <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden flex items-center justify-center mix-blend-screen opacity-35">
+                <img
+                  src={frames[currentFrameIndex - 1]}
+                  alt="Pelure d'oignon (frame précédente)"
+                  className="w-full h-full object-contain select-none"
+                />
+              </div>
+            )}
+
+            {onionSkin && currentFrameIndex > 0 && frames[currentFrameIndex - 1] && (
+              <div className="absolute top-2 left-2 text-[9px] font-mono font-bold text-amber-300 bg-black/75 border border-amber-500/40 px-2 py-0.5 rounded-full backdrop-blur-sm pointer-events-none z-30 flex items-center gap-1 shadow-sm">
+                <span>🧅</span>
+                <span>Oignon (Plan #{currentFrameIndex})</span>
+              </div>
+            )}
+
             <canvas
               ref={canvasRef}
               width={640}
@@ -984,7 +1006,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               onTouchStart={startDrawing}
               onTouchMove={draw}
               onTouchEnd={stopDrawing}
-              className={`w-full h-full object-contain ${
+              className={`w-full h-full object-contain relative z-10 ${
                 readOnly 
                   ? 'cursor-default' 
                   : activeTool === 'eraser' 
@@ -999,22 +1021,22 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
             {/* Grille de Composition Cinématographique (Règle des tiers) */}
             {showGrid && (
-              <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 border border-white/10">
+              <div className="absolute inset-0 pointer-events-none z-30 grid grid-cols-3 grid-rows-3 border border-white/10">
                 <div className="border-r border-b border-white/15" />
                 <div className="border-r border-b border-white/15" />
                 <div className="border-b border-white/15" />
                 <div className="border-r border-b border-white/15" />
                 <div className="border-r border-b border-white/15" />
                 <div className="border-b border-white/15" />
-                <div className="border-r border-white/15" />
-                <div className="border-r border-white/15" />
+                <div className="border-r border-b border-white/15" />
+                <div className="border-r border-b border-white/15" />
                 <div />
               </div>
             )}
           </>
         )}
 
-        <div className="absolute bottom-2 right-2 text-[10px] font-mono text-stone-400 pointer-events-none bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-sm">
+        <div className="absolute bottom-2 right-2 text-[10px] font-mono text-stone-400 pointer-events-none bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-sm z-30">
           16:9 • Frame {currentFrameIndex + 1} / {frames.length}
         </div>
       </div>
