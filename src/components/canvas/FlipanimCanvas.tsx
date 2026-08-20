@@ -1019,18 +1019,38 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               }`}
             />
 
-            {/* Grille de Composition Cinématographique (Règle des tiers) */}
+            {/* Grille de Composition Cinématographique (Règle des tiers auto-contrastée sur fond blanc ET noir) */}
             {showGrid && (
-              <div className="absolute inset-0 pointer-events-none z-30 grid grid-cols-3 grid-rows-3 border border-white/10">
-                <div className="border-r border-b border-white/15" />
-                <div className="border-r border-b border-white/15" />
-                <div className="border-b border-white/15" />
-                <div className="border-r border-b border-white/15" />
-                <div className="border-r border-b border-white/15" />
-                <div className="border-b border-white/15" />
-                <div className="border-r border-b border-white/15" />
-                <div className="border-r border-b border-white/15" />
-                <div />
+              <div className="absolute inset-0 pointer-events-none z-30 mix-blend-difference">
+                <div className="w-full h-full grid grid-cols-3 grid-rows-3 border border-white/40">
+                  <div className="border-r border-b border-white/70" />
+                  <div className="border-r border-b border-white/70" />
+                  <div className="border-b border-white/70" />
+                  <div className="border-r border-b border-white/70" />
+                  <div className="border-r border-b border-white/70" />
+                  <div className="border-b border-white/70" />
+                  <div className="border-r border-b border-white/70" />
+                  <div className="border-r border-b border-white/70" />
+                  <div />
+                </div>
+
+                {/* 4 Points de force / Règle des tiers (repères caméra) */}
+                <div className="absolute left-[33.333%] top-[33.333%] -translate-x-1/2 -translate-y-1/2 w-3 h-3 flex items-center justify-center">
+                  <span className="w-2 h-0.5 bg-white" />
+                  <span className="h-2 w-0.5 bg-white absolute" />
+                </div>
+                <div className="absolute left-[66.666%] top-[33.333%] -translate-x-1/2 -translate-y-1/2 w-3 h-3 flex items-center justify-center">
+                  <span className="w-2 h-0.5 bg-white" />
+                  <span className="h-2 w-0.5 bg-white absolute" />
+                </div>
+                <div className="absolute left-[33.333%] top-[66.666%] -translate-x-1/2 -translate-y-1/2 w-3 h-3 flex items-center justify-center">
+                  <span className="w-2 h-0.5 bg-white" />
+                  <span className="h-2 w-0.5 bg-white absolute" />
+                </div>
+                <div className="absolute left-[66.666%] top-[66.666%] -translate-x-1/2 -translate-y-1/2 w-3 h-3 flex items-center justify-center">
+                  <span className="w-2 h-0.5 bg-white" />
+                  <span className="h-2 w-0.5 bg-white absolute" />
+                </div>
               </div>
             )}
           </>
