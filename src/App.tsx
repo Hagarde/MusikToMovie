@@ -135,7 +135,7 @@ export default function App() {
         {/* Lecteur Audio global si on est sur la vue Bibliothèque ou Galerie */}
         {(currentView === 'tracks' || currentView === 'proposals') && selectedTrack && (
           <div className="mb-8">
-            <AudioPlayer track={selectedTrack} />
+            <AudioPlayer track={selectedTrack} autoPlay={false} />
           </div>
         )}
 

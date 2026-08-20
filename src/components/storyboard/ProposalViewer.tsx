@@ -49,7 +49,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
     : proposal.scenes?.map(s => s.image_data).filter(Boolean) || [];
 
   const [activeFrameIndex, setActiveFrameIndex] = useState<number>(0);
-  const [isPlayingFlipbook, setIsPlayingFlipbook] = useState<boolean>(true);
+  const [isPlayingFlipbook, setIsPlayingFlipbook] = useState<boolean>(false);
   const [viewerFps, setViewerFps] = useState<number>(
     proposal.animation_fps ? Number(proposal.animation_fps) : 0.5
   );
@@ -204,7 +204,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             onTimeUpdate={setCurrentTime}
             onPlayStateChange={(playing) => setIsPlayingFlipbook(playing)}
             highlightRange={{ start: startTime, end: endTime }}
-            autoPlay
+            autoPlay={false}
             forcePlayAtTime={forcePlayTime}
           />
         </div>

@@ -182,6 +182,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             if (autoPlay) {
               event.target.playVideo();
               setIsPlaying(true);
+            } else {
+              try {
+                event.target.pauseVideo();
+              } catch (_) {}
+              setIsPlaying(false);
             }
           },
           onStateChange: (event: any) => {
