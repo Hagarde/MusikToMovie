@@ -346,13 +346,28 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setStartTime(Math.floor(currentAudioTime));
-                  setEndTime(Math.floor(currentAudioTime) + 25);
+                  const newStart = Math.floor(currentAudioTime);
+                  const dur = track?.duration || 180;
+                  const newEnd = Math.min(dur, newStart + 25);
+                  setStartTime(newStart);
+                  setEndTime(newEnd);
                 }}
                 className="text-[10px] bg-stone-200 hover:bg-stone-900 hover:text-white text-stone-700 px-2.5 py-1 rounded-lg transition-colors font-bold ml-1 font-sans"
-                title="Caler le timecode sur le lecteur audio actuel"
+                title="Caler le timecode sur la position actuelle du lecteur audio"
               >
                 Prendre ({formatSeconds(currentAudioTime)})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setForcePlayTime(startTime);
+                }}
+                className="text-[10px] bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 border border-rose-200 hover:border-rose-600 px-2.5 py-1 rounded-lg transition-colors font-bold flex items-center gap-1 font-sans"
+                title="Écouter cet extrait dans le lecteur"
+              >
+                <span>▶ Écouter</span>
+                <span>({Math.max(1, endTime - startTime)}s)</span>
               </button>
             </div>
           </div>

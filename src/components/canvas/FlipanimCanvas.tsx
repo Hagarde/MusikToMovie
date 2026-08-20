@@ -78,6 +78,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   
   // Outils et modes
   const [activeTool, setActiveTool] = useState<CanvasTool>('pen');
+  const [previousTool, setPreviousTool] = useState<CanvasTool>('pen');
   const [color, setColor] = useState<string>('#ffffff');
   const [brushSize, setBrushSize] = useState<number>(3);
   const [onionSkin, setOnionSkin] = useState<boolean>(true);
@@ -325,9 +326,14 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     if (!ctx) return;
 
     const pixel = ctx.getImageData(x, y, 1, 1).data;
-    const hex = `#${((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1)}`;
-    setColor(hex);
-    setActiveTool('pen');
+    if (pixel[3] < 10) {
+      setColor('#ffffff');
+    } else {
+      const hex = `#${((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1)}`;
+      setColor(hex);
+    }
+    // Revenir automatiquement à l'outil actif avant la pipette (crayon, marqueur, forme)
+    setActiveTool(previousTool !== 'pipette' && previousTool !== 'eraser' ? previousTool : 'pen');
   };
 
   // Début d'action de dessin
@@ -842,7 +848,11 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             {/* Pipette */}
             <button
               type="button"
-              onClick={() => { setActiveTool('pipette'); setShowShapeMenu(false); }}
+              onClick={() => {
+                if (activeTool !== 'pipette') setPreviousTool(activeTool);
+                setActiveTool('pipette');
+                setShowShapeMenu(false);
+              }}
               className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
                 activeTool === 'pipette'
                   ? 'bg-stone-900 text-white shadow-sm'
@@ -1221,7 +1231,9 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   </button>
 
                   {!readOnly && frames.length > 1 && (
-                    <div className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white border border-stone-200 rounded px-0.5 shadow z-10">
+                    <div className={`absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 flex items-center gap-0.5 transition-opacity bg-white border border-stone-200 rounded px-0.5 shadow z-10 ${
+                      currentFrameIndex === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    }`}>
                       {i > 0 && (
                         <button
                           type="button"
@@ -1258,7 +1270,9 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                         e.stopPropagation();
                         deleteFrame(i);
                       }}
-                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 hover:bg-rose-500 text-white rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow z-10"
+                      className={`absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 hover:bg-rose-500 text-white rounded-full text-[10px] flex items-center justify-center transition-opacity shadow z-10 ${
+                        currentFrameIndex === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
                       title="Supprimer cette frame"
                     >
                       ×
