@@ -418,55 +418,31 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         </div>
       </div>
 
-      {/* Barre de timeline interactive avec marqueur d'intervalle et aiguille curseur (bâton) */}
+      {/* Barre de timeline épurée et sans superposition */}
       <div className="relative mt-3 pt-2">
-        {/* Intervalle de boucle de la scène */}
+        {/* Piste de fond */}
+        <div className="absolute top-2 left-0 right-0 h-2.5 bg-stone-100 rounded-full pointer-events-none border border-stone-200/80" />
+
+        {/* Intervalle de boucle de la scène (Zone surlignée nette, sans crochets ni barres parasites) */}
         {highlightRange && duration > 0 && rangeWidthPercent > 0 && (
           <div
-            className="absolute top-2 h-2.5 bg-rose-100 border-x-2 border-rose-600 rounded z-0 pointer-events-none overflow-hidden"
+            className="absolute top-2 h-2.5 bg-rose-100 rounded-full z-0 pointer-events-none overflow-hidden"
             style={{
               left: `${Math.max(0, rangeStartPercent)}%`,
               width: `${Math.min(100 - rangeStartPercent, rangeWidthPercent)}%`
             }}
           >
-            {/* Progression interne dans la boucle */}
+            {/* Progression interne fluide dans la boucle */}
             {isInLoop && (
               <div
-                className="h-full bg-rose-300/80 transition-all"
+                className="h-full bg-rose-300/90 transition-all duration-75"
                 style={{ width: `${loopProgressPercent}%` }}
               />
             )}
           </div>
         )}
 
-        {/* Repère vertical début de boucle */}
-        {highlightRange && duration > 0 && (
-          <div
-            className="absolute top-0.5 h-5 w-0.5 bg-rose-600 z-10 pointer-events-none"
-            style={{ left: `${rangeStartPercent}%` }}
-            title={`Début de boucle : ${formatTime(highlightRange.start)}`}
-          />
-        )}
-
-        {/* Repère vertical fin de boucle */}
-        {highlightRange && duration > 0 && (
-          <div
-            className="absolute top-0.5 h-5 w-0.5 bg-rose-600 z-10 pointer-events-none"
-            style={{ left: `${rangeEndPercent}%` }}
-            title={`Fin de boucle : ${formatTime(highlightRange.end)}`}
-          />
-        )}
-
-        {/* 📍 Aiguille / Bâton de position de lecture (Playhead Needle) */}
-        {duration > 0 && (
-          <div
-            className={`absolute top-0 h-6 w-1 rounded-full shadow-md z-20 pointer-events-none transition-all ${
-              isInLoop ? 'bg-rose-600 ring-2 ring-rose-300' : 'bg-stone-900 ring-2 ring-white'
-            }`}
-            style={{ left: `calc(${playheadPercent}% - 2px)` }}
-          />
-        )}
-
+        {/* Curseur de lecture unique et interactif */}
         <input
           type="range"
           min="0"
@@ -476,10 +452,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           onChange={handleSeek}
           onMouseUp={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
           onTouchEnd={(e) => handleSeekCommit(parseFloat((e.target as HTMLInputElement).value))}
-          className="relative z-10 w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-stone-900 hover:accent-stone-700"
+          className={`relative z-10 w-full h-2.5 bg-transparent rounded-full appearance-none cursor-pointer transition-colors ${
+            isInLoop ? 'accent-rose-600' : 'accent-stone-900'
+          }`}
+          title="Déplacer la tête de lecture"
         />
 
-        {/* Statut précis de placement dans la boucle */}
+        {/* Statut précis et lisible de la scène */}
         {highlightRange && duration > 0 && (
           <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-stone-100 text-[10px] sm:text-[11px] font-mono text-stone-500">
             <span className="flex items-center gap-1.5">
