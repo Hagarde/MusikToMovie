@@ -147,7 +147,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
     };
   }, [youtubeId, isOpen]);
 
-  // Surveillance de la boucle de lecture (loop entre startTime et endTime)
+  // Surveillance de la boucle de lecture (loop active entre startTime et endTime avec rafraîchissement 50ms)
   useEffect(() => {
     if (isPlayingLoop && isPlayerReady && ytPlayerRef.current) {
       if (loopIntervalRef.current) clearInterval(loopIntervalRef.current);
@@ -158,22 +158,33 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
           const t = ytPlayerRef.current.getCurrentTime();
           if (typeof t === 'number' && !isNaN(t)) {
             setCurrentPlayTime(t);
-            if (t >= endTime || t < startTime - 1) {
+            if (t >= endTime || t < startTime - 0.5) {
               ytPlayerRef.current.seekTo(startTime, true);
               setCurrentPlayTime(startTime);
             }
           }
         } catch (e) {}
-      }, 100);
+      }, 50);
     } else {
       if (loopIntervalRef.current) {
         clearInterval(loopIntervalRef.current);
       }
     }
 
+    return () => {
+      if (loopIntervalRef.current) clearInterval(loopIntervalRef.current);
+    };
+  }, [isPlayingLoop, isPlayerReady, startTime, endTime]);
+
+  // Couper la musique d'arrière-plan dès l'ouverture de la modale
+  useEffect(() => {
     if (isOpen) {
-      // Couper immédiatement la musique d'arrière-plan dès l'ouverture de la modale d'ajout
       window.dispatchEvent(new CustomEvent('m2m-audio-play', { detail: { id: 'upload-modal-preview' } }));
+    } else {
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+        try { ytPlayerRef.current.pauseVideo(); } catch (_) {}
+      }
+      setIsPlayingLoop(false);
     }
   }, [isOpen]);
 
@@ -331,7 +342,10 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
 
   const segmentDuration = Math.max(1, endTime - startTime);
   const clampedPlayTime = Math.max(startTime, Math.min(currentPlayTime, endTime));
-  const loopProgressPercent = ((clampedPlayTime - startTime) / segmentDuration) * 100;
+  const loopElapsed = Math.max(0, clampedPlayTime - startTime);
+  const loopRemaining = Math.max(0, endTime - clampedPlayTime);
+  const loopProgressPercent = (loopElapsed / segmentDuration) * 100;
+  const isNearEnd = loopRemaining <= 3.0 && segmentDuration > 3;
 
   const startPercent = duration > 0 ? (startTime / duration) * 100 : 0;
   const endPercent = duration > 0 ? (endTime / duration) * 100 : 100;
@@ -445,12 +459,27 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                   </button>
                 </div>
 
-                {/* Scrubber de boucle dragable */}
-                <div className="bg-white p-3.5 rounded-2xl border border-stone-200 space-y-2.5 shadow-sm">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 font-semibold text-stone-800">
-                      <Disc className={`w-3.5 h-3.5 text-stone-700 ${isPlayingLoop ? 'animate-spin' : ''}`} />
-                      <span>Position dans la boucle :</span>
+                {/* Scrubber de boucle dragable & Indicateur de position */}
+                <div className={`p-3.5 sm:p-4 rounded-2xl border transition-all space-y-3 shadow-sm ${
+                  isNearEnd && isPlayingLoop
+                    ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-200' 
+                    : 'bg-white border-stone-200'
+                }`}>
+                  {/* En-tête de la jauge avec statut en direct */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 font-bold text-stone-800">
+                      <Disc className={`w-4 h-4 text-stone-800 ${isPlayingLoop ? 'animate-spin text-rose-600' : ''}`} />
+                      <span>Position dans l'extrait :</span>
+                      {isPlayingLoop && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1 ${
+                          isNearEnd 
+                            ? 'bg-rose-600 text-white animate-pulse' 
+                            : 'bg-stone-900 text-white'
+                        }`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                          <span>{isNearEnd ? `Fin dans ${loopRemaining.toFixed(1)}s` : 'En lecture'}</span>
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 font-mono text-xs">
@@ -458,19 +487,33 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                         {formatSeconds(clampedPlayTime)}
                       </span>
                       <span className="text-stone-500 text-[11px]">
-                        (+{(clampedPlayTime - startTime).toFixed(1)}s / {segmentDuration}s)
+                        (+{loopElapsed.toFixed(1)}s / {segmentDuration}s)
                       </span>
                     </div>
                   </div>
 
-                  <div className="relative pt-1">
-                    <div className="relative h-3 bg-stone-100 rounded-full overflow-hidden border border-stone-200">
+                  {/* Barre visuelle de progression avec Aiguille curseur (Bâton) */}
+                  <div className="relative pt-2 pb-1">
+                    {/* Track de fond */}
+                    <div className="relative h-3.5 bg-stone-100 rounded-full overflow-hidden border border-stone-200">
+                      {/* Remplissage de progression */}
                       <div
-                        className="absolute top-0 bottom-0 bg-stone-900 rounded-full transition-all duration-75"
+                        className={`absolute top-0 bottom-0 rounded-full transition-all duration-75 ${
+                          isNearEnd && isPlayingLoop ? 'bg-rose-500' : 'bg-stone-900'
+                        }`}
                         style={{ width: `${Math.max(0, Math.min(100, loopProgressPercent))}%` }}
                       />
                     </div>
 
+                    {/* Aiguille / Bâton vertical de position */}
+                    <div
+                      className={`absolute top-0.5 h-6 w-1 rounded-full shadow-md z-20 pointer-events-none transition-all duration-75 ${
+                        isNearEnd && isPlayingLoop ? 'bg-rose-600 ring-2 ring-rose-300' : 'bg-stone-900 ring-2 ring-white'
+                      }`}
+                      style={{ left: `calc(${Math.max(0, Math.min(100, loopProgressPercent))}% - 2px)` }}
+                    />
+
+                    {/* Input invisible pour glisser / cliquer sur la barre */}
                     <input
                       type="range"
                       min={startTime}
@@ -480,27 +523,45 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                       onChange={(e) => handleScrubInLoop(parseFloat(e.target.value), false)}
                       onMouseUp={(e) => handleScrubInLoop(parseFloat((e.target as HTMLInputElement).value), true)}
                       onTouchEnd={(e) => handleScrubInLoop(parseFloat((e.target as HTMLInputElement).value), true)}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-10"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30"
                       title="Glisser pour reculer ou avancer précisément dans la boucle"
                     />
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 pt-1 text-[11px]">
+                  {/* Repères et indicateurs Début / Fin / Reste */}
+                  <div className="flex items-center justify-between text-[11px] font-mono text-stone-500">
+                    <span className="flex items-center gap-1 font-semibold text-stone-700">
+                      <span>▶ Début : {formatSeconds(startTime)}</span>
+                    </span>
+
+                    <span className={`font-bold ${isNearEnd && isPlayingLoop ? 'text-rose-600' : 'text-stone-600'}`}>
+                      {isNearEnd && isPlayingLoop
+                        ? `⚠️ Fin dans ${loopRemaining.toFixed(1)}s (rebouclage imminent)` 
+                        : `Reste : ${loopRemaining.toFixed(1)}s (${(100 - loopProgressPercent).toFixed(0)}%)`}
+                    </span>
+
+                    <span className="flex items-center gap-1 font-semibold text-stone-700">
+                      <span>Fin : {formatSeconds(endTime)} ⏹</span>
+                    </span>
+                  </div>
+
+                  {/* Boutons d'ajustement rapide */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-stone-100 text-[11px]">
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={jumpToLoopStart}
-                        className="px-2 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold flex items-center gap-1 transition-colors border border-stone-200"
+                        className="px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold flex items-center gap-1 transition-colors border border-stone-200 shadow-sm"
                         title="Revenir au début de la boucle"
                       >
                         <RotateCcw className="w-3 h-3 text-stone-600" />
-                        <span>Début boucle</span>
+                        <span>Début extrait</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={() => nudgeCurrentPlayTime(-2)}
-                        className="px-2 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 font-mono transition-colors border border-stone-200"
+                        className="px-2 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-mono transition-colors border border-stone-200 shadow-sm"
                         title="Reculer de 2 secondes dans la boucle"
                       >
                         -2s
@@ -509,15 +570,15 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
                       <button
                         type="button"
                         onClick={() => nudgeCurrentPlayTime(2)}
-                        className="px-2 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 font-mono transition-colors border border-stone-200"
+                        className="px-2 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-mono transition-colors border border-stone-200 shadow-sm"
                         title="Avancer de 2 secondes dans la boucle"
                       >
                         +2s
                       </button>
                     </div>
 
-                    <span className="text-[10px] text-stone-500 italic">
-                      Glissez la barre pour vous caler au bon moment
+                    <span className="text-[10px] text-stone-500 italic hidden sm:inline">
+                      Cliquez ou glissez la barre pour tester n'importe quel moment
                     </span>
                   </div>
                 </div>
