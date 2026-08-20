@@ -118,10 +118,26 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     setHistoryStep((prev) => prev + 1);
   }, [historyStep]);
 
-  // Sauvegarder la frame active dans la liste
+  // Sauvegarder la frame active dans la liste (avec fond sombre #1c1917 propre)
   const saveCurrentFrameToState = useCallback((frameIdx: number = currentFrameIndex) => {
     const canvas = canvasRef.current;
     if (!canvas) return frames;
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = canvas.width;
+    exportCanvas.height = canvas.height;
+    const exportCtx = exportCanvas.getContext('2d');
+    if (exportCtx) {
+      exportCtx.fillStyle = '#1c1917';
+      exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+      exportCtx.drawImage(canvas, 0, 0);
+      const dataUrl = exportCanvas.toDataURL('image/webp', 0.85);
+      const updated = [...frames];
+      updated[frameIdx] = dataUrl;
+      setFrames(updated);
+      if (onChange) onChange(updated);
+      return updated;
+    }
 
     const dataUrl = canvas.toDataURL('image/webp', 0.85);
     const updated = [...frames];
@@ -138,16 +154,26 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Fond tablette d'animation sombre
-    ctx.fillStyle = '#1c1917';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Réinitialiser le canvas en transparent (le fond sombre est dans le conteneur, l'oignon est dessous)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Dessin UNIQUEMENT du contenu réel de la frame courante (L'oignon est un calque d'affichage indépendant !)
     const frameData = framesList[index];
     if (frameData) {
       const img = new Image();
       img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        // Filtrer les pixels du fond sombre plein pour les rendre transparents et laisser voir l'oignon SOUS le canvas
+        try {
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const d = imgData.data;
+          for (let i = 0; i < d.length; i += 4) {
+            if (Math.abs(d[i] - 28) < 8 && Math.abs(d[i + 1] - 25) < 8 && Math.abs(d[i + 2] - 23) < 8) {
+              d[i + 3] = 0;
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+        } catch (_) {}
         saveHistoryState();
       };
       img.src = frameData;
@@ -342,18 +368,22 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     ctx.lineJoin = 'round';
 
     if (activeTool === 'eraser') {
-      ctx.strokeStyle = '#1c1917';
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
       ctx.lineWidth = brushSize * 3;
       ctx.globalAlpha = 1.0;
-    } else if (activeTool === 'marker') {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = brushSize * 2.5;
-      ctx.globalAlpha = 0.35; // Surlignage / Ombrage cinématographique
     } else {
-      // Pinceau standard
-      ctx.strokeStyle = color;
-      ctx.lineWidth = brushSize;
-      ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = 'source-over';
+      if (activeTool === 'marker') {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = brushSize * 2.5;
+        ctx.globalAlpha = 0.35; // Surlignage / Ombrage cinématographique
+      } else {
+        // Pinceau standard
+        ctx.strokeStyle = color;
+        ctx.lineWidth = brushSize;
+        ctx.globalAlpha = 1.0;
+      }
     }
   };
 
@@ -370,6 +400,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     // Tracé de formes géométriques avec prévisualisation en temps réel
     if (['rect', 'circle', 'line', 'arrow'].includes(activeTool) && startPoint && previewSnapshot) {
       ctx.putImageData(previewSnapshot, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
       ctx.lineWidth = brushSize;
@@ -427,6 +458,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.globalAlpha = 1.0;
+        ctx.globalCompositeOperation = 'source-over';
       }
     }
     setIsDrawing(false);
@@ -471,8 +503,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.fillStyle = '#1c1917';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     saveHistoryState();
     saveCurrentFrameToState();
   };
@@ -977,9 +1008,9 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </div>
         ) : (
           <>
-            {/* 🧅 Calque Pelure d'Oignon Indépendant (Visuel uniquement - JAMAIS fusionné ni copié dans la frame) */}
+            {/* 🧅 Calque Pelure d'Oignon Indépendant SOUS le plan de dessin actif (z-10) */}
             {onionSkin && currentFrameIndex > 0 && frames[currentFrameIndex - 1] && (
-              <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden flex items-center justify-center mix-blend-screen opacity-35">
+              <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden flex items-center justify-center opacity-30 select-none">
                 <img
                   src={frames[currentFrameIndex - 1]}
                   alt="Pelure d'oignon (frame précédente)"
@@ -995,6 +1026,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               </div>
             )}
 
+            {/* Canvas de dessin actif SUR l'oignon (z-20) : les nouveaux traits restent 100% opaques et nets */}
             <canvas
               ref={canvasRef}
               width={640}
@@ -1006,7 +1038,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               onTouchStart={startDrawing}
               onTouchMove={draw}
               onTouchEnd={stopDrawing}
-              className={`w-full h-full object-contain relative z-10 ${
+              className={`w-full h-full object-contain relative z-20 ${
                 readOnly 
                   ? 'cursor-default' 
                   : activeTool === 'eraser' 

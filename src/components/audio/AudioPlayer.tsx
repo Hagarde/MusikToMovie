@@ -23,6 +23,25 @@ interface AudioPlayerProps {
   forcePlayAtTime?: number | null;
 }
 
+const getInitialVolume = (): number => {
+  try {
+    const saved = localStorage.getItem('m2m_global_volume');
+    if (saved !== null) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+    }
+  } catch (_) {}
+  return 0.85;
+};
+
+const getInitialMuted = (): boolean => {
+  try {
+    const saved = localStorage.getItem('m2m_global_muted');
+    if (saved !== null) return saved === 'true';
+  } catch (_) {}
+  return false;
+};
+
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   track,
   onTimeUpdate,
@@ -39,13 +58,47 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
-  const [volume, setVolume] = useState<number>(0.85);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [volume, setVolumeState] = useState<number>(getInitialVolume);
+  const [isMuted, setIsMutedState] = useState<boolean>(getInitialMuted);
   const [isLoopingRange, setIsLoopingRange] = useState<boolean>(false);
   const [showVideo, setShowVideo] = useState<boolean>(false);
   const [isYtReady, setIsYtReady] = useState<boolean>(false);
 
   const isYouTube = !!track?.youtube_id;
+
+  // Synchronisation globale du volume et du mute entre tous les lecteurs de l'application
+  useEffect(() => {
+    const handleVolumeSync = (e: any) => {
+      if (e.detail) {
+        if (typeof e.detail.volume === 'number') {
+          setVolumeState(e.detail.volume);
+        }
+        if (typeof e.detail.isMuted === 'boolean') {
+          setIsMutedState(e.detail.isMuted);
+        }
+      }
+    };
+
+    window.addEventListener('m2m-volume-change', handleVolumeSync);
+    return () => window.removeEventListener('m2m-volume-change', handleVolumeSync);
+  }, []);
+
+  const updateGlobalVolume = (newVol: number, newMuted: boolean = isMuted) => {
+    setVolumeState(newVol);
+    setIsMutedState(newMuted);
+    try {
+      localStorage.setItem('m2m_global_volume', newVol.toString());
+      localStorage.setItem('m2m_global_muted', newMuted.toString());
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent('m2m-volume-change', {
+      detail: { volume: newVol, isMuted: newMuted }
+    }));
+  };
+
+  const toggleMute = () => {
+    const nextMuted = !isMuted;
+    updateGlobalVolume(volume, nextMuted);
+  };
 
   // Notifier le parent des changements de statut de lecture (synchro storyboard / son)
   useEffect(() => {
@@ -397,10 +450,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           <div className="flex items-center gap-1.5 ml-2">
             <button
               type="button"
-              onClick={() => setIsMuted(!isMuted)}
+              onClick={toggleMute}
               className="p-1 text-stone-400 hover:text-stone-900"
+              title={isMuted ? 'Activer le son' : 'Couper le son'}
             >
-              {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              {isMuted || volume === 0 ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4" />}
             </button>
             <input
               type="range"
@@ -409,10 +463,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
               step="0.05"
               value={isMuted ? 0 : volume}
               onChange={(e) => {
-                setVolume(parseFloat(e.target.value));
-                setIsMuted(false);
+                const val = parseFloat(e.target.value);
+                updateGlobalVolume(val, false);
               }}
               className="w-16 h-1.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-stone-900"
+              title={`Volume : ${Math.round((isMuted ? 0 : volume) * 100)}%`}
             />
           </div>
         </div>
