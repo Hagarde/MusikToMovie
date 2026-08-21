@@ -19,6 +19,7 @@ export default function App() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -75,6 +76,15 @@ export default function App() {
 
   const handleCreateProposal = (track: Track) => {
     setSelectedTrack(track);
+    setEditingProposal(null);
+    setCurrentView('create');
+  };
+
+  const handleEditProposal = (proposal: Proposal) => {
+    const matchedTrack = tracks.find((t) => t.id === proposal.track_id) || selectedTrack;
+    setSelectedProposal(proposal);
+    setEditingProposal(proposal);
+    setSelectedTrack(matchedTrack);
     setCurrentView('create');
   };
 
@@ -86,8 +96,15 @@ export default function App() {
   };
 
   const handleProposalSaved = (newProposal: Proposal) => {
-    setProposals((prev) => [newProposal, ...prev]);
+    setProposals((prev) => {
+      const exists = prev.some((p) => p.id === newProposal.id);
+      if (exists) {
+        return prev.map((p) => (p.id === newProposal.id ? newProposal : p));
+      }
+      return [newProposal, ...prev];
+    });
     setSelectedProposal(newProposal);
+    setEditingProposal(null);
     setCurrentView('view');
   };
 
@@ -101,6 +118,7 @@ export default function App() {
   const handleTrackCreated = (newTrack: Track) => {
     setTracks((prev) => [newTrack, ...prev]);
     setSelectedTrack(newTrack);
+    setEditingProposal(null);
     setCurrentView('create'); // Ouverture immédiate du studio de storyboard pour cette musique
   };
 
@@ -131,7 +149,12 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-gallery-canvas text-stone-900 transition-colors">
       <Navbar
         currentView={currentView}
-        onNavigate={(view) => setCurrentView(view)}
+        onNavigate={(view) => {
+          if (view === 'tracks' || view === 'concept' || view === 'proposals') {
+            setEditingProposal(null);
+          }
+          setCurrentView(view);
+        }}
         onOpenUpload={() => setIsUploadModalOpen(true)}
         isAdmin={isAdmin}
         onToggleAdminModal={() => setIsAdminModalOpen(true)}
@@ -168,11 +191,18 @@ export default function App() {
           />
         )}
 
-        {/* Vue 3 : Studio de Création de Scénario & Storyboard */}
+        {/* Vue 3 : Studio de Création / Édition de Scénario & Storyboard */}
         {currentView === 'create' && selectedTrack && (
           <ProposalCreator
             track={selectedTrack}
-            onBack={() => setCurrentView('tracks')}
+            existingProposal={editingProposal}
+            onBack={() => {
+              if (editingProposal) {
+                setCurrentView('view');
+              } else {
+                setCurrentView('tracks');
+              }
+            }}
             onProposalSaved={handleProposalSaved}
           />
         )}
@@ -186,6 +216,7 @@ export default function App() {
             isAdmin={isAdmin}
             onDeleteProposal={handleDeleteProposal}
             onUpdateProposal={handleProposalUpdated}
+            onEditProposal={handleEditProposal}
           />
         )}
 
@@ -200,6 +231,7 @@ export default function App() {
             isAdmin={isAdmin}
             onDeleteProposal={handleDeleteProposal}
             onUpdateProposal={handleProposalUpdated}
+            onEditProposal={handleEditProposal}
           />
         )}
       </main>

@@ -29,6 +29,7 @@ interface ProposalViewerProps {
   isAdmin?: boolean;
   onDeleteProposal?: (proposalId: string) => void;
   onUpdateProposal?: (updated: Proposal) => void;
+  onEditProposal?: (proposal: Proposal) => void;
 }
 
 export const ProposalViewer: React.FC<ProposalViewerProps> = ({
@@ -38,6 +39,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   isAdmin = false,
   onDeleteProposal,
   onUpdateProposal,
+  onEditProposal,
 }) => {
   const [currentProposal, setCurrentProposal] = useState<Proposal>(proposal);
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
@@ -193,9 +195,15 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             <div className="flex items-center gap-1.5 bg-amber-500/10 p-1 rounded-2xl border border-amber-300">
               <button
                 type="button"
-                onClick={() => setIsEditModalOpen(true)}
+                onClick={() => {
+                  if (onEditProposal) {
+                    onEditProposal(currentProposal);
+                  } else {
+                    setIsEditModalOpen(true);
+                  }
+                }}
                 className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-500 text-amber-800 hover:text-white border border-amber-200 shadow-sm transition-all flex items-center gap-1.5 text-xs font-bold"
-                title="Modifier ce storyboard (Admin : corriger orthographe, genre, pitch, textes)"
+                title="Modifier ce storyboard (Mode Édition complète : dessins flipbook, pitch, répliques, timecodes)"
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 <span>Modifier</span>

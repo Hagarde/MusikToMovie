@@ -10,45 +10,64 @@ import {
   Clock, 
   BookOpen, 
   Clapperboard, 
-  Layers
+  Layers,
+  Edit3
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Track, Proposal, GENRES } from '../../lib/types';
 import { FlipanimCanvas } from '../canvas/FlipanimCanvas';
 import { AudioPlayer } from '../audio/AudioPlayer';
-import { createProposal } from '../../lib/supabase';
+import { createProposal, updateProposal } from '../../lib/supabase';
 
 interface ProposalCreatorProps {
   track: Track;
+  existingProposal?: Proposal | null;
   onBack: () => void;
   onProposalSaved: (proposal: Proposal) => void;
 }
 
 export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
   track,
+  existingProposal = null,
   onBack,
   onProposalSaved,
 }) => {
   // Infos Générales du Film
-  const [movieTitle, setMovieTitle] = useState('');
-  const [authorName, setAuthorName] = useState('');
-  const [genre, setGenre] = useState(GENRES[0]);
-  const [logline, setLogline] = useState('');
+  const [movieTitle, setMovieTitle] = useState(existingProposal?.movie_title || '');
+  const [authorName, setAuthorName] = useState(existingProposal?.author_name || '');
+  const [genre, setGenre] = useState(existingProposal?.genre || GENRES[0]);
+  const [logline, setLogline] = useState(existingProposal?.logline || '');
 
   // 3 Blocs Narratifs
-  const [contextBefore, setContextBefore] = useState('');
-  const [contextAfter, setContextAfter] = useState('');
+  const [contextBefore, setContextBefore] = useState(
+    existingProposal?.context_before || existingProposal?.scenes?.find(s => s.section_type === 'preceding')?.description || ''
+  );
+  const [contextAfter, setContextAfter] = useState(
+    existingProposal?.context_after || existingProposal?.scenes?.find(s => s.section_type === 'succeeding')?.description || ''
+  );
 
   // Scène Clé
-  const initialStartTime = track.default_start_time || 0;
-  const initialEndTime = track.default_end_time || Math.min(Math.floor(track.duration), initialStartTime + 30);
+  const initialStartTime = existingProposal?.key_scene_start_time ?? (existingProposal?.scenes?.find(s => s.section_type === 'main')?.start_time ?? (track.default_start_time || 0));
+  const initialEndTime = existingProposal?.key_scene_end_time ?? (existingProposal?.scenes?.find(s => s.section_type === 'main')?.end_time ?? (track.default_end_time || Math.min(Math.floor(track.duration), initialStartTime + 30)));
 
-  const [keySceneTitle, setKeySceneTitle] = useState('Climax & Révélation Visuelle');
-  const [keySceneDesc, setKeySceneDesc] = useState('');
+  const [keySceneTitle, setKeySceneTitle] = useState(
+    existingProposal?.key_scene_title || existingProposal?.scenes?.find(s => s.section_type === 'main')?.scene_title || 'Climax & Révélation Visuelle'
+  );
+  const [keySceneDesc, setKeySceneDesc] = useState(
+    existingProposal?.key_scene_description || existingProposal?.scenes?.find(s => s.section_type === 'main')?.description || ''
+  );
   const [startTime, setStartTime] = useState<number>(initialStartTime);
   const [endTime, setEndTime] = useState<number>(initialEndTime);
-  const [frames, setFrames] = useState<string[]>(['']);
-  const [animationFps, setAnimationFps] = useState<number>(0.5);
+
+  // Frames de dessin Flipanim
+  const existingFrames = (existingProposal?.frames && existingProposal.frames.length > 0)
+    ? existingProposal.frames
+    : (existingProposal?.scenes?.map(s => s.image_data).filter(Boolean) || []);
+
+  const [frames, setFrames] = useState<string[]>(existingFrames.length > 0 ? existingFrames : ['']);
+  const [animationFps, setAnimationFps] = useState<number>(
+    existingProposal?.animation_fps ? Number(existingProposal.animation_fps) : 0.5
+  );
 
   // État lecteur et synchronisation Flipbook
   const [currentAudioTime, setCurrentAudioTime] = useState(0);
@@ -78,8 +97,11 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
 
     setIsSaving(true);
     try {
-      const saved = await createProposal(
-        {
+      let saved: Proposal | null = null;
+
+      if (existingProposal?.id) {
+        // Mise à jour de la proposition existante
+        const updates: Partial<Proposal> = {
           track_id: track.id,
           author_name: authorName.trim() || 'Scénariste Anonyme',
           movie_title: movieTitle.trim(),
@@ -93,37 +115,64 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
           key_scene_end_time: endTime,
           frames: frames.filter(f => !!f),
           animation_fps: animationFps,
-        },
-        [
+        };
+
+        saved = await updateProposal(existingProposal.id, updates);
+        if (!saved) {
+          saved = {
+            ...existingProposal,
+            ...updates,
+          } as Proposal;
+        }
+      } else {
+        // Nouvelle création
+        saved = await createProposal(
           {
-            section_type: 'preceding',
-            scene_title: 'Ce qui précède',
-            description: contextBefore,
-            image_data: '',
-            start_time: 0,
-            end_time: startTime,
-            order_index: 0,
+            track_id: track.id,
+            author_name: authorName.trim() || 'Scénariste Anonyme',
+            movie_title: movieTitle.trim(),
+            genre,
+            logline: logline.trim(),
+            context_before: contextBefore.trim(),
+            context_after: contextAfter.trim(),
+            key_scene_title: keySceneTitle.trim(),
+            key_scene_description: keySceneDesc.trim(),
+            key_scene_start_time: startTime,
+            key_scene_end_time: endTime,
+            frames: frames.filter(f => !!f),
+            animation_fps: animationFps,
           },
-          {
-            section_type: 'main',
-            scene_title: keySceneTitle,
-            description: keySceneDesc,
-            image_data: frames[0] || '',
-            start_time: startTime,
-            end_time: endTime,
-            order_index: 1,
-          },
-          {
-            section_type: 'succeeding',
-            scene_title: 'Ce qui succède',
-            description: contextAfter,
-            image_data: '',
-            start_time: endTime,
-            end_time: Math.floor(track.duration),
-            order_index: 2,
-          }
-        ]
-      );
+          [
+            {
+              section_type: 'preceding',
+              scene_title: 'Ce qui précède',
+              description: contextBefore,
+              image_data: '',
+              start_time: 0,
+              end_time: startTime,
+              order_index: 0,
+            },
+            {
+              section_type: 'main',
+              scene_title: keySceneTitle,
+              description: keySceneDesc,
+              image_data: frames[0] || '',
+              start_time: startTime,
+              end_time: endTime,
+              order_index: 1,
+            },
+            {
+              section_type: 'succeeding',
+              scene_title: 'Ce qui succède',
+              description: contextAfter,
+              image_data: '',
+              start_time: endTime,
+              end_time: Math.floor(track.duration),
+              order_index: 2,
+            }
+          ]
+        );
+      }
 
       confetti({
         particleCount: 90,
@@ -132,7 +181,9 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
         colors: ['#1c1917', '#e11d48', '#f97316', '#fbbf24']
       });
 
-      onProposalSaved(saved);
+      if (saved) {
+        onProposalSaved(saved);
+      }
     } catch (err) {
       console.error(err);
       alert('Une erreur est survenue lors de la sauvegarde.');
@@ -151,7 +202,7 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
           className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white hover:bg-stone-100 border border-stone-200 text-xs font-semibold text-stone-700 hover:text-stone-900 transition-all shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Retour à la bibliothèque</span>
+          <span>{existingProposal ? 'Retour au storyboard' : 'Retour à la bibliothèque'}</span>
         </button>
 
         <button
@@ -161,7 +212,11 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
           className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-black text-xs transition-all hover:scale-105 shadow-md disabled:opacity-50"
         >
           <Save className="w-4 h-4" />
-          <span>{isSaving ? 'Publication en cours...' : 'Publier le Storyboard & Scénario'}</span>
+          <span>
+            {isSaving 
+              ? (existingProposal ? 'Enregistrement...' : 'Publication en cours...') 
+              : (existingProposal ? 'Enregistrer les modifications' : 'Publier le Storyboard & Scénario')}
+          </span>
         </button>
       </div>
 
@@ -179,13 +234,20 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
       <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-7 shadow-gallery space-y-5">
         <div className="flex items-center gap-3 border-b border-stone-100 pb-3.5">
           <div className="w-9 h-9 rounded-xl bg-stone-100 border border-stone-200 text-stone-800 flex items-center justify-center">
-            <Film className="w-5 h-5" />
+            {existingProposal ? <Edit3 className="w-5 h-5 text-amber-600" /> : <Film className="w-5 h-5" />}
           </div>
           <div>
-            <h2 className="text-lg font-bold text-stone-900 font-display">
-              Concept & Univers du Film
+            <h2 className="text-lg font-bold text-stone-900 font-display flex items-center gap-2">
+              {existingProposal ? 'Modifier le Storyboard & Scénario' : 'Concept & Univers du Film'}
+              {existingProposal && (
+                <span className="text-[10px] uppercase font-mono tracking-wider bg-amber-100 text-amber-900 font-bold px-2.5 py-0.5 rounded-full border border-amber-300">
+                  Mode Édition Complète (Dessins + Textes)
+                </span>
+              )}
             </h2>
-            <p className="text-xs text-stone-500">Définissez l'identité et le pitch de votre œuvre</p>
+            <p className="text-xs text-stone-500">
+              {existingProposal ? 'Modifiez librement les dessins de chaque plan, le pitch, les répliques et les intentions de réalisation' : "Définissez l'identité et le pitch de votre œuvre"}
+            </p>
           </div>
         </div>
 

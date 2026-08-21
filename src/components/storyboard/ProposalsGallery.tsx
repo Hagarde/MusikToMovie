@@ -27,6 +27,7 @@ interface ProposalsGalleryProps {
   isAdmin?: boolean;
   onDeleteProposal?: (proposalId: string) => void;
   onUpdateProposal?: (updated: Proposal) => void;
+  onEditProposal?: (proposal: Proposal) => void;
 }
 
 export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
@@ -38,6 +39,7 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
   isAdmin = false,
   onDeleteProposal,
   onUpdateProposal,
+  onEditProposal,
 }) => {
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [proposalToDelete, setProposalToDelete] = useState<Proposal | null>(null);
@@ -304,10 +306,14 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setEditingProposal(proposal);
+                          if (onEditProposal) {
+                            onEditProposal(proposal);
+                          } else {
+                            setEditingProposal(proposal);
+                          }
                         }}
                         className="p-1.5 rounded-full bg-white/90 hover:bg-amber-500 text-stone-700 hover:text-white border border-stone-200 shadow-md backdrop-blur-sm transition-colors"
-                        title="Modifier ce storyboard (Admin)"
+                        title="Modifier ce storyboard (Mode Édition complète : dessins flipbook, pitch, répliques, timecodes)"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
