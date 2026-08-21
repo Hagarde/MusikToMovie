@@ -53,7 +53,7 @@ export default function App() {
     sessionStorage.removeItem('m2m_admin_session');
   };
 
-  // Chargement initial des données
+  // Chargement initial des données & Résolution automatique des deep-links (?story=ID)
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -63,6 +63,21 @@ export default function App() {
       ]);
       setTracks(fetchedTracks);
       setProposals(fetchedProposals);
+
+      // Deep Linking : ouverture directe d'un storyboard si ?story=ID est présent
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const storyId = urlParams.get('story') || urlParams.get('p') || urlParams.get('proposal');
+        if (storyId) {
+          const matched = fetchedProposals.find((p) => p.id === storyId);
+          if (matched) {
+            const matchedTrack = fetchedTracks.find((t) => t.id === matched.track_id) || null;
+            setSelectedProposal(matched);
+            setSelectedTrack(matchedTrack);
+            setCurrentView('view');
+          }
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -74,9 +89,50 @@ export default function App() {
     loadData();
   }, []);
 
+  // Support des boutons Précédent / Suivant du navigateur (popstate)
+  useEffect(() => {
+    const handlePopState = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const storyId = urlParams.get('story') || urlParams.get('p') || urlParams.get('proposal');
+      if (storyId && proposals.length > 0) {
+        const matched = proposals.find((p) => p.id === storyId);
+        if (matched) {
+          const matchedTrack = tracks.find((t) => t.id === matched.track_id) || null;
+          setSelectedProposal(matched);
+          setSelectedTrack(matchedTrack);
+          setCurrentView('view');
+          return;
+        }
+      }
+      if (currentView === 'view') {
+        setCurrentView('proposals');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [proposals, tracks, currentView]);
+
+  const updateUrlStoryParam = (storyId: string | null) => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (storyId) {
+        url.searchParams.set('story', storyId);
+        url.searchParams.delete('p');
+        url.searchParams.delete('proposal');
+      } else {
+        url.searchParams.delete('story');
+        url.searchParams.delete('p');
+        url.searchParams.delete('proposal');
+      }
+      window.history.pushState({ storyId }, '', url.toString());
+    }
+  };
+
   const handleCreateProposal = (track: Track) => {
     setSelectedTrack(track);
     setEditingProposal(null);
+    updateUrlStoryParam(null);
     setCurrentView('create');
   };
 
@@ -85,6 +141,7 @@ export default function App() {
     setSelectedProposal(proposal);
     setEditingProposal(proposal);
     setSelectedTrack(matchedTrack);
+    updateUrlStoryParam(proposal.id);
     setCurrentView('create');
   };
 
@@ -92,6 +149,7 @@ export default function App() {
     const matchedTrack = tracks.find((t) => t.id === proposal.track_id) || null;
     setSelectedProposal(proposal);
     setSelectedTrack(matchedTrack);
+    updateUrlStoryParam(proposal.id);
     setCurrentView('view');
   };
 
@@ -105,6 +163,7 @@ export default function App() {
     });
     setSelectedProposal(newProposal);
     setEditingProposal(null);
+    updateUrlStoryParam(newProposal.id);
     setCurrentView('view');
   };
 
@@ -119,7 +178,8 @@ export default function App() {
     setTracks((prev) => [newTrack, ...prev]);
     setSelectedTrack(newTrack);
     setEditingProposal(null);
-    setCurrentView('create'); // Ouverture immédiate du studio de storyboard pour cette musique
+    updateUrlStoryParam(null);
+    setCurrentView('create');
   };
 
   const handleDeleteTrack = async (trackId: string) => {
@@ -135,6 +195,7 @@ export default function App() {
     setProposals((prev) => prev.filter((p) => p.id !== proposalId));
     if (selectedProposal?.id === proposalId) {
       setSelectedProposal(null);
+      updateUrlStoryParam(null);
       setCurrentView('proposals');
     }
   };
@@ -152,6 +213,7 @@ export default function App() {
         onNavigate={(view) => {
           if (view === 'tracks' || view === 'concept' || view === 'proposals') {
             setEditingProposal(null);
+            updateUrlStoryParam(null);
           }
           setCurrentView(view);
         }}
@@ -172,8 +234,14 @@ export default function App() {
         {/* Vue 1 (Onglet de base) : Le Concept & Manifeste MusikToMovie */}
         {currentView === 'concept' && (
           <ConceptPage
-            onExploreTracks={() => setCurrentView('tracks')}
-            onExploreProposals={() => setCurrentView('proposals')}
+            onExploreTracks={() => {
+              updateUrlStoryParam(null);
+              setCurrentView('tracks');
+            }}
+            onExploreProposals={() => {
+              updateUrlStoryParam(null);
+              setCurrentView('proposals');
+            }}
             onOpenUpload={() => setIsUploadModalOpen(true)}
           />
         )}
@@ -200,6 +268,7 @@ export default function App() {
               if (editingProposal) {
                 setCurrentView('view');
               } else {
+                updateUrlStoryParam(null);
                 setCurrentView('tracks');
               }
             }}
@@ -212,7 +281,10 @@ export default function App() {
           <ProposalViewer
             proposal={selectedProposal}
             track={selectedTrack}
-            onBack={() => setCurrentView('proposals')}
+            onBack={() => {
+              updateUrlStoryParam(null);
+              setCurrentView('proposals');
+            }}
             isAdmin={isAdmin}
             onDeleteProposal={handleDeleteProposal}
             onUpdateProposal={handleProposalUpdated}

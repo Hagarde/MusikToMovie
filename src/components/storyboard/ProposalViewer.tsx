@@ -15,7 +15,9 @@ import {
   Music,
   Trash2,
   ShieldAlert,
-  Edit3
+  Edit3,
+  Share2,
+  Check
 } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { AudioPlayer } from '../audio/AudioPlayer';
@@ -42,11 +44,36 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
 }) => {
   const [currentProposal, setCurrentProposal] = useState<Proposal>(proposal);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [copiedShare, setCopiedShare] = useState<boolean>(false);
   const theatreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setCurrentProposal(proposal);
   }, [proposal]);
+
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}${window.location.pathname}?story=${currentProposal.id}`;
+    const shareData = {
+      title: `${currentProposal.movie_title} - Storyboard MusikToMovie`,
+      text: `Découvrez le storyboard et le scénario de "${currentProposal.movie_title}" par ${currentProposal.author_name} sur MusikToMovie !`,
+      url: shareUrl,
+    };
+
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (_) {}
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedShare(true);
+      setTimeout(() => setCopiedShare(false), 2500);
+    } catch (_) {
+      window.prompt('Copiez ce lien pour partager la story :', shareUrl);
+    }
+  };
 
   const [currentTime, setCurrentTime] = useState(0);
   const [likesCount, setLikesCount] = useState<number>(currentProposal.likes_count || 0);
@@ -173,6 +200,30 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span>Mode Projection Plein Écran</span>
+          </button>
+
+          {/* Bouton Partager la Story avec lien direct */}
+          <button
+            type="button"
+            onClick={handleShare}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all hover:scale-105 shadow-sm ${
+              copiedShare
+                ? 'bg-emerald-600 text-white shadow-emerald-200'
+                : 'bg-white hover:bg-stone-100 text-stone-700 border border-stone-200'
+            }`}
+            title="Partager ce storyboard avec un lien direct"
+          >
+            {copiedShare ? (
+              <>
+                <Check className="w-4 h-4 text-white stroke-[2.5]" />
+                <span>Lien copié !</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-4 h-4 text-stone-700" />
+                <span>Partager</span>
+              </>
+            )}
           </button>
 
           <button

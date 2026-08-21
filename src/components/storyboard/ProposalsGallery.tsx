@@ -12,7 +12,9 @@ import {
   Search,
   Trash2,
   ShieldAlert,
-  Edit3
+  Edit3,
+  Share2,
+  Check
 } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { voteProposal, hasUserVoted } from '../../lib/supabase';
@@ -41,9 +43,35 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
   onEditProposal,
 }) => {
   const [proposalToDelete, setProposalToDelete] = useState<Proposal | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'likes' | 'recent'>('likes');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
+
+  const handleShareProposal = async (e: React.MouseEvent, prop: Proposal) => {
+    e.stopPropagation();
+    const shareUrl = `${window.location.origin}${window.location.pathname}?story=${prop.id}`;
+    const shareData = {
+      title: `${prop.movie_title} - Storyboard MusikToMovie`,
+      text: `Découvrez le storyboard et le scénario de "${prop.movie_title}" par ${prop.author_name} sur MusikToMovie !`,
+      url: shareUrl,
+    };
+
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (_) {}
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedId(prop.id);
+      setTimeout(() => setCopiedId(null), 2500);
+    } catch (_) {
+      window.prompt('Copiez ce lien :', shareUrl);
+    }
+  };
 
   const getTrackForProposal = (trackId: string) => {
     return tracks.find((t) => t.id === trackId);
@@ -326,6 +354,24 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
+
+                    {/* Bouton Partage rapide */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleShareProposal(e, proposal)}
+                      className={`p-1.5 rounded-full border shadow-md backdrop-blur-sm transition-colors ${
+                        copiedId === proposal.id
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white/90 hover:bg-stone-900 text-stone-700 hover:text-white border-stone-200'
+                      }`}
+                      title={copiedId === proposal.id ? "Lien copié !" : "Partager ce storyboard"}
+                    >
+                      {copiedId === proposal.id ? (
+                        <Check className="w-3.5 h-3.5 text-white" />
+                      ) : (
+                        <Share2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
 
                     <button
                       type="button"
