@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { voteProposal, hasUserVoted } from '../../lib/supabase';
-import { StoryEditModal } from './StoryEditModal';
 
 interface ProposalsGalleryProps {
   proposals: Proposal[];
@@ -41,7 +40,6 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
   onUpdateProposal,
   onEditProposal,
 }) => {
-  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [proposalToDelete, setProposalToDelete] = useState<Proposal | null>(null);
   const [sortBy, setSortBy] = useState<'likes' | 'recent'>('likes');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -301,16 +299,12 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
 
                   {/* Boutons Actions : Edit + Delete (Admin) + Vote */}
                   <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
-                    {isAdmin && (
+                    {isAdmin && onEditProposal && (
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (onEditProposal) {
-                            onEditProposal(proposal);
-                          } else {
-                            setEditingProposal(proposal);
-                          }
+                          onEditProposal(proposal);
                         }}
                         className="p-1.5 rounded-full bg-white/90 hover:bg-amber-500 text-stone-700 hover:text-white border border-stone-200 shadow-md backdrop-blur-sm transition-colors"
                         title="Modifier ce storyboard (Mode Édition complète : dessins flipbook, pitch, répliques, timecodes)"
@@ -431,19 +425,6 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* Modale d'Édition Admin */}
-      {editingProposal && (
-        <StoryEditModal
-          isOpen={!!editingProposal}
-          proposal={editingProposal}
-          onClose={() => setEditingProposal(null)}
-          onSaved={(updated) => {
-            if (onUpdateProposal) onUpdateProposal(updated);
-            setEditingProposal(null);
-          }}
-        />
       )}
     </div>
   );

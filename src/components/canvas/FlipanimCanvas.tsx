@@ -109,7 +109,8 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   const [animFps, setAnimFps] = useState<number>(fps);
   const [playFrameIndex, setPlayFrameIndex] = useState<number>(0);
 
-  // Historique Undo/Redo pour la frame active
+  // Historique Undo/Redo pour la frame active (plafonné à 25 étapes pour préserver la RAM)
+  const MAX_HISTORY_STEPS = 25;
   const [history, setHistory] = useState<ImageData[]>([]);
   const [historyStep, setHistoryStep] = useState<number>(-1);
 
@@ -122,11 +123,14 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     setHistory((prev) => {
-      const newHist = prev.slice(0, historyStep + 1);
+      let newHist = prev.slice(0, historyStep + 1);
       newHist.push(imageData);
+      if (newHist.length > MAX_HISTORY_STEPS) {
+        newHist = newHist.slice(newHist.length - MAX_HISTORY_STEPS);
+      }
       return newHist;
     });
-    setHistoryStep((prev) => prev + 1);
+    setHistoryStep((prev) => Math.min(prev + 1, MAX_HISTORY_STEPS - 1));
   }, [historyStep]);
 
   // Sauvegarder la frame active dans la liste (avec fond sombre #1c1917 propre)

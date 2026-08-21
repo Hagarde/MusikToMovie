@@ -51,6 +51,31 @@ const LOCAL_STORAGE_TRACKS_KEY = 'musiktomovie_tracks';
 const LOCAL_STORAGE_PROPOSALS_KEY = 'musiktomovie_proposals';
 const LOCAL_STORAGE_VOTES_KEY = 'musiktomovie_user_votes';
 
+function safeSetLocalStorage(key: string, data: any): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (err: any) {
+    if (err && (err.name === 'QuotaExceededError' || err.code === 22)) {
+      console.warn('LocalStorage plein, élagage de secours...');
+      try {
+        if (key === LOCAL_STORAGE_PROPOSALS_KEY && Array.isArray(data)) {
+          const trimmed = data.slice(0, 15);
+          localStorage.setItem(key, JSON.stringify(trimmed));
+        }
+      } catch (_) {}
+    }
+  }
+}
+
+function safeGetLocalStorage<T>(key: string, fallback: T): T {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
 // Récupérer tous les morceaux
 export async function getTracks(): Promise<Track[]> {
   try {
@@ -60,17 +85,12 @@ export async function getTracks(): Promise<Track[]> {
       .order('created_at', { ascending: false });
 
     if (error || !data || data.length === 0) {
-      const local = localStorage.getItem(LOCAL_STORAGE_TRACKS_KEY);
-      if (local) {
-        return JSON.parse(local);
-      }
-      return DEMO_TRACKS;
+      return safeGetLocalStorage<Track[]>(LOCAL_STORAGE_TRACKS_KEY, DEMO_TRACKS);
     }
     return data;
   } catch (err) {
     console.warn('Erreur Supabase, fallback local:', err);
-    const local = localStorage.getItem(LOCAL_STORAGE_TRACKS_KEY);
-    return local ? JSON.parse(local) : DEMO_TRACKS;
+    return safeGetLocalStorage<Track[]>(LOCAL_STORAGE_TRACKS_KEY, DEMO_TRACKS);
   }
 }
 
@@ -101,7 +121,7 @@ export async function createTrack(track: Omit<Track, 'id' | 'created_at'>): Prom
   // Sauvegarde locale en secours
   const current = await getTracks();
   const updated = [newTrack, ...current];
-  localStorage.setItem(LOCAL_STORAGE_TRACKS_KEY, JSON.stringify(updated));
+  safeSetLocalStorage(LOCAL_STORAGE_TRACKS_KEY, updated);
   return newTrack;
 }
 
@@ -118,12 +138,9 @@ export async function deleteTrack(trackId: string): Promise<boolean> {
 
   // Suppression du stockage local
   try {
-    const local = localStorage.getItem(LOCAL_STORAGE_TRACKS_KEY);
-    if (local) {
-      const parsed: Track[] = JSON.parse(local);
-      const filtered = parsed.filter(t => t.id !== trackId);
-      localStorage.setItem(LOCAL_STORAGE_TRACKS_KEY, JSON.stringify(filtered));
-    }
+    const localTracks = safeGetLocalStorage<Track[]>(LOCAL_STORAGE_TRACKS_KEY, []);
+    const filtered = localTracks.filter(t => t.id !== trackId);
+    safeSetLocalStorage(LOCAL_STORAGE_TRACKS_KEY, filtered);
   } catch (e) {}
 
   return true;
@@ -142,12 +159,9 @@ export async function deleteProposal(proposalId: string): Promise<boolean> {
 
   // Suppression du stockage local
   try {
-    const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
-    if (local) {
-      const parsed: Proposal[] = JSON.parse(local);
-      const filtered = parsed.filter(p => p.id !== proposalId);
-      localStorage.setItem(LOCAL_STORAGE_PROPOSALS_KEY, JSON.stringify(filtered));
-    }
+    const localProps = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
+    const filtered = localProps.filter(p => p.id !== proposalId);
+    safeSetLocalStorage(LOCAL_STORAGE_PROPOSALS_KEY, filtered);
   } catch (e) {}
 
   return true;
@@ -174,8 +188,7 @@ export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' 
     console.warn('Erreur chargement proposals Supabase:', e);
   }
 
-  const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
-  let allProposals: Proposal[] = local ? JSON.parse(local) : [];
+  let allProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
   if (trackId) {
     allProposals = allProposals.filter(p => p.track_id === trackId);
   }
@@ -204,19 +217,17 @@ export async function getProposalById(id: string): Promise<Proposal | null> {
     console.warn('Erreur getProposalById:', e);
   }
 
-  const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
-  const allProposals: Proposal[] = local ? JSON.parse(local) : [];
+  const allProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
   return allProposals.find(p => p.id === id) || null;
 }
 
 // Voter pour une proposition (Like)
 export async function voteProposal(proposalId: string): Promise<number> {
-  const votes = JSON.parse(localStorage.getItem(LOCAL_STORAGE_VOTES_KEY) || '{}');
+  const votes = safeGetLocalStorage<Record<string, boolean>>(LOCAL_STORAGE_VOTES_KEY, {});
   const hasVoted = !!votes[proposalId];
 
   let newCount = 1;
-  const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
-  const allProposals: Proposal[] = local ? JSON.parse(local) : [];
+  const allProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
   const target = allProposals.find(p => p.id === proposalId);
 
   if (hasVoted) {
@@ -227,11 +238,11 @@ export async function voteProposal(proposalId: string): Promise<number> {
     newCount = (target?.likes_count || 0) + 1;
   }
 
-  localStorage.setItem(LOCAL_STORAGE_VOTES_KEY, JSON.stringify(votes));
+  safeSetLocalStorage(LOCAL_STORAGE_VOTES_KEY, votes);
 
   if (target) {
     target.likes_count = newCount;
-    localStorage.setItem(LOCAL_STORAGE_PROPOSALS_KEY, JSON.stringify(allProposals));
+    safeSetLocalStorage(LOCAL_STORAGE_PROPOSALS_KEY, allProposals);
   }
 
   try {
@@ -244,7 +255,7 @@ export async function voteProposal(proposalId: string): Promise<number> {
 }
 
 export function hasUserVoted(proposalId: string): boolean {
-  const votes = JSON.parse(localStorage.getItem(LOCAL_STORAGE_VOTES_KEY) || '{}');
+  const votes = safeGetLocalStorage<Record<string, boolean>>(LOCAL_STORAGE_VOTES_KEY, {});
   return !!votes[proposalId];
 }
 
@@ -266,8 +277,7 @@ export async function updateProposal(
     console.warn('Erreur mise à jour proposal Supabase:', e);
   }
 
-  const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
-  let allProposals: Proposal[] = local ? JSON.parse(local) : [];
+  let allProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
   let updatedProposal: Proposal | null = null;
 
   allProposals = allProposals.map((p) => {
@@ -278,7 +288,7 @@ export async function updateProposal(
     return p;
   });
 
-  localStorage.setItem(LOCAL_STORAGE_PROPOSALS_KEY, JSON.stringify(allProposals));
+  safeSetLocalStorage(LOCAL_STORAGE_PROPOSALS_KEY, allProposals);
   return updatedProposal;
 }
 
@@ -343,10 +353,9 @@ export async function createProposal(
     console.warn('Erreur écriture Supabase, sauvegarde locale:', e);
   }
 
-  const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
-  const all: Proposal[] = local ? JSON.parse(local) : [];
+  const all = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
   all.unshift(newProposal);
-  localStorage.setItem(LOCAL_STORAGE_PROPOSALS_KEY, JSON.stringify(all));
+  safeSetLocalStorage(LOCAL_STORAGE_PROPOSALS_KEY, all);
 
   return newProposal;
 }

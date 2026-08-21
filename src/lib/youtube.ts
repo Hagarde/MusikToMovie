@@ -1,12 +1,20 @@
 export function extractYouTubeId(url: string): string | null {
-  if (!url) return null;
-  const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/;
-  const match = url.match(regExp);
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  
+  // Si c'est déjà un ID brut valide de 11 caractères
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const regExp = /(?:youtu\.be\/|(?:music\.)?youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([a-zA-Z0-9_-]{11})/;
+  const match = trimmed.match(regExp);
   return match ? match[1] : null;
 }
 
 export function getYouTubeThumbnail(videoId: string): string {
-  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  const safeId = encodeURIComponent(videoId.trim());
+  return `https://img.youtube.com/vi/${safeId}/hqdefault.jpg`;
 }
 
 export interface YouTubeMetadata {

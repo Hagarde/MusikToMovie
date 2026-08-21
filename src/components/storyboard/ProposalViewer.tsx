@@ -20,7 +20,6 @@ import {
 import { Proposal, Track } from '../../lib/types';
 import { AudioPlayer } from '../audio/AudioPlayer';
 import { voteProposal, hasUserVoted } from '../../lib/supabase';
-import { StoryEditModal } from './StoryEditModal';
 
 interface ProposalViewerProps {
   proposal: Proposal;
@@ -42,7 +41,6 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   onEditProposal,
 }) => {
   const [currentProposal, setCurrentProposal] = useState<Proposal>(proposal);
-  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const theatreRef = useRef<HTMLDivElement | null>(null);
 
@@ -195,13 +193,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             <div className="flex items-center gap-1.5 bg-amber-500/10 p-1 rounded-2xl border border-amber-300">
               <button
                 type="button"
-                onClick={() => {
-                  if (onEditProposal) {
-                    onEditProposal(currentProposal);
-                  } else {
-                    setIsEditModalOpen(true);
-                  }
-                }}
+                onClick={() => onEditProposal && onEditProposal(currentProposal)}
                 className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-500 text-amber-800 hover:text-white border border-amber-200 shadow-sm transition-all flex items-center gap-1.5 text-xs font-bold"
                 title="Modifier ce storyboard (Mode Édition complète : dessins flipbook, pitch, répliques, timecodes)"
               >
@@ -600,19 +592,6 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* Modale d'Édition Admin */}
-      {isEditModalOpen && (
-        <StoryEditModal
-          isOpen={isEditModalOpen}
-          proposal={currentProposal}
-          onClose={() => setIsEditModalOpen(false)}
-          onSaved={(updated) => {
-            setCurrentProposal(updated);
-            if (onUpdateProposal) onUpdateProposal(updated);
-          }}
-        />
       )}
     </div>
   );
