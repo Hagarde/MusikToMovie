@@ -1,3 +1,127 @@
+export type PlatformSource = 'youtube' | 'youtube_music' | 'spotify' | 'deezer' | 'soundcloud' | 'unknown';
+
+export function detectPlatform(url: string): PlatformSource {
+  if (!url || typeof url !== 'string') return 'unknown';
+  const trimmed = url.trim().toLowerCase();
+
+  if (trimmed.includes('music.youtube.com')) return 'youtube_music';
+  if (trimmed.includes('youtu.be') || trimmed.includes('youtube.com')) return 'youtube';
+  if (trimmed.includes('spotify.com')) return 'spotify';
+  if (trimmed.includes('deezer.com')) return 'deezer';
+  if (trimmed.includes('soundcloud.com')) return 'soundcloud';
+
+  return 'unknown';
+}
+
+export function buildYouTubeSearchUrl(query: string): string {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query.trim())}`;
+}
+
+export interface UniversalTrackInfo {
+  platform: PlatformSource;
+  title: string;
+  artist: string;
+  thumbnail_url?: string;
+  youtubeId?: string;
+  searchQuery?: string;
+  requiresYouTubeLink: boolean;
+  message?: string;
+}
+
+export async function resolveUniversalTrack(url: string): Promise<UniversalTrackInfo> {
+  const platform = detectPlatform(url);
+  const trimmed = url.trim();
+
+  // 1. YouTube & YouTube Music (Support natif direct)
+  if (platform === 'youtube' || platform === 'youtube_music') {
+    const ytId = extractYouTubeId(trimmed);
+    if (ytId) {
+      const meta = await fetchYouTubeMetadata(ytId);
+      return {
+        platform,
+        title: meta.title,
+        artist: meta.artist,
+        thumbnail_url: meta.thumbnail_url,
+        youtubeId: ytId,
+        requiresYouTubeLink: false,
+      };
+    }
+  }
+
+  // 2. Spotify (Extraction des métadonnées via oEmbed)
+  if (platform === 'spotify') {
+    try {
+      const res = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(trimmed)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const rawTitle = data.title || '';
+        // Souvent le titre Spotify est au format "Titre" ou "Titre - Artiste"
+        return {
+          platform: 'spotify',
+          title: rawTitle,
+          artist: '',
+          thumbnail_url: data.thumbnail_url,
+          searchQuery: rawTitle,
+          requiresYouTubeLink: true,
+          message: 'Morceau Spotify détecté ! Les liens YouTube sont à privilégier pour garantir la synchronisation intégrale.',
+        };
+      }
+    } catch (e) {
+      console.warn('Erreur oEmbed Spotify:', e);
+    }
+  }
+
+  // 3. Deezer (Extraction des métadonnées via oEmbed)
+  if (platform === 'deezer') {
+    try {
+      const res = await fetch(`https://api.deezer.com/oembed?url=${encodeURIComponent(trimmed)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          platform: 'deezer',
+          title: data.title || '',
+          artist: data.author_name || '',
+          thumbnail_url: data.thumbnail_url,
+          searchQuery: `${data.title || ''} ${data.author_name || ''}`.trim(),
+          requiresYouTubeLink: true,
+          message: 'Morceau Deezer détecté ! Les liens YouTube sont à privilégier pour garantir la synchronisation intégrale.',
+        };
+      }
+    } catch (e) {
+      console.warn('Erreur oEmbed Deezer:', e);
+    }
+  }
+
+  // 4. SoundCloud (Extraction des métadonnées via oEmbed)
+  if (platform === 'soundcloud') {
+    try {
+      const res = await fetch(`https://soundcloud.com/oembed?url=${encodeURIComponent(trimmed)}&format=json`);
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          platform: 'soundcloud',
+          title: data.title || '',
+          artist: data.author_name || '',
+          thumbnail_url: data.thumbnail_url,
+          searchQuery: `${data.title || ''} ${data.author_name || ''}`.trim(),
+          requiresYouTubeLink: true,
+          message: 'Morceau SoundCloud détecté ! Les liens YouTube sont à privilégier pour garantir la lecture intégrale et les timecodes.',
+        };
+      }
+    } catch (e) {
+      console.warn('Erreur oEmbed SoundCloud:', e);
+    }
+  }
+
+  return {
+    platform: 'unknown',
+    title: '',
+    artist: '',
+    requiresYouTubeLink: true,
+    message: 'Lien non reconnu. Privilégiez un lien YouTube direct pour une synchronisation optimale.',
+  };
+}
+
 export function extractYouTubeId(url: string): string | null {
   if (!url || typeof url !== 'string') return null;
   const trimmed = url.trim();

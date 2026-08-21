@@ -6,11 +6,24 @@ import {
   Repeat, 
   Clapperboard,
   RotateCcw,
-  Disc
+  Disc,
+  Music,
+  ExternalLink,
+  Info,
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import { Track, GENRES } from '../../lib/types';
 import { createTrack } from '../../lib/supabase';
-import { extractYouTubeId, fetchYouTubeMetadata, getYouTubeThumbnail, loadYouTubeAPI } from '../../lib/youtube';
+import { 
+  extractYouTubeId, 
+  fetchYouTubeMetadata, 
+  getYouTubeThumbnail, 
+  loadYouTubeAPI,
+  resolveUniversalTrack,
+  buildYouTubeSearchUrl,
+  UniversalTrackInfo
+} from '../../lib/youtube';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
 
 interface TrackUploadModalProps {
@@ -26,6 +39,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
 }) => {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeId, setYoutubeId] = useState<string | null>(null);
+  const [detectedInfo, setDetectedInfo] = useState<UniversalTrackInfo | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
@@ -48,23 +62,37 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Détection et auto-remplissage lors de la saisie d'un lien YouTube
+  // Détection multi-plateforme et auto-remplissage
   useEffect(() => {
-    const detectedId = extractYouTubeId(youtubeUrl);
-    if (detectedId && detectedId !== youtubeId) {
-      setYoutubeId(detectedId);
-      setThumbnailUrl(getYouTubeThumbnail(detectedId));
-      setIsLoadingMetadata(true);
+    const trimmed = youtubeUrl.trim();
+    if (!trimmed) {
+      setYoutubeId(null);
+      setDetectedInfo(null);
+      return;
+    }
 
-      fetchYouTubeMetadata(detectedId).then((meta) => {
-        setTitle(meta.title);
-        setArtist(meta.artist);
-        if (meta.thumbnail_url) setThumbnailUrl(meta.thumbnail_url);
+    const timer = setTimeout(() => {
+      setIsLoadingMetadata(true);
+      resolveUniversalTrack(trimmed).then((info) => {
+        setDetectedInfo(info);
+        if (info.youtubeId) {
+          setYoutubeId(info.youtubeId);
+          setThumbnailUrl(info.thumbnail_url || getYouTubeThumbnail(info.youtubeId));
+          if (info.title) setTitle(info.title);
+          if (info.artist) setArtist(info.artist);
+        } else {
+          setYoutubeId(null);
+          if (info.title) setTitle(info.title);
+          if (info.artist) setArtist(info.artist);
+          if (info.thumbnail_url) setThumbnailUrl(info.thumbnail_url);
+        }
         setIsLoadingMetadata(false);
       }).catch(() => {
         setIsLoadingMetadata(false);
       });
-    }
+    }, 200);
+
+    return () => clearTimeout(timer);
   }, [youtubeUrl]);
 
   // Mise à jour de la durée réelle
@@ -361,12 +389,12 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
         {/* En-tête de la modale */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 bg-stone-50">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center border border-red-200 shrink-0">
-              <YouTubeIcon className="w-5 h-5 fill-current" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-stone-900 text-white flex items-center justify-center border border-stone-800 shrink-0">
+              <Music className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-stone-900 text-sm sm:text-base font-display">Ajouter une Musique YouTube</h3>
-              <p className="text-[10px] sm:text-[11px] text-stone-500">Définissez le segment de scène avec boucle & curseur de position</p>
+              <h3 className="font-bold text-stone-900 text-sm sm:text-base font-display">Ajouter une Musique</h3>
+              <p className="text-[10px] sm:text-[11px] text-stone-500">YouTube (recommandé), Spotify, Deezer, SoundCloud</p>
             </div>
           </div>
           <button
@@ -383,26 +411,105 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-          {/* Champ d'import du lien YouTube */}
+          {/* Champ d'import du lien musical (YouTube recommandé, Spotify, Deezer, SoundCloud) */}
           <div>
-            <label className="block text-xs font-bold text-stone-800 mb-1.5 flex items-center gap-1.5">
-              <YouTubeIcon className="w-4 h-4 text-red-600" />
-              Lien de la vidéo YouTube (Musique / BO) *
-            </label>
+            <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+              <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                <Music className="w-4 h-4 text-rose-600" />
+                Lien de la musique ou BO *
+              </label>
+              <span className="text-[10px] text-stone-500 font-mono">
+                YouTube (recommandé), Spotify, Deezer, SoundCloud
+              </span>
+            </div>
+
             <div className="relative">
               <input
                 type="url"
                 required
                 value={youtubeUrl}
                 onChange={(e) => setYoutubeUrl(e.target.value)}
-                placeholder="Ex: https://www.youtube.com/watch?v=... ou youtu.be/..."
+                placeholder="Ex: Lien YouTube (recommandé), Spotify, Deezer, SoundCloud..."
                 className="w-full bg-stone-50 border border-stone-200 rounded-xl pl-3.5 pr-10 py-2.5 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 transition-colors font-mono"
               />
               {isLoadingMetadata && (
-                <Loader2 className="w-4 h-4 text-red-600 animate-spin absolute right-3 top-3" />
+                <Loader2 className="w-4 h-4 text-rose-600 animate-spin absolute right-3 top-3" />
               )}
             </div>
           </div>
+
+          {/* 🟢/🟣/🟠 Passerelle Intelligente : Morceau détecté sur Spotify, Deezer ou SoundCloud */}
+          {detectedInfo && detectedInfo.requiresYouTubeLink && detectedInfo.platform !== 'unknown' && (
+            <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-3.5 sm:p-4 space-y-3 animate-in fade-in duration-150 shadow-sm">
+              <div className="flex items-start gap-3">
+                {detectedInfo.thumbnail_url ? (
+                  <img
+                    src={detectedInfo.thumbnail_url}
+                    alt="Pochette"
+                    className="w-12 h-12 rounded-xl object-cover border border-amber-200 shrink-0 shadow-sm bg-black"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-black shrink-0 text-base">
+                    🎵
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[9px] sm:text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 font-mono">
+                      {detectedInfo.platform === 'spotify' ? '🟢 Spotify' : detectedInfo.platform === 'deezer' ? '🟣 Deezer' : '🟠 SoundCloud'}
+                    </span>
+                    <span className="text-[11px] text-amber-950 font-bold">
+                      Morceau identifié avec succès
+                    </span>
+                  </div>
+                  <h4 className="text-xs sm:text-sm font-bold text-stone-900 truncate mt-0.5">
+                    {detectedInfo.title}
+                  </h4>
+                  {detectedInfo.artist && (
+                    <p className="text-[11px] text-stone-600 truncate">{detectedInfo.artist}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Avertissement & Consigne explicite : YouTube est à privilégier */}
+              <div className="bg-white/90 p-3 rounded-xl border border-amber-200/80 text-xs text-stone-800 space-y-2">
+                <p className="font-bold flex items-center gap-1.5 text-amber-950">
+                  <Info className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>YouTube est à privilégier pour la synchronisation storyboard :</span>
+                </p>
+                <p className="text-[11px] text-stone-600 leading-relaxed">
+                  Les liens direct {detectedInfo.platform} sont bridés à 30 secondes. Pour calibrer votre scène au millième de seconde et profiter du morceau complet, trouvez la version YouTube en 1 clic :
+                </p>
+
+                <div className="pt-1 flex flex-wrap items-center gap-2">
+                  <a
+                    href={buildYouTubeSearchUrl(detectedInfo.searchQuery || `${detectedInfo.title} ${detectedInfo.artist}`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-transform hover:scale-105 shadow-sm"
+                  >
+                    <YouTubeIcon className="w-3.5 h-3.5 fill-current" />
+                    <span>Trouver sur YouTube (1 clic)</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5" />
+                  </a>
+                  <span className="text-[11px] text-stone-500">Puis collez l'URL YouTube ci-dessus</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ⚠️ Doute ou lien non reconnu : Arrêt du processus et consigne YouTube */}
+          {detectedInfo && detectedInfo.platform === 'unknown' && youtubeUrl.trim().length > 8 && (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-rose-950 animate-in fade-in duration-150">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-rose-900">Lien non reconnu ou non synchronisable</p>
+                <p className="text-[11px] text-rose-800 leading-relaxed">
+                  Ce lien ne permet pas de garantir le calage de la boucle. <strong>Les liens YouTube directs fonctionnent beaucoup mieux</strong>. Veuillez coller une URL YouTube valide (ex: <code>https://www.youtube.com/watch?v=...</code> ou <code>https://youtu.be/...</code>).
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Aperçu YouTube & Module de Boucle */}
           {youtubeId && (
@@ -746,8 +853,9 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !title || !youtubeUrl}
-              className="px-5 sm:px-6 py-2.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-sm hover:scale-105"
+              disabled={isSubmitting || !title || !youtubeId}
+              className="px-5 sm:px-6 py-2.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white transition-all disabled:opacity-40 flex items-center gap-1.5 shadow-sm hover:scale-105"
+              title={!youtubeId ? "Veuillez associer un lien YouTube pour calibrer et synchroniser le storyboard" : "Ajouter et créer un storyboard"}
             >
               <Clapperboard className="w-4 h-4" />
               <span>{isSubmitting ? 'Enregistrement...' : 'Ajouter & Créer un Storyboard'}</span>
