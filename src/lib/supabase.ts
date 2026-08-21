@@ -248,6 +248,40 @@ export function hasUserVoted(proposalId: string): boolean {
   return !!votes[proposalId];
 }
 
+// Mettre à jour une proposition de scénario / storyboard (Admin)
+export async function updateProposal(
+  proposalId: string,
+  updates: Partial<Proposal>
+): Promise<Proposal | null> {
+  try {
+    const { error } = await supabase
+      .from('proposals')
+      .update(updates)
+      .eq('id', proposalId);
+
+    if (error) {
+      console.warn('Erreur mise à jour proposal Supabase:', error);
+    }
+  } catch (e) {
+    console.warn('Erreur mise à jour proposal Supabase:', e);
+  }
+
+  const local = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
+  let allProposals: Proposal[] = local ? JSON.parse(local) : [];
+  let updatedProposal: Proposal | null = null;
+
+  allProposals = allProposals.map((p) => {
+    if (p.id === proposalId) {
+      updatedProposal = { ...p, ...updates };
+      return updatedProposal;
+    }
+    return p;
+  });
+
+  localStorage.setItem(LOCAL_STORAGE_PROPOSALS_KEY, JSON.stringify(allProposals));
+  return updatedProposal;
+}
+
 // Créer une proposition avec ses 3 scènes
 export async function createProposal(
   proposalData: Omit<Proposal, 'id' | 'created_at'>,

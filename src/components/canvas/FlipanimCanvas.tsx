@@ -21,7 +21,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowLeftToLine,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Type,
+  FlipHorizontal,
+  Sparkles
 } from 'lucide-react';
 
 interface FlipanimCanvasProps {
@@ -36,11 +39,13 @@ interface FlipanimCanvasProps {
 type CanvasTool = 
   | 'pen' 
   | 'marker' 
+  | 'spray'
   | 'fill' 
   | 'rect' 
   | 'circle' 
   | 'line' 
   | 'arrow' 
+  | 'text'
   | 'eraser' 
   | 'pipette';
 
@@ -84,6 +89,11 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   const [onionSkin, setOnionSkin] = useState<boolean>(true);
   const [showGrid, setShowGrid] = useState<boolean>(false);
   const [showShapeMenu, setShowShapeMenu] = useState<boolean>(false);
+  const [fillShape, setFillShape] = useState<boolean>(false);
+
+  // État annotation texte
+  const [textInputState, setTextInputState] = useState<{ x: number; y: number } | null>(null);
+  const [textValue, setTextValue] = useState<string>('');
 
   // État de dessin
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
@@ -336,6 +346,84 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     setActiveTool(previousTool !== 'pipette' && previousTool !== 'eraser' ? previousTool : 'pen');
   };
 
+  // Aérographe & Texture de brume / poussière cinématographique
+  const drawSpray = (x: number, y: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.25;
+    const radius = Math.max(6, brushSize * 2.5);
+    const density = Math.max(12, brushSize * 3.5);
+
+    for (let i = 0; i < density; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * radius;
+      const offsetX = Math.cos(angle) * r;
+      const offsetY = Math.sin(angle) * r;
+      ctx.fillRect(x + offsetX, y + offsetY, 1.5, 1.5);
+    }
+    ctx.restore();
+  };
+
+  // Poser du texte / annotation de mise en scène sur la frame
+  const commitTextAnnotation = () => {
+    if (!textInputState || !textValue.trim()) {
+      setTextInputState(null);
+      setTextValue('');
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = color;
+    const fontSize = Math.max(13, Math.min(36, brushSize * 3.5));
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.textBaseline = 'top';
+    ctx.fillText(textValue.trim(), textInputState.x, textInputState.y);
+    ctx.restore();
+
+    setTextInputState(null);
+    setTextValue('');
+    saveHistoryState();
+    saveCurrentFrameToState();
+  };
+
+  // Symétrie Horizontale (Miroir G/D)
+  const flipHorizontal = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+
+    tempCtx.drawImage(canvas, 0, 0);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(tempCanvas, 0, 0);
+    ctx.restore();
+
+    saveHistoryState();
+    saveCurrentFrameToState();
+  }, [saveHistoryState, saveCurrentFrameToState]);
+
   // Début d'action de dessin
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (readOnly || isPlayingAnim) return;
@@ -346,6 +434,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
     const coords = getCoordinates(e);
 
+    // 🔤 Outil Texte / Annotation
+    if (activeTool === 'text') {
+      setTextInputState(coords);
+      setTextValue('');
+      return;
+    }
+
     // 🪣 Pot de peinture
     if (activeTool === 'fill') {
       applyFloodFill(coords.x, coords.y);
@@ -355,6 +450,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     // 💧 Pipette
     if (activeTool === 'pipette') {
       applyPipette(coords.x, coords.y);
+      return;
+    }
+
+    // ✨ Aérographe / Spray
+    if (activeTool === 'spray') {
+      setIsDrawing(true);
+      drawSpray(coords.x, coords.y);
       return;
     }
 
@@ -403,6 +505,12 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
     const coords = getCoordinates(e);
 
+    // Spray continu
+    if (activeTool === 'spray') {
+      drawSpray(coords.x, coords.y);
+      return;
+    }
+
     // Tracé de formes géométriques avec prévisualisation en temps réel
     if (['rect', 'circle', 'line', 'arrow'].includes(activeTool) && startPoint && previewSnapshot) {
       ctx.putImageData(previewSnapshot, 0, 0);
@@ -417,7 +525,11 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       if (activeTool === 'rect') {
         const w = coords.x - startPoint.x;
         const h = coords.y - startPoint.y;
-        ctx.strokeRect(startPoint.x, startPoint.y, w, h);
+        if (fillShape) {
+          ctx.fillRect(startPoint.x, startPoint.y, w, h);
+        } else {
+          ctx.strokeRect(startPoint.x, startPoint.y, w, h);
+        }
       } else if (activeTool === 'circle') {
         const rx = Math.abs(coords.x - startPoint.x) / 2;
         const ry = Math.abs(coords.y - startPoint.y) / 2;
@@ -425,7 +537,11 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         const cy = Math.min(startPoint.y, coords.y) + ry;
         ctx.beginPath();
         ctx.ellipse(cx, cy, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
-        ctx.stroke();
+        if (fillShape) {
+          ctx.fill();
+        } else {
+          ctx.stroke();
+        }
       } else if (activeTool === 'line') {
         ctx.beginPath();
         ctx.moveTo(startPoint.x, startPoint.y);
@@ -657,6 +773,12 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         duplicateFrame();
       } else if (e.key === 'b' || e.key === 'B') {
         setActiveTool('pen');
+      } else if (e.key === 'm' || e.key === 'M') {
+        setActiveTool('marker');
+      } else if (e.key === 's' || e.key === 'S') {
+        setActiveTool('spray');
+      } else if (e.key === 't' || e.key === 'T') {
+        setActiveTool('text');
       } else if (e.key === 'e' || e.key === 'E') {
         setActiveTool('eraser');
       } else if (e.key === 'g' || e.key === 'G') {
@@ -739,10 +861,25 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   ? 'bg-stone-900 text-white shadow-sm'
                   : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
               }`}
-              title="Marqueur ombrage & volume (semi-transparent)"
+              title="Marqueur ombrage & volume (semi-transparent - M)"
             >
               <Highlighter className="w-4 h-4 text-amber-500" />
               <span className="hidden md:inline text-[11px]">Ombrage</span>
+            </button>
+
+            {/* Aérographe & Texture cinéma (Brouillard / Poussière / Fumée) */}
+            <button
+              type="button"
+              onClick={() => { setActiveTool('spray'); setShowShapeMenu(false); }}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                activeTool === 'spray'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
+              }`}
+              title="Aérographe / Texture cinéma (Fumée, brume, poussière - S)"
+            >
+              <Sparkles className="w-4 h-4 text-indigo-500" />
+              <span className="hidden md:inline text-[11px]">Texture</span>
             </button>
 
             {/* Pot de peinture */}
@@ -760,7 +897,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               <span className="hidden md:inline text-[11px]">Remplir</span>
             </button>
 
-            {/* Menu Formes Géométriques */}
+            {/* Menu Formes Géométriques avec Bascule Contour/Plein */}
             <div className="relative">
               <button
                 type="button"
@@ -781,54 +918,90 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
               {/* Menu déroulant des formes */}
               {showShapeMenu && (
-                <div className="absolute top-full left-0 mt-1.5 z-30 bg-white rounded-2xl border border-stone-200 shadow-xl p-1.5 flex items-center gap-1 animate-in fade-in zoom-in-95 duration-100">
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTool('rect'); setShowShapeMenu(false); }}
-                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
-                      activeTool === 'rect' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
-                    }`}
-                    title="Rectangle / Cadre de plan"
-                  >
-                    <Square className="w-4 h-4" />
-                    <span className="text-[10px]">Cadre</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTool('circle'); setShowShapeMenu(false); }}
-                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
-                      activeTool === 'circle' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
-                    }`}
-                    title="Cercle / Tête / Viseur"
-                  >
-                    <CircleIcon className="w-4 h-4" />
-                    <span className="text-[10px]">Cercle</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTool('line'); setShowShapeMenu(false); }}
-                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
-                      activeTool === 'line' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
-                    }`}
-                    title="Ligne droite"
-                  >
-                    <Minus className="w-4 h-4" />
-                    <span className="text-[10px]">Ligne</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTool('arrow'); setShowShapeMenu(false); }}
-                    className={`p-2 rounded-xl text-xs flex items-center gap-1 ${
-                      activeTool === 'arrow' ? 'bg-stone-900 text-white' : 'hover:bg-stone-100 text-stone-700'
-                    }`}
-                    title="Flèche de mouvement caméra / travelling"
-                  >
-                    <ArrowUpRight className="w-4 h-4 text-sky-500" />
-                    <span className="text-[10px]">Flèche Cam</span>
-                  </button>
+                <div className="absolute top-full left-0 mt-1.5 z-30 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTool('rect'); setShowShapeMenu(false); }}
+                      className={`p-1.5 rounded-xl text-xs flex items-center gap-1.5 flex-1 ${
+                        activeTool === 'rect' ? 'bg-stone-900 text-white font-bold' : 'hover:bg-stone-100 text-stone-700'
+                      }`}
+                      title="Rectangle / Cadre de plan"
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                      <span className="text-[11px]">Cadre</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTool('circle'); setShowShapeMenu(false); }}
+                      className={`p-1.5 rounded-xl text-xs flex items-center gap-1.5 flex-1 ${
+                        activeTool === 'circle' ? 'bg-stone-900 text-white font-bold' : 'hover:bg-stone-100 text-stone-700'
+                      }`}
+                      title="Cercle / Tête / Viseur"
+                    >
+                      <CircleIcon className="w-3.5 h-3.5" />
+                      <span className="text-[11px]">Cercle</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTool('line'); setShowShapeMenu(false); }}
+                      className={`p-1.5 rounded-xl text-xs flex items-center gap-1.5 flex-1 ${
+                        activeTool === 'line' ? 'bg-stone-900 text-white font-bold' : 'hover:bg-stone-100 text-stone-700'
+                      }`}
+                      title="Ligne droite"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                      <span className="text-[11px]">Ligne</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setActiveTool('arrow'); setShowShapeMenu(false); }}
+                      className={`p-1.5 rounded-xl text-xs flex items-center gap-1.5 flex-1 ${
+                        activeTool === 'arrow' ? 'bg-stone-900 text-white font-bold' : 'hover:bg-stone-100 text-stone-700'
+                      }`}
+                      title="Flèche de mouvement caméra / travelling"
+                    >
+                      <ArrowUpRight className="w-3.5 h-3.5 text-sky-500" />
+                      <span className="text-[11px]">Flèche Cam</span>
+                    </button>
+                  </div>
+
+                  {/* Bascule Contour / Remplissage Plein pour les formes */}
+                  <div className="pt-1.5 border-t border-stone-100 flex items-center justify-between gap-1 text-[11px]">
+                    <span className="text-stone-500 font-medium">Style :</span>
+                    <button
+                      type="button"
+                      onClick={() => setFillShape(!fillShape)}
+                      className={`px-2.5 py-1 rounded-lg font-bold text-[10px] transition-colors ${
+                        fillShape 
+                          ? 'bg-stone-900 text-white' 
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                      }`}
+                    >
+                      {fillShape ? '■ Plein' : '□ Contour'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
+
+            {/* Outil Texte / Annotation */}
+            <button
+              type="button"
+              onClick={() => { setActiveTool('text'); setShowShapeMenu(false); }}
+              className={`p-2 rounded-xl transition-all flex items-center gap-1 font-semibold ${
+                activeTool === 'text'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
+              }`}
+              title="Texte / Annotation de mise en scène (T)"
+            >
+              <Type className="w-4 h-4 text-emerald-600" />
+              <span className="hidden md:inline text-[11px]">Texte</span>
+            </button>
 
             {/* Gomme */}
             <button
@@ -922,8 +1095,19 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             </span>
           </div>
 
-          {/* Outils secondaires : Grille 16:9, Pelure d'oignon, Import, Undo/Redo */}
+          {/* Outils secondaires : Miroir H, Grille 16:9, Pelure d'oignon, Import, Undo/Redo */}
           <div className="flex items-center gap-1.5">
+            {/* Symétrie Horizontale (Miroir) */}
+            <button
+              type="button"
+              onClick={flipHorizontal}
+              className="p-2 rounded-xl text-xs flex items-center gap-1 bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 transition-all shadow-sm"
+              title="Symétrie Horizontale / Inverser la vue miroir gauche-droite"
+            >
+              <FlipHorizontal className="w-4 h-4" />
+              <span className="hidden lg:inline text-[11px]">Miroir</span>
+            </button>
+
             {/* Grille de composition cinéma (Règle des tiers) */}
             <button
               type="button"
@@ -1093,6 +1277,51 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   <span className="w-2 h-0.5 bg-white" />
                   <span className="h-2 w-0.5 bg-white absolute" />
                 </div>
+              </div>
+            )}
+
+            {/* 🔤 Champ d'annotation texte flottant sur le Canvas */}
+            {textInputState && (
+              <div 
+                className="absolute z-40 bg-stone-900/95 border border-white/30 p-2 rounded-2xl shadow-2xl flex items-center gap-1.5 backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+                style={{
+                  left: `${Math.min(80, Math.max(10, (textInputState.x / 640) * 100))}%`,
+                  top: `${Math.min(80, Math.max(10, (textInputState.y / 360) * 100))}%`,
+                  transform: 'translate(-20%, -50%)',
+                }}
+              >
+                <input
+                  type="text"
+                  autoFocus
+                  value={textValue}
+                  placeholder="Texte / Annotation cinéma..."
+                  onChange={(e) => setTextValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitTextAnnotation();
+                    if (e.key === 'Escape') {
+                      setTextInputState(null);
+                      setTextValue('');
+                    }
+                  }}
+                  className="bg-stone-800 border border-stone-700 text-white text-xs px-3 py-1.5 rounded-xl focus:outline-none focus:border-emerald-500 font-medium min-w-[160px] sm:min-w-[200px]"
+                />
+                <button
+                  type="button"
+                  onClick={commitTextAnnotation}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-transform hover:scale-105 shadow-sm"
+                >
+                  Poser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTextInputState(null);
+                    setTextValue('');
+                  }}
+                  className="p-1.5 rounded-xl bg-stone-800 text-stone-400 hover:text-white text-xs transition-colors"
+                >
+                  ✕
+                </button>
               </div>
             )}
           </>

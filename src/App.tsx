@@ -91,6 +91,13 @@ export default function App() {
     setCurrentView('view');
   };
 
+  const handleProposalUpdated = (updatedProposal: Proposal) => {
+    setProposals((prev) =>
+      prev.map((p) => (p.id === updatedProposal.id ? updatedProposal : p))
+    );
+    setSelectedProposal(updatedProposal);
+  };
+
   const handleTrackCreated = (newTrack: Track) => {
     setTracks((prev) => [newTrack, ...prev]);
     setSelectedTrack(newTrack);
@@ -178,6 +185,7 @@ export default function App() {
             onBack={() => setCurrentView('proposals')}
             isAdmin={isAdmin}
             onDeleteProposal={handleDeleteProposal}
+            onUpdateProposal={handleProposalUpdated}
           />
         )}
 
@@ -191,6 +199,7 @@ export default function App() {
             onVoteUpdated={handleVoteUpdated}
             isAdmin={isAdmin}
             onDeleteProposal={handleDeleteProposal}
+            onUpdateProposal={handleProposalUpdated}
           />
         )}
       </main>

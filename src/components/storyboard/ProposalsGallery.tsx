@@ -11,10 +11,12 @@ import {
   Clapperboard,
   Search,
   Trash2,
-  ShieldAlert
+  ShieldAlert,
+  Edit3
 } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { voteProposal, hasUserVoted } from '../../lib/supabase';
+import { StoryEditModal } from './StoryEditModal';
 
 interface ProposalsGalleryProps {
   proposals: Proposal[];
@@ -24,6 +26,7 @@ interface ProposalsGalleryProps {
   onVoteUpdated?: (proposalId: string, newCount: number) => void;
   isAdmin?: boolean;
   onDeleteProposal?: (proposalId: string) => void;
+  onUpdateProposal?: (updated: Proposal) => void;
 }
 
 export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
@@ -34,7 +37,9 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
   onVoteUpdated,
   isAdmin = false,
   onDeleteProposal,
+  onUpdateProposal,
 }) => {
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [proposalToDelete, setProposalToDelete] = useState<Proposal | null>(null);
   const [sortBy, setSortBy] = useState<'likes' | 'recent'>('likes');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -292,8 +297,22 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
                     )}
                   </div>
 
-                  {/* Boutons Actions : Vote + Delete (Admin) */}
+                  {/* Boutons Actions : Edit + Delete (Admin) + Vote */}
                   <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingProposal(proposal);
+                        }}
+                        className="p-1.5 rounded-full bg-white/90 hover:bg-amber-500 text-stone-700 hover:text-white border border-stone-200 shadow-md backdrop-blur-sm transition-colors"
+                        title="Modifier ce storyboard (Admin)"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
                     {isAdmin && onDeleteProposal && (
                       <button
                         type="button"
@@ -406,6 +425,19 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modale d'Édition Admin */}
+      {editingProposal && (
+        <StoryEditModal
+          isOpen={!!editingProposal}
+          proposal={editingProposal}
+          onClose={() => setEditingProposal(null)}
+          onSaved={(updated) => {
+            if (onUpdateProposal) onUpdateProposal(updated);
+            setEditingProposal(null);
+          }}
+        />
       )}
     </div>
   );

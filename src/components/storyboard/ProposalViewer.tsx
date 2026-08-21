@@ -14,11 +14,13 @@ import {
   Minimize2,
   Music,
   Trash2,
-  ShieldAlert
+  ShieldAlert,
+  Edit3
 } from 'lucide-react';
 import { Proposal, Track } from '../../lib/types';
 import { AudioPlayer } from '../audio/AudioPlayer';
 import { voteProposal, hasUserVoted } from '../../lib/supabase';
+import { StoryEditModal } from './StoryEditModal';
 
 interface ProposalViewerProps {
   proposal: Proposal;
@@ -26,6 +28,7 @@ interface ProposalViewerProps {
   onBack: () => void;
   isAdmin?: boolean;
   onDeleteProposal?: (proposalId: string) => void;
+  onUpdateProposal?: (updated: Proposal) => void;
 }
 
 export const ProposalViewer: React.FC<ProposalViewerProps> = ({
@@ -34,30 +37,37 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   onBack,
   isAdmin = false,
   onDeleteProposal,
+  onUpdateProposal,
 }) => {
+  const [currentProposal, setCurrentProposal] = useState<Proposal>(proposal);
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const theatreRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    setCurrentProposal(proposal);
+  }, [proposal]);
+
   const [currentTime, setCurrentTime] = useState(0);
-  const [likesCount, setLikesCount] = useState<number>(proposal.likes_count || 0);
-  const [isVoted, setIsVoted] = useState<boolean>(hasUserVoted(proposal.id));
+  const [likesCount, setLikesCount] = useState<number>(currentProposal.likes_count || 0);
+  const [isVoted, setIsVoted] = useState<boolean>(hasUserVoted(currentProposal.id));
   const [isTheatreMode, setIsTheatreMode] = useState<boolean>(false);
 
   // Animation Flipbook de la Scène Clé
-  const frames = proposal.frames && proposal.frames.length > 0 
-    ? proposal.frames 
-    : proposal.scenes?.map(s => s.image_data).filter(Boolean) || [];
+  const frames = currentProposal.frames && currentProposal.frames.length > 0 
+    ? currentProposal.frames 
+    : currentProposal.scenes?.map(s => s.image_data).filter(Boolean) || [];
 
   const [activeFrameIndex, setActiveFrameIndex] = useState<number>(0);
   const [isPlayingFlipbook, setIsPlayingFlipbook] = useState<boolean>(false);
   const [viewerFps, setViewerFps] = useState<number>(
-    proposal.animation_fps ? Number(proposal.animation_fps) : 0.5
+    currentProposal.animation_fps ? Number(currentProposal.animation_fps) : 0.5
   );
   const [forcePlayTime, setForcePlayTime] = useState<number | null>(null);
 
   // Timecodes de la scène clé
-  const startTime = proposal.key_scene_start_time || proposal.scenes?.find(s => s.section_type === 'main')?.start_time || 0;
-  const endTime = proposal.key_scene_end_time || proposal.scenes?.find(s => s.section_type === 'main')?.end_time || (track?.duration || 60);
+  const startTime = currentProposal.key_scene_start_time || currentProposal.scenes?.find(s => s.section_type === 'main')?.start_time || 0;
+  const endTime = currentProposal.key_scene_end_time || currentProposal.scenes?.find(s => s.section_type === 'main')?.end_time || (track?.duration || 60);
 
   const isScenePlayingNow = currentTime >= startTime && currentTime <= endTime;
 
@@ -130,19 +140,19 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   };
 
   const handleVote = async () => {
-    const newCount = await voteProposal(proposal.id);
+    const newCount = await voteProposal(currentProposal.id);
     setLikesCount(newCount);
     setIsVoted(!isVoted);
   };
 
-  const contextBefore = proposal.context_before || proposal.scenes?.find(s => s.section_type === 'preceding')?.description || '';
-  const contextAfter = proposal.context_after || proposal.scenes?.find(s => s.section_type === 'succeeding')?.description || '';
-  const keyTitle = proposal.key_scene_title || proposal.scenes?.find(s => s.section_type === 'main')?.scene_title || 'La Scène Clé';
-  const keyDesc = proposal.key_scene_description || proposal.scenes?.find(s => s.section_type === 'main')?.description || '';
+  const contextBefore = currentProposal.context_before || currentProposal.scenes?.find(s => s.section_type === 'preceding')?.description || '';
+  const contextAfter = currentProposal.context_after || currentProposal.scenes?.find(s => s.section_type === 'succeeding')?.description || '';
+  const keyTitle = currentProposal.key_scene_title || currentProposal.scenes?.find(s => s.section_type === 'main')?.scene_title || 'La Scène Clé';
+  const keyDesc = currentProposal.key_scene_description || currentProposal.scenes?.find(s => s.section_type === 'main')?.description || '';
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-16 animate-in fade-in duration-200">
-      {/* Barre de navigation, Mode Projection et Vote */}
+      {/* Barre de navigation, Mode Projection, Modification Admin et Vote */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <button
           type="button"
@@ -154,6 +164,19 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
         </button>
 
         <div className="flex items-center gap-3">
+          {/* Bouton de modification Admin */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsEditModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white border border-amber-300 text-xs font-bold transition-all shadow-sm"
+              title="Modifier ce storyboard (Admin : corriger orthographe, genre, pitch, textes)"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Modifier (Admin)</span>
+            </button>
+          )}
+
           {/* Bouton Mode Projection Cinéma */}
           <button
             type="button"
@@ -191,7 +214,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
           )}
 
           <span className="text-xs font-mono text-stone-500 bg-white px-3 py-1.5 rounded-xl border border-stone-200 shadow-sm">
-            {new Date(proposal.created_at).toLocaleDateString('fr-FR')}
+            {new Date(currentProposal.created_at).toLocaleDateString('fr-FR')}
           </span>
         </div>
       </div>
@@ -214,21 +237,21 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
       <div className="relative overflow-hidden rounded-3xl bg-white border border-stone-200 p-7 sm:p-9 shadow-gallery space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-stone-100 text-stone-800 border border-stone-200 font-mono">
-            {proposal.genre}
+            {currentProposal.genre}
           </span>
           <div className="flex items-center gap-2 text-xs text-stone-500">
             <User className="w-4 h-4 text-stone-700" />
-            <span>Scénario imaginé par : <strong className="text-stone-900 font-bold">{proposal.author_name}</strong></span>
+            <span>Scénario imaginé par : <strong className="text-stone-900 font-bold">{currentProposal.author_name}</strong></span>
           </div>
         </div>
 
         <h1 className="text-3xl sm:text-4xl font-extrabold text-stone-900 tracking-tight font-display">
-          {proposal.movie_title}
+          {currentProposal.movie_title}
         </h1>
 
-        {proposal.logline && (
+        {currentProposal.logline && (
           <p className="text-stone-600 text-sm sm:text-base leading-relaxed max-w-3xl border-l-2 border-stone-900 pl-4 italic font-serif">
-            "{proposal.logline}"
+            "{currentProposal.logline}"
           </p>
         )}
       </div>
@@ -551,7 +574,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
                 type="button"
                 onClick={() => {
                   if (onDeleteProposal) {
-                    onDeleteProposal(proposal.id);
+                    onDeleteProposal(currentProposal.id);
                     onBack();
                   }
                 }}
@@ -563,6 +586,19 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modale d'Édition Admin */}
+      {isEditModalOpen && (
+        <StoryEditModal
+          isOpen={isEditModalOpen}
+          proposal={currentProposal}
+          onClose={() => setIsEditModalOpen(false)}
+          onSaved={(updated) => {
+            setCurrentProposal(updated);
+            if (onUpdateProposal) onUpdateProposal(updated);
+          }}
+        />
       )}
     </div>
   );
