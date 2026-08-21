@@ -75,3 +75,25 @@ export interface Proposal {
   track?: Track;
   scenes?: Scene[];
 }
+
+export interface EQSettings {
+  bass: number;    // Gain en dB (-12 à +12)
+  mid: number;     // Gain en dB (-12 à +12)
+  treble: number;  // Gain en dB (-12 à +12)
+  volume: number;  // Volume master (0 à 1.5)
+}
+
+export interface MovieToMusikProject {
+  id: string;
+  title: string;
+  creator_name: string;
+  genre: string;
+  visual_type: 'video' | 'gif' | 'image';
+  visual_url: string; // Base64 ou URL de la vidéo / du gif / de l'image
+  audio_data: string;  // Base64 de l'audio enregistré au micro
+  duration: number;    // Durée en secondes
+  eq_settings: EQSettings;
+  description?: string;
+  likes_count?: number;
+  created_at: string;
+}

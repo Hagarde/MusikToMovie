@@ -1,9 +1,14 @@
 import React from 'react';
-import { Film, Music, Compass, Sparkles, Plus, Shield, ShieldCheck, LogOut } from 'lucide-react';
+import { Film, Music, Compass, Sparkles, Plus, Shield, ShieldCheck, LogOut, Radio, Mic } from 'lucide-react';
+
+export type AppView = 'concept' | 'tracks' | 'proposals' | 'create' | 'view' | 'm2m_gallery' | 'm2m_studio';
+export type AppMode = 'musiktomovie' | 'movietomusik';
 
 interface NavbarProps {
-  currentView: 'concept' | 'tracks' | 'proposals' | 'create' | 'view';
-  onNavigate: (view: 'concept' | 'tracks' | 'proposals') => void;
+  currentView: AppView;
+  appMode: AppMode;
+  onSelectMode: (mode: AppMode) => void;
+  onNavigate: (view: AppView) => void;
   onOpenUpload: () => void;
   isAdmin: boolean;
   onToggleAdminModal: () => void;
@@ -12,6 +17,8 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentView,
+  appMode,
+  onSelectMode,
   onNavigate,
   onOpenUpload,
   isAdmin,
@@ -22,78 +29,163 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="border-b border-stone-200 bg-white/95 backdrop-blur-md sticky top-0 z-50 transition-colors shadow-sm">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
         {/* Logo & Titre Arty */}
-        <button
-          type="button"
-          onClick={() => onNavigate('concept')}
-          className="flex items-center gap-2 sm:gap-3 group text-left shrink-0"
-        >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-stone-900 flex items-center justify-center text-white font-black shadow-md group-hover:scale-105 transition-transform">
-            <Film className="w-4 h-4 sm:w-5 sm:h-5" />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (appMode === 'musiktomovie') onNavigate('concept');
+              else onNavigate('m2m_gallery');
+            }}
+            className="flex items-center gap-2 group text-left shrink-0"
+          >
+            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center text-white font-black shadow-md group-hover:scale-105 transition-transform ${
+              appMode === 'musiktomovie' ? 'bg-stone-900' : 'bg-rose-600'
+            }`}>
+              {appMode === 'musiktomovie' ? (
+                <Film className="w-4 h-4 sm:w-5 sm:h-5" />
+              ) : (
+                <Radio className="w-4 h-4 sm:w-5 sm:h-5" />
+              )}
+            </div>
+            <div>
+              <span className="text-sm sm:text-base font-black text-stone-900 tracking-tight flex items-center gap-0.5 sm:gap-1 font-display">
+                {appMode === 'musiktomovie' ? (
+                  <>Musik<span className="text-rose-600">To</span>Movie</>
+                ) : (
+                  <>Movie<span className="text-rose-600">To</span>Musik</>
+                )}
+              </span>
+              <span className="hidden sm:block text-[9px] text-stone-500 tracking-widest uppercase font-semibold">
+                {appMode === 'musiktomovie' ? 'Musique → Storyboard' : 'Visuel → Composition Micro'}
+              </span>
+            </div>
+          </button>
+
+          {/* Switch de Mode créatif : MusikToMovie vs MovieToMusik */}
+          <div className="hidden md:flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200 text-[11px] font-bold">
+            <button
+              type="button"
+              onClick={() => onSelectMode('musiktomovie')}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 ${
+                appMode === 'musiktomovie'
+                  ? 'bg-white text-stone-900 shadow-sm font-extrabold'
+                  : 'text-stone-500 hover:text-stone-900'
+              }`}
+            >
+              <Film className="w-3 h-3 text-stone-700" />
+              <span>MusikToMovie</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectMode('movietomusik')}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 ${
+                appMode === 'movietomusik'
+                  ? 'bg-rose-600 text-white shadow-sm font-extrabold'
+                  : 'text-stone-500 hover:text-stone-900'
+              }`}
+            >
+              <Radio className="w-3 h-3 text-rose-300 animate-pulse" />
+              <span>MovieToMusik</span>
+            </button>
           </div>
-          <div>
-            <span className="text-sm sm:text-base font-black text-stone-900 tracking-tight flex items-center gap-0.5 sm:gap-1 font-display">
-              Musik<span className="text-rose-600">To</span>Movie
-            </span>
-            <span className="hidden sm:block text-[10px] text-stone-500 tracking-widest uppercase font-semibold">
-              Studio Auteur & Storyboard
-            </span>
-          </div>
-        </button>
+        </div>
 
-        {/* Navigation principale adaptée mobile */}
-        <nav className="flex items-center gap-0.5 sm:gap-1 bg-stone-100/90 p-0.5 sm:p-1 rounded-2xl border border-stone-200 text-[11px] sm:text-xs shrink min-w-0">
-          <button
-            type="button"
-            onClick={() => onNavigate('concept')}
-            className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 shrink-0 ${
-              currentView === 'concept'
-                ? 'bg-stone-900 text-white shadow-sm'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-            <span className="hidden xs:inline">Le Concept</span>
-          </button>
+        {/* Navigation principale selon le mode actif */}
+        {appMode === 'musiktomovie' ? (
+          <nav className="flex items-center gap-0.5 sm:gap-1 bg-stone-100/90 p-0.5 sm:p-1 rounded-2xl border border-stone-200 text-[11px] sm:text-xs shrink min-w-0">
+            <button
+              type="button"
+              onClick={() => onNavigate('concept')}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 shrink-0 ${
+                currentView === 'concept'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+              <span className="hidden xs:inline">Le Concept</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => onNavigate('tracks')}
-            className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 shrink-0 ${
-              currentView === 'tracks'
-                ? 'bg-stone-900 text-white shadow-sm'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-            }`}
-          >
-            <Music className="w-3.5 h-3.5 shrink-0" />
-            <span>Musiques</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('tracks')}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 shrink-0 ${
+                currentView === 'tracks'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              <Music className="w-3.5 h-3.5 shrink-0" />
+              <span>Musiques</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => onNavigate('proposals')}
-            className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 shrink-0 ${
-              currentView === 'proposals' || currentView === 'view'
-                ? 'bg-stone-900 text-white shadow-sm'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-            }`}
-          >
-            <Compass className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">Galerie</span>
-            <span className="sm:hidden">Films</span>
-          </button>
-        </nav>
+            <button
+              type="button"
+              onClick={() => onNavigate('proposals')}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 shrink-0 ${
+                currentView === 'proposals' || currentView === 'view'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Galerie</span>
+              <span className="sm:hidden">Films</span>
+            </button>
+          </nav>
+        ) : (
+          <nav className="flex items-center gap-0.5 sm:gap-1 bg-stone-100/90 p-0.5 sm:p-1 rounded-2xl border border-stone-200 text-[11px] sm:text-xs shrink min-w-0">
+            <button
+              type="button"
+              onClick={() => onNavigate('m2m_gallery')}
+              className={`px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                currentView === 'm2m_gallery'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              <span>Galerie Sonore</span>
+            </button>
 
-        {/* Actions : Ajouter Musique, Mode Admin & GitHub */}
+            <button
+              type="button"
+              onClick={() => onNavigate('m2m_studio')}
+              className={`px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                currentView === 'm2m_studio'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+              <span>Studio Micro</span>
+            </button>
+          </nav>
+        )}
+
+        {/* Actions : Ajouter Musique / Switch Mobile / Admin */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Switcher Mode sur mobile */}
           <button
             type="button"
-            onClick={onOpenUpload}
-            className="p-2 sm:px-3.5 sm:py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-all hover:scale-105 shadow-sm flex items-center gap-1.5"
-            title="Ajouter un morceau YouTube"
+            onClick={() => onSelectMode(appMode === 'musiktomovie' ? 'movietomusik' : 'musiktomovie')}
+            className="md:hidden px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 border border-stone-200 text-[10px] font-bold text-stone-800"
+            title="Basculer vers l'autre mode"
           >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span className="hidden md:inline">Ajouter Musique</span>
+            {appMode === 'musiktomovie' ? '🎙️ MovieToMusik' : '🎬 MusikToMovie'}
           </button>
+
+          {appMode === 'musiktomovie' && (
+            <button
+              type="button"
+              onClick={onOpenUpload}
+              className="p-2 sm:px-3.5 sm:py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-all hover:scale-105 shadow-sm flex items-center gap-1.5"
+              title="Ajouter un morceau YouTube"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span className="hidden md:inline">Ajouter Musique</span>
+            </button>
+          )}
 
           {/* Bouton / Badge Mode Admin */}
           {isAdmin ? (
