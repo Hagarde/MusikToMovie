@@ -164,19 +164,6 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
         </button>
 
         <div className="flex items-center gap-3">
-          {/* Bouton de modification Admin */}
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={() => setIsEditModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white border border-amber-300 text-xs font-bold transition-all shadow-sm"
-              title="Modifier ce storyboard (Admin : corriger orthographe, genre, pitch, textes)"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>Modifier (Admin)</span>
-            </button>
-          )}
-
           {/* Bouton Mode Projection Cinéma */}
           <button
             type="button"
@@ -201,16 +188,31 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             <span>{isVoted ? 'Voté !' : 'Voter'} ({likesCount})</span>
           </button>
 
-          {/* Bouton de suppression Admin */}
-          {isAdmin && onDeleteProposal && (
-            <button
-              type="button"
-              onClick={() => setIsDeleting(true)}
-              className="p-2 rounded-2xl bg-white hover:bg-rose-600 text-stone-600 hover:text-white border border-stone-200 shadow-sm transition-colors"
-              title="Supprimer ce storyboard (Admin)"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+          {/* Actions d'administration (Modifier & Supprimer côte à côte) */}
+          {isAdmin && (
+            <div className="flex items-center gap-1.5 bg-amber-500/10 p-1 rounded-2xl border border-amber-300">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-amber-500 text-amber-800 hover:text-white border border-amber-200 shadow-sm transition-all flex items-center gap-1.5 text-xs font-bold"
+                title="Modifier ce storyboard (Admin : corriger orthographe, genre, pitch, textes)"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Modifier</span>
+              </button>
+
+              {onDeleteProposal && (
+                <button
+                  type="button"
+                  onClick={() => setIsDeleting(true)}
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-600 text-stone-700 hover:text-white border border-stone-200 shadow-sm transition-all flex items-center gap-1.5 text-xs font-bold"
+                  title="Supprimer ce storyboard (Admin)"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Supprimer</span>
+                </button>
+              )}
+            </div>
           )}
 
           <span className="text-xs font-mono text-stone-500 bg-white px-3 py-1.5 rounded-xl border border-stone-200 shadow-sm">
@@ -438,70 +440,74 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
       {isTheatreMode && (
         <div
           ref={theatreRef}
-          className="fixed inset-0 z-50 bg-[#0c0a09] flex flex-col justify-between p-4 sm:p-8 animate-in fade-in duration-200 select-none"
+          className="fixed inset-0 z-50 bg-black flex flex-col justify-between p-2 sm:p-4 animate-in fade-in duration-150 select-none overflow-hidden h-screen w-screen"
         >
-          <div className="flex items-center justify-between text-white border-b border-white/10 pb-4">
-            <div className="flex items-center gap-3">
-              <span className="w-3 h-3 rounded-full bg-rose-500 animate-pulse" />
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold font-display">{proposal.movie_title}</h2>
-                <p className="text-xs text-stone-400 font-mono">
+          {/* Header flottant discret */}
+          <div className="flex items-center justify-between text-white bg-black/60 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shrink-0 z-10">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+              <div className="truncate">
+                <h2 className="text-sm sm:text-base font-bold font-display truncate">{currentProposal.movie_title}</h2>
+                <p className="text-[11px] text-stone-400 font-mono">
                   {keyTitle} • {formatTime(startTime)} → {formatTime(endTime)}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={toggleTheatreMode}
-                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
               >
-                <Minimize2 className="w-4 h-4" />
-                <span>Quitter le plein écran (Échap)</span>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Quitter (Échap)</span>
               </button>
             </div>
           </div>
 
-          <div className="flex-1 flex items-center justify-center p-2 sm:p-6 my-auto max-h-[75vh]">
-            <div className="relative aspect-video w-full max-w-6xl h-full bg-black rounded-3xl overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center">
+          {/* Zone de projection qui occupe 100% de la hauteur disponible */}
+          <div className="flex-1 w-full h-full min-h-0 flex items-center justify-center relative overflow-hidden py-1">
+            <div className="relative w-full h-full flex items-center justify-center">
               {frames[activeFrameIndex] ? (
                 <img
                   src={frames[activeFrameIndex]}
                   alt={`Plan ${activeFrameIndex + 1}`}
-                  className="w-full h-full object-contain"
+                  className="w-full h-full max-h-full max-w-full object-contain pointer-events-none select-none"
                 />
               ) : (
-                <span className="text-stone-500">Plan sans dessin</span>
+                <span className="text-stone-500 text-sm">Plan sans dessin</span>
               )}
 
+              {/* Intentions / Sous-titres cinématographiques */}
               {keyDesc && (
-                <div className="absolute bottom-6 inset-x-6 max-w-3xl mx-auto text-center bg-black/85 backdrop-blur-lg px-6 py-3.5 rounded-2xl border border-white/15 text-stone-100 text-xs sm:text-sm leading-relaxed shadow-2xl font-serif italic max-h-32 overflow-y-auto">
+                <div className="absolute bottom-3 inset-x-4 max-w-2xl mx-auto text-center bg-black/80 backdrop-blur-md px-4 py-2.5 rounded-xl border border-white/15 text-stone-100 text-xs sm:text-sm leading-relaxed shadow-2xl font-serif italic max-h-24 overflow-y-auto pointer-events-auto">
                   "{keyDesc}"
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-4 text-xs font-mono text-stone-300">
-            <div className="flex flex-wrap items-center gap-3">
+          {/* Barre de contrôle cinéma compacte */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-black/70 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shrink-0 text-xs font-mono text-stone-300 z-10">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
                 onClick={togglePlaySync}
-                className="px-4 py-2 rounded-xl bg-white text-stone-900 font-black flex items-center gap-2 hover:scale-105 transition-transform shadow-md"
+                className="px-3.5 py-1.5 rounded-xl bg-white text-stone-900 font-black flex items-center gap-1.5 hover:scale-105 transition-transform shadow-md"
                 title={isPlayingFlipbook ? 'Mettre en pause image et musique (Espace)' : 'Lancer image et musique (Espace)'}
               >
-                {isPlayingFlipbook ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+                {isPlayingFlipbook ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
                 <span>{isPlayingFlipbook ? 'Pause' : 'Lecture'}</span>
               </button>
 
-              <span className="text-stone-300 font-bold">
-                Plan {activeFrameIndex + 1} / {frames.length}
+              <span className="text-stone-200 font-bold bg-white/10 px-2.5 py-1 rounded-lg">
+                {activeFrameIndex + 1} / {frames.length}
               </span>
 
               {/* Contrôleur de vitesse en mode Théâtre */}
-              <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-                <span className="text-stone-400 text-[11px]">Vitesse :</span>
+              <div className="flex items-center gap-2 bg-white/10 px-2.5 py-1 rounded-xl border border-white/10">
+                <span className="text-stone-400 text-[10px]">Cadence :</span>
                 <input
                   type="range"
                   min="0.25"
@@ -509,19 +515,19 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
                   step="0.25"
                   value={viewerFps}
                   onChange={(e) => changeViewerFps(parseFloat(e.target.value))}
-                  className="w-20 h-1.5 bg-stone-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                  className="w-16 sm:w-20 h-1.5 bg-stone-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
                 />
-                <span className="font-bold text-white min-w-[55px]">
+                <span className="font-bold text-white min-w-[50px] text-[11px]">
                   {viewerFps === 0.25 ? '1/4 fps' : viewerFps === 0.5 ? '1/2 fps' : `${viewerFps} fps`}
                 </span>
 
-                <div className="flex items-center gap-1 border-l border-white/15 pl-2">
+                <div className="hidden md:flex items-center gap-1 border-l border-white/15 pl-1.5">
                   {[0.25, 0.5, 1, 2, 4].map((s) => (
                     <button
                       key={s}
                       type="button"
                       onClick={() => changeViewerFps(s)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
                         viewerFps === s ? 'bg-white text-stone-900 font-bold' : 'text-stone-400 hover:text-white hover:bg-white/10'
                       }`}
                     >
@@ -533,9 +539,9 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
             </div>
 
             {track && (
-              <div className="flex items-center gap-2 text-stone-400">
-                <Music className="w-4 h-4 text-rose-500" />
-                <span className="truncate max-w-xs">{track.title}</span>
+              <div className="flex items-center gap-2 text-stone-400 text-[11px]">
+                <Music className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                <span className="truncate max-w-[150px] sm:max-w-xs">{track.title}</span>
               </div>
             )}
           </div>
