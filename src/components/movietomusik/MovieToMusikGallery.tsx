@@ -15,10 +15,11 @@ import {
   User, 
   Search, 
   Calendar,
-  Volume2
+  Volume2,
+  Layers
 } from 'lucide-react';
 import { MovieToMusikProject } from '../../lib/types';
-import { FilteredAudioPlayer } from '../../lib/audioEngine';
+import { MultiTrackAudioEngine } from '../../lib/audioEngine';
 import { voteMovieToMusikProject, hasUserVotedM2M } from '../../lib/supabase';
 
 interface MovieToMusikGalleryProps {
@@ -41,28 +42,44 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
 
-  const playerRef = useRef<FilteredAudioPlayer | null>(null);
+  const engineRef = useRef<MultiTrackAudioEngine | null>(null);
 
   useEffect(() => {
     setProjectList(projects);
   }, [projects]);
 
   useEffect(() => {
-    playerRef.current = new FilteredAudioPlayer();
+    engineRef.current = new MultiTrackAudioEngine();
     return () => {
-      if (playerRef.current) playerRef.current.dispose();
+      if (engineRef.current) engineRef.current.dispose();
     };
   }, []);
 
   const handleTogglePlay = async (project: MovieToMusikProject) => {
-    if (!playerRef.current) return;
+    if (!engineRef.current) return;
 
     if (playingProjectId === project.id) {
-      playerRef.current.pause();
+      engineRef.current.pause();
       setPlayingProjectId(null);
     } else {
-      playerRef.current.init(project.audio_data, project.eq_settings);
-      await playerRef.current.play();
+      const tracksToLoad =
+        project.tracks && project.tracks.length > 0
+          ? project.tracks
+          : [
+              {
+                id: 'legacy-main',
+                name: 'Piste Audio',
+                audio_data: project.audio_data || '',
+                duration: project.duration || 60,
+                trim_start: 0,
+                trim_end: project.duration || 60,
+                is_muted: false,
+                eq_settings: project.eq_settings || { bass: 0, mid: 0, treble: 0, volume: 1.0 },
+              },
+            ];
+
+      engineRef.current.loadTracks(tracksToLoad);
+      await engineRef.current.play();
       setPlayingProjectId(project.id);
     }
   };
@@ -80,7 +97,7 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
     const shareUrl = `${window.location.origin}${window.location.pathname}?m2m_story=${project.id}`;
     const shareData = {
       title: `${project.title} - MovieToMusik`,
-      text: `Écoutez la bande son originale de "${project.title}" créée par ${project.creator_name} sur MovieToMusik !`,
+      text: `Écoutez la composition multi-pistes "${project.title}" par ${project.creator_name} sur MovieToMusik !`,
       url: shareUrl,
     };
 
@@ -130,7 +147,7 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
             </h1>
 
             <p className="text-xs sm:text-sm text-stone-300 leading-relaxed max-w-xl">
-              Importez un clip, un GIF ou une image, enregistrez votre univers sonore au micro (voix, beatbox, bruitages) et sculptez le son avec la console d'égalisation native.
+              Importez un clip, un GIF ou une image, superposez plusieurs pistes au micro (voix, beatbox, bruitages) et sculptez le son avec la console d'égalisation native.
             </p>
           </div>
 
@@ -155,7 +172,7 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
           </div>
           <div>
             <h2 className="text-lg font-bold text-stone-900 font-display">
-              Créations Sonores & Bruitages
+              Créations Multi-Pistes
             </h2>
             <p className="text-xs text-stone-500">
               {filteredProjects.length} composition{filteredProjects.length > 1 ? 's' : ''} disponible{filteredProjects.length > 1 ? 's' : ''}
@@ -198,6 +215,7 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
           {filteredProjects.map((project) => {
             const isPlaying = playingProjectId === project.id;
             const isVoted = hasUserVotedM2M(project.id);
+            const tracksCount = project.tracks?.length || 1;
 
             return (
               <div
@@ -242,13 +260,14 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
                     </button>
                   </div>
 
-                  {/* Badge de durée & Type */}
-                  <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5">
+                  {/* Badge de durée & Nombre de Pistes */}
+                  <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 flex-wrap">
                     <span className="px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-white text-[10px] font-mono font-bold">
                       {project.duration}s
                     </span>
-                    <span className="px-2 py-0.5 rounded-md bg-rose-600/80 backdrop-blur-md text-white text-[10px] font-mono font-bold uppercase">
-                      {project.genre}
+                    <span className="px-2 py-0.5 rounded-md bg-rose-600/90 backdrop-blur-md text-white text-[10px] font-mono font-bold flex items-center gap-1">
+                      <Layers className="w-3 h-3" />
+                      <span>{tracksCount} piste{tracksCount > 1 ? 's' : ''}</span>
                     </span>
                   </div>
 
@@ -317,11 +336,10 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
                     </p>
                   )}
 
-                  {/* Paramètres EQ affichés */}
+                  {/* Date & Genre */}
                   <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[10px] font-mono text-stone-500">
-                    <span className="flex items-center gap-1">
-                      <Sliders className="w-3 h-3 text-stone-400" />
-                      <span>EQ : B {project.eq_settings.bass > 0 ? `+${project.eq_settings.bass}` : project.eq_settings.bass}dB / T {project.eq_settings.treble > 0 ? `+${project.eq_settings.treble}` : project.eq_settings.treble}dB</span>
+                    <span className="px-2 py-0.5 rounded bg-stone-100 font-bold uppercase text-stone-700">
+                      {project.genre}
                     </span>
                     <span>{new Date(project.created_at).toLocaleDateString('fr-FR')}</span>
                   </div>
@@ -338,7 +356,7 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
           <div className="max-w-md mx-auto space-y-1">
             <h3 className="font-bold text-stone-900 text-lg font-display">Aucune création sonore pour le moment</h3>
             <p className="text-xs text-stone-500">
-              Soyez le premier à composer et enregistrer une bande originale sur un visuel ou une vidéo !
+              Soyez le premier à composer et enregistrer une bande originale multi-pistes sur un visuel !
             </p>
           </div>
           <button

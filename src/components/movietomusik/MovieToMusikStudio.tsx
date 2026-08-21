@@ -16,10 +16,16 @@ import {
   Save, 
   Clapperboard, 
   Info,
-  Radio
+  Radio,
+  Plus,
+  Trash2,
+  Scissors,
+  Headphones,
+  Layers,
+  Music2
 } from 'lucide-react';
-import { MovieToMusikProject, EQSettings, GENRES } from '../../lib/types';
-import { MicrophoneRecorder, FilteredAudioPlayer, blobToBase64 } from '../../lib/audioEngine';
+import { MovieToMusikProject, AudioTrack, EQSettings, GENRES } from '../../lib/types';
+import { MicrophoneRecorder, MultiTrackAudioEngine, blobToBase64 } from '../../lib/audioEngine';
 import { createMovieToMusikProject } from '../../lib/supabase';
 
 interface MovieToMusikStudioProps {
@@ -27,7 +33,6 @@ interface MovieToMusikStudioProps {
   onProjectSaved: (newProject: MovieToMusikProject) => void;
 }
 
-// 4 Presets Visuels Cinéma intégrés prêts à l'emploi
 const PRESET_VISUALS = [
   {
     title: 'Nuit Cyberpunk & Néons',
@@ -59,28 +64,24 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   onBack,
   onProjectSaved,
 }) => {
-  // Étape 1 : Visuel
+  // Visuel
   const [visualType, setVisualType] = useState<'video' | 'gif' | 'image'>('image');
   const [visualUrl, setVisualUrl] = useState<string>(PRESET_VISUALS[0].url);
   const [visualTitle, setVisualTitle] = useState<string>(PRESET_VISUALS[0].title);
 
-  // Étape 2 : Enregistrement Micro
+  // Multi-Pistes Audio
+  const [tracks, setTracks] = useState<AudioTrack[]>([]);
+  const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
+
+  // Enregistrement Micro (Overdub)
   const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
-  const [recordedAudioBase64, setRecordedAudioBase64] = useState<string>('');
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
 
-  // Étape 3 : Mixeur & Égaliseur EQ 3 Bandes
-  const [eqSettings, setEqSettings] = useState<EQSettings>({
-    bass: 0,
-    mid: 0,
-    treble: 0,
-    volume: 1.0,
-  });
-  const [isPlayingPreview, setIsPlayingPreview] = useState<boolean>(false);
+  // Lecture Globale Master
+  const [isPlayingMaster, setIsPlayingMaster] = useState<boolean>(false);
 
-  // Étape 4 : Métadonnées
+  // Métadonnées du projet
   const [projectTitle, setProjectTitle] = useState<string>('');
   const [creatorName, setCreatorName] = useState<string>('');
   const [genre, setGenre] = useState<string>(GENRES[0]);
@@ -88,24 +89,34 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   const recorderRef = useRef<MicrophoneRecorder | null>(null);
-  const audioPlayerRef = useRef<FilteredAudioPlayer | null>(null);
+  const engineRef = useRef<MultiTrackAudioEngine | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const timerIntervalRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Initialisation du recorder & player
+  // Initialisation du moteur multi-pistes
   useEffect(() => {
     recorderRef.current = new MicrophoneRecorder();
-    audioPlayerRef.current = new FilteredAudioPlayer();
+    engineRef.current = new MultiTrackAudioEngine();
 
     return () => {
       if (recorderRef.current) recorderRef.current.stop();
-      if (audioPlayerRef.current) audioPlayerRef.current.dispose();
+      if (engineRef.current) engineRef.current.dispose();
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
   }, []);
 
-  // Gestion du visuel importé
+  // Recharger les pistes dans le moteur quand la liste change
+  useEffect(() => {
+    if (engineRef.current) {
+      engineRef.current.loadTracks(tracks);
+      if (isPlayingMaster) {
+        engineRef.current.play();
+      }
+    }
+  }, [tracks.length]);
+
+  // Gestion de l'upload de fichier visuel
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -127,11 +138,11 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Démarrer l'enregistrement avec compte à rebours 3-2-1
+  // Démarrer l'enregistrement (Overdub : joue les pistes existantes en fond)
   const startRecordingFlow = () => {
-    if (isPlayingPreview && audioPlayerRef.current) {
-      audioPlayerRef.current.pause();
-      setIsPlayingPreview(false);
+    if (isPlayingMaster && engineRef.current) {
+      engineRef.current.pause();
+      setIsPlayingMaster(false);
     }
 
     setCountdown(3);
@@ -150,13 +161,17 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   const executeStartRecording = async () => {
     if (!recorderRef.current) return;
     setRecordingSeconds(0);
-    setRecordedBlob(null);
-    setRecordedAudioBase64('');
     setIsRecording(true);
 
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       videoRef.current.play();
+    }
+
+    // Jouer les autres pistes en fond (overdubbing)
+    if (engineRef.current && tracks.length > 0) {
+      engineRef.current.restartAll();
+      engineRef.current.play();
     }
 
     timerIntervalRef.current = setInterval(() => {
@@ -181,7 +196,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     });
   };
 
-  // Arrêter l'enregistrement
+  // Arrêter l'enregistrement et créer la nouvelle piste
   const stopRecording = async () => {
     if (!recorderRef.current) return;
     setIsRecording(false);
@@ -191,60 +206,143 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
       videoRef.current.pause();
     }
 
+    if (engineRef.current) {
+      engineRef.current.pause();
+    }
+
     const { blob } = await recorderRef.current.stop();
-    setRecordedBlob(blob);
     const base64 = await blobToBase64(blob);
-    setRecordedAudioBase64(base64);
+    const duration = Math.max(1, recordingSeconds);
 
-    // Initialiser immédiatement le lecteur avec l'égaliseur EQ
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.init(base64, eqSettings);
+    const newTrackIndex = tracks.length + 1;
+    const newTrack: AudioTrack = {
+      id: crypto.randomUUID(),
+      name: `Piste ${newTrackIndex} (${newTrackIndex === 1 ? 'Rythme / Voix' : 'Superposition'})`,
+      audio_data: base64,
+      duration,
+      trim_start: 0.1, // Anti-clic par défaut léger (100ms) pour supprimer le bruit de clic initial
+      trim_end: duration,
+      is_muted: false,
+      is_solo: false,
+      eq_settings: {
+        bass: 0,
+        mid: 0,
+        treble: 0,
+        volume: 1.0,
+      },
+    };
+
+    const nextTracks = [...tracks, newTrack];
+    setTracks(nextTracks);
+    setActiveTrackId(newTrack.id);
+
+    if (engineRef.current) {
+      engineRef.current.loadTracks(nextTracks);
     }
   };
 
-  // Mise à jour de l'EQ en direct
-  const handleEqChange = (key: keyof EQSettings, value: number) => {
-    const nextSettings = { ...eqSettings, [key]: value };
-    setEqSettings(nextSettings);
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.updateEQ(nextSettings);
+  // ✂️ Ajuster le rognage Début (Anti-clic) ou Fin
+  const handleUpdateTrim = (trackId: string, trimStart: number, trimEnd: number) => {
+    const updated = tracks.map((t) => {
+      if (t.id === trackId) {
+        const safeStart = Math.max(0, Math.min(trimStart, t.duration - 0.1));
+        const safeEnd = Math.max(safeStart + 0.1, Math.min(trimEnd, t.duration));
+        return { ...t, trim_start: safeStart, trim_end: safeEnd };
+      }
+      return t;
+    });
+    setTracks(updated);
+    if (engineRef.current) {
+      engineRef.current.loadTracks(updated);
     }
   };
 
-  // Lecture / Pause de la pré-écoute synchronisée
-  const togglePlayPreview = async () => {
-    if (!audioPlayerRef.current || !recordedAudioBase64) return;
+  // 🎛️ Modifier l'égalisation EQ / Volume d'une piste
+  const handleUpdateTrackEQ = (trackId: string, eqKey: keyof EQSettings, value: number) => {
+    const updated = tracks.map((t) => {
+      if (t.id === trackId) {
+        const newEQ = { ...t.eq_settings, [eqKey]: value };
+        return { ...t, eq_settings: newEQ };
+      }
+      return t;
+    });
+    setTracks(updated);
+    if (engineRef.current) {
+      const target = updated.find((t) => t.id === trackId);
+      if (target) engineRef.current.updateTrackEQ(trackId, target.eq_settings);
+    }
+  };
 
-    if (isPlayingPreview) {
-      audioPlayerRef.current.pause();
+  // 🔇 Basculer le Mute d'une piste
+  const handleToggleMute = (trackId: string) => {
+    const updated = tracks.map((t) => (t.id === trackId ? { ...t, is_muted: !t.is_muted } : t));
+    setTracks(updated);
+    if (engineRef.current) {
+      engineRef.current.updateTracksState(updated);
+    }
+  };
+
+  // 🎧 Basculer le Solo d'une piste
+  const handleToggleSolo = (trackId: string) => {
+    const updated = tracks.map((t) => (t.id === trackId ? { ...t, is_solo: !t.is_solo } : t));
+    setTracks(updated);
+    if (engineRef.current) {
+      engineRef.current.updateTracksState(updated);
+    }
+  };
+
+  // 🗑️ Supprimer une piste
+  const handleDeleteTrack = (trackId: string) => {
+    const updated = tracks.filter((t) => t.id !== trackId);
+    setTracks(updated);
+    if (activeTrackId === trackId) {
+      setActiveTrackId(updated.length > 0 ? updated[0].id : null);
+    }
+    if (engineRef.current) {
+      engineRef.current.loadTracks(updated);
+    }
+  };
+
+  // Renommer une piste
+  const handleRenameTrack = (trackId: string, newName: string) => {
+    setTracks(tracks.map((t) => (t.id === trackId ? { ...t, name: newName } : t)));
+  };
+
+  // Lecture / Pause du Master synchronisé
+  const togglePlayMaster = async () => {
+    if (!engineRef.current || tracks.length === 0) return;
+
+    if (isPlayingMaster) {
+      engineRef.current.pause();
       if (videoRef.current) videoRef.current.pause();
-      setIsPlayingPreview(false);
+      setIsPlayingMaster(false);
     } else {
       if (videoRef.current) {
         videoRef.current.currentTime = 0;
         videoRef.current.play();
       }
-      await audioPlayerRef.current.play();
-      setIsPlayingPreview(true);
+      await engineRef.current.play();
+      setIsPlayingMaster(true);
     }
   };
 
-  // Sauvegarde du projet MovieToMusik
-  const handleSave = async (e: React.FormEvent) => {
+  // Sauvegarder le projet multi-pistes MovieToMusik
+  const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectTitle.trim() || !creatorName.trim() || !recordedAudioBase64) return;
+    if (!projectTitle.trim() || !creatorName.trim() || tracks.length === 0) return;
 
     setIsSaving(true);
     try {
+      const maxDur = Math.max(...tracks.map((t) => t.duration), 1);
       const newProject = await createMovieToMusikProject({
         title: projectTitle.trim(),
         creator_name: creatorName.trim(),
         genre,
         visual_type: visualType,
         visual_url: visualUrl,
-        audio_data: recordedAudioBase64,
-        duration: Math.max(1, recordingSeconds),
-        eq_settings: eqSettings,
+        tracks,
+        audio_data: tracks[0]?.audio_data || '',
+        duration: maxDur,
         description: description.trim(),
       });
 
@@ -257,9 +355,11 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     }
   };
 
+  const activeTrack = tracks.find((t) => t.id === activeTrackId) || tracks[0];
+
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
-      {/* Barre supérieure : Retour & Titre Studio */}
+      {/* Barre supérieure */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-stone-200">
         <button
           type="button"
@@ -273,15 +373,15 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold flex items-center gap-1.5 font-mono">
             <Radio className="w-3.5 h-3.5 animate-pulse text-rose-600" />
-            <span>Studio Bruitage & Composition Micro</span>
+            <span>Studio Multi-Pistes & Overdub</span>
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* COLONNE GAUCHE (7/12) : ÉCRAN VISUEL & CABINE MICRO */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* Lecteur / Moniteur Visuel */}
+        {/* COLONNE GAUCHE (6/12) : ÉCRAN VISUEL, CABINE MICRO & MASTER */}
+        <div className="lg:col-span-6 space-y-6">
+          {/* Moniteur Visuel */}
           <div className="bg-stone-900 rounded-3xl overflow-hidden shadow-2xl border border-stone-800 relative group aspect-video flex items-center justify-center">
             {visualType === 'video' ? (
               <video
@@ -332,17 +432,17 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                 <Mic className="w-3.5 h-3.5 text-rose-500" />
                 Spectre Micro en Temps Réel
               </span>
-              <span>{isRecording ? 'Capture en cours...' : 'Prêt à enregistrer'}</span>
+              <span>{isRecording ? 'Capture de la piste en cours...' : 'Prêt à enregistrer'}</span>
             </div>
             <canvas
               ref={canvasRef}
               width={600}
-              height={60}
+              height={55}
               className="w-full h-14 bg-stone-950 rounded-xl border border-stone-800/80"
             />
           </div>
 
-          {/* Commandes Enregistrement & Pré-écoute */}
+          {/* Boutons d'action Enregistrement & Master Play */}
           <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
             {!isRecording ? (
               <button
@@ -350,8 +450,13 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                 onClick={startRecordingFlow}
                 className="px-6 py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2.5 transition-transform hover:scale-105 shadow-md shadow-rose-200"
               >
-                <Mic className="w-5 h-5" />
-                <span>{recordedBlob ? 'Refaire une prise Micro' : 'Enregistrer au Micro (Voix / Bruitage)'}</span>
+                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <Mic className="w-4 h-4" />
+                <span>
+                  {tracks.length === 0
+                    ? 'Enregistrer la 1ère Piste'
+                    : `Ajouter la Piste ${tracks.length + 1} (Overdub)`}
+                </span>
               </button>
             ) : (
               <button
@@ -364,28 +469,28 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
               </button>
             )}
 
-            {recordedAudioBase64 && !isRecording && (
+            {tracks.length > 0 && !isRecording && (
               <button
                 type="button"
-                onClick={togglePlayPreview}
-                className={`px-5 py-3 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center gap-2 transition-all ${
-                  isPlayingPreview
+                onClick={togglePlayMaster}
+                className={`px-5 py-3.5 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center gap-2 transition-all ${
+                  isPlayingMaster
                     ? 'bg-rose-600 text-white shadow-rose-200'
-                    : 'bg-stone-100 hover:bg-stone-200 text-stone-900 border border-stone-300'
+                    : 'bg-stone-900 hover:bg-stone-800 text-white shadow-sm'
                 }`}
               >
-                {isPlayingPreview ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-                <span>{isPlayingPreview ? 'Arrêter la boucle' : '🔁 Écouter le mix synchro'}</span>
+                {isPlayingMaster ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                <span>{isPlayingMaster ? 'Pause Master' : `🔁 Écouter le Mix (${tracks.length} piste${tracks.length > 1 ? 's' : ''})`}</span>
               </button>
             )}
           </div>
 
-          {/* Sélecteur de Visuel & Importation personnalisée */}
+          {/* Sélecteur de Visuel & Importation */}
           <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-stone-900 flex items-center gap-1.5 uppercase font-mono tracking-wider">
                 <Film className="w-4 h-4 text-stone-700" />
-                Changer de Visuel (Presets ou Importez le vôtre)
+                Changer de Visuel
               </h4>
               <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-transform hover:scale-105 flex items-center gap-1.5 shadow-sm">
                 <Upload className="w-3.5 h-3.5" />
@@ -429,98 +534,255 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
           </div>
         </div>
 
-        {/* COLONNE DROITE (5/12) : TABLE DE MIXAGE EQ & FORMULAIRE */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* CONSOLE DE MIXAGE & EQ 3 BANDES NATIVE */}
-          <div className="bg-stone-900 text-white rounded-3xl p-6 border border-stone-800 shadow-2xl space-y-6">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-rose-500" />
-                <h3 className="font-bold text-sm font-display tracking-wide">Mixeur & Égaliseur EQ 3 Bandes</h3>
-              </div>
-              <span className="text-[10px] font-mono text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
-                Web Audio DSP
+        {/* COLONNE DROITE (6/12) : TIMELINE MULTI-PISTES, DÉCOUPE & EQ */}
+        <div className="lg:col-span-6 space-y-6">
+          {/* GESTIONNAIRE DE PISTES (TIMELINE) */}
+          <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <h3 className="font-bold text-sm text-stone-900 flex items-center gap-2 font-display">
+                <Layers className="w-4 h-4 text-rose-600" />
+                <span>Pistes Audio Enregistrées ({tracks.length})</span>
+              </h3>
+              <span className="text-[10px] font-mono text-stone-500">
+                Superposition & Rognage
               </span>
             </div>
 
-            <div className="space-y-4">
-              {/* 1. Graves / Bass */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-stone-300 font-bold">🔊 Graves (Bass 200Hz)</span>
-                  <span className="text-rose-400 font-bold">{eqSettings.bass > 0 ? `+${eqSettings.bass}` : eqSettings.bass} dB</span>
-                </div>
-                <input
-                  type="range"
-                  min="-12"
-                  max="12"
-                  step="1"
-                  value={eqSettings.bass}
-                  onChange={(e) => handleEqChange('bass', parseFloat(e.target.value))}
-                  className="w-full accent-rose-500 bg-stone-800 rounded-lg cursor-pointer h-2"
-                />
-              </div>
+            {tracks.length > 0 ? (
+              <div className="space-y-4">
+                {tracks.map((track, idx) => {
+                  const isSelected = activeTrack?.id === track.id;
 
-              {/* 2. Médiums / Voice */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-stone-300 font-bold">🎚️ Médiums (Corps & Voix 1.2kHz)</span>
-                  <span className="text-rose-400 font-bold">{eqSettings.mid > 0 ? `+${eqSettings.mid}` : eqSettings.mid} dB</span>
-                </div>
-                <input
-                  type="range"
-                  min="-12"
-                  max="12"
-                  step="1"
-                  value={eqSettings.mid}
-                  onChange={(e) => handleEqChange('mid', parseFloat(e.target.value))}
-                  className="w-full accent-rose-500 bg-stone-800 rounded-lg cursor-pointer h-2"
-                />
-              </div>
+                  return (
+                    <div
+                      key={track.id}
+                      onClick={() => setActiveTrackId(track.id)}
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer space-y-3 ${
+                        isSelected
+                          ? 'border-rose-500 bg-rose-50/20 shadow-md ring-1 ring-rose-300'
+                          : 'border-stone-200 bg-stone-50 hover:border-stone-300'
+                      }`}
+                    >
+                      {/* En-tête de la piste : Titre, Durée, Mute, Solo, Suppr */}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="w-6 h-6 rounded-full bg-stone-900 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                            {idx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={track.name}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => handleRenameTrack(track.id, e.target.value)}
+                            className="text-xs font-bold text-stone-900 bg-transparent border-b border-transparent hover:border-stone-300 focus:border-stone-900 focus:outline-none truncate"
+                          />
+                          <span className="text-[10px] font-mono text-stone-400 shrink-0">
+                            ({track.duration}s)
+                          </span>
+                        </div>
 
-              {/* 3. Aigus / Treble */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-stone-300 font-bold">✨ Aigus (Brillance & Air 3.5kHz)</span>
-                  <span className="text-rose-400 font-bold">{eqSettings.treble > 0 ? `+${eqSettings.treble}` : eqSettings.treble} dB</span>
-                </div>
-                <input
-                  type="range"
-                  min="-12"
-                  max="12"
-                  step="1"
-                  value={eqSettings.treble}
-                  onChange={(e) => handleEqChange('treble', parseFloat(e.target.value))}
-                  className="w-full accent-rose-500 bg-stone-800 rounded-lg cursor-pointer h-2"
-                />
-              </div>
+                        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {/* Mute */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMute(track.id)}
+                            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
+                              track.is_muted
+                                ? 'bg-rose-600 text-white'
+                                : 'bg-white hover:bg-stone-200 text-stone-700 border border-stone-200'
+                            }`}
+                            title={track.is_muted ? 'Piste coupée (Cliquer pour activer)' : 'Couper le son (Mute)'}
+                          >
+                            {track.is_muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                          </button>
 
-              {/* 4. Volume Master */}
-              <div className="space-y-1.5 pt-2 border-t border-stone-800">
-                <div className="flex justify-between text-xs font-mono">
-                  <span className="text-stone-300 font-bold flex items-center gap-1">
-                    <Volume2 className="w-3.5 h-3.5 text-stone-400" />
-                    Volume Master
-                  </span>
-                  <span className="text-emerald-400 font-bold">{Math.round(eqSettings.volume * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1.5"
-                  step="0.05"
-                  value={eqSettings.volume}
-                  onChange={(e) => handleEqChange('volume', parseFloat(e.target.value))}
-                  className="w-full accent-emerald-500 bg-stone-800 rounded-lg cursor-pointer h-2"
-                />
+                          {/* Solo */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSolo(track.id)}
+                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                              track.is_solo
+                                ? 'bg-amber-500 text-white font-extrabold'
+                                : 'bg-white hover:bg-stone-200 text-stone-700 border border-stone-200'
+                            }`}
+                            title="Isoler cette piste (Solo)"
+                          >
+                            <Headphones className="w-3.5 h-3.5 inline mr-0.5" />
+                            SOLO
+                          </button>
+
+                          {/* Supprimer */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTrack(track.id)}
+                            className="p-1.5 rounded-lg bg-white hover:bg-rose-100 text-stone-400 hover:text-rose-600 border border-stone-200 transition-colors"
+                            title="Supprimer cette piste"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* ✂️ Rognage Anti-Clic (Début et Fin) */}
+                      <div className="bg-white p-3 rounded-xl border border-stone-200/80 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between text-[11px] font-mono">
+                          <span className="font-bold text-stone-700 flex items-center gap-1">
+                            <Scissors className="w-3 h-3 text-rose-600" />
+                            <span>Découpe Anti-Clic (Début / Fin)</span>
+                          </span>
+                          <span className="text-rose-600 font-bold">
+                            {track.trim_start.toFixed(2)}s → {track.trim_end.toFixed(2)}s ({(track.trim_end - track.trim_start).toFixed(2)}s)
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 pt-1">
+                          <div>
+                            <div className="flex justify-between text-[10px] text-stone-500 mb-0.5">
+                              <span>Couper début (Clic)</span>
+                              <span className="font-mono font-bold">{track.trim_start.toFixed(2)}s</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max={Math.min(3, track.duration - 0.1)}
+                              step="0.02"
+                              value={track.trim_start}
+                              onChange={(e) => handleUpdateTrim(track.id, parseFloat(e.target.value), track.trim_end)}
+                              className="w-full accent-rose-600 bg-stone-100 rounded-lg cursor-pointer h-1.5"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[10px] text-stone-500 mb-0.5">
+                              <span>Couper fin</span>
+                              <span className="font-mono font-bold">{track.trim_end.toFixed(2)}s</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={track.trim_start + 0.1}
+                              max={track.duration}
+                              step="0.05"
+                              value={track.trim_end}
+                              onChange={(e) => handleUpdateTrim(track.id, track.trim_start, parseFloat(e.target.value))}
+                              className="w-full accent-rose-600 bg-stone-100 rounded-lg cursor-pointer h-1.5"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            ) : (
+              <div className="text-center py-8 bg-stone-50 rounded-2xl border border-dashed border-stone-300 p-6 space-y-2">
+                <Music2 className="w-8 h-8 text-stone-400 mx-auto" />
+                <p className="text-xs font-bold text-stone-700">Aucune piste pour le moment</p>
+                <p className="text-[11px] text-stone-500">
+                  Cliquez sur "Enregistrer la 1ère Piste" pour commencer votre création sonore.
+                </p>
+              </div>
+            )}
           </div>
 
+          {/* 🎛️ CONSOLE DE MIXAGE & ÉGALISEUR DE LA PISTE SÉLECTIONNÉE */}
+          {activeTrack && (
+            <div className="bg-stone-900 text-white rounded-3xl p-6 border border-stone-800 shadow-xl space-y-5 animate-in fade-in">
+              <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-rose-500" />
+                  <h4 className="font-bold text-xs sm:text-sm font-display tracking-wide">
+                    Égaliseur EQ de : <span className="text-rose-400">{activeTrack.name}</span>
+                  </h4>
+                </div>
+                <span className="text-[10px] font-mono text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
+                  DSP Piste Active
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Graves */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-stone-300">🔊 Graves</span>
+                    <span className="text-rose-400 font-bold">
+                      {activeTrack.eq_settings.bass > 0 ? `+${activeTrack.eq_settings.bass}` : activeTrack.eq_settings.bass}dB
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-12"
+                    max="12"
+                    step="1"
+                    value={activeTrack.eq_settings.bass}
+                    onChange={(e) => handleUpdateTrackEQ(activeTrack.id, 'bass', parseFloat(e.target.value))}
+                    className="w-full accent-rose-500 bg-stone-800 rounded-lg cursor-pointer h-1.5"
+                  />
+                </div>
+
+                {/* Médiums */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-stone-300">🎚️ Médiums</span>
+                    <span className="text-rose-400 font-bold">
+                      {activeTrack.eq_settings.mid > 0 ? `+${activeTrack.eq_settings.mid}` : activeTrack.eq_settings.mid}dB
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-12"
+                    max="12"
+                    step="1"
+                    value={activeTrack.eq_settings.mid}
+                    onChange={(e) => handleUpdateTrackEQ(activeTrack.id, 'mid', parseFloat(e.target.value))}
+                    className="w-full accent-rose-500 bg-stone-800 rounded-lg cursor-pointer h-1.5"
+                  />
+                </div>
+
+                {/* Aigus */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-stone-300">✨ Aigus</span>
+                    <span className="text-rose-400 font-bold">
+                      {activeTrack.eq_settings.treble > 0 ? `+${activeTrack.eq_settings.treble}` : activeTrack.eq_settings.treble}dB
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-12"
+                    max="12"
+                    step="1"
+                    value={activeTrack.eq_settings.treble}
+                    onChange={(e) => handleUpdateTrackEQ(activeTrack.id, 'treble', parseFloat(e.target.value))}
+                    className="w-full accent-rose-500 bg-stone-800 rounded-lg cursor-pointer h-1.5"
+                  />
+                </div>
+
+                {/* Volume Piste */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-stone-300">Volume Piste</span>
+                    <span className="text-emerald-400 font-bold">
+                      {Math.round(activeTrack.eq_settings.volume * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1.5"
+                    step="0.05"
+                    value={activeTrack.eq_settings.volume}
+                    onChange={(e) => handleUpdateTrackEQ(activeTrack.id, 'volume', parseFloat(e.target.value))}
+                    className="w-full accent-emerald-500 bg-stone-800 rounded-lg cursor-pointer h-1.5"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* FORMULAIRE DE PUBLICATION */}
-          <form onSubmit={handleSave} className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
+          <form onSubmit={handleSaveProject} className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
             <h4 className="text-xs font-bold text-stone-900 uppercase font-mono tracking-wider">
-              📝 Informations de la Composition
+              📝 Publication du Projet Multi-Pistes
             </h4>
 
             <div>
@@ -532,62 +794,64 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                 required
                 value={projectTitle}
                 onChange={(e) => setProjectTitle(e.target.value)}
-                placeholder="Ex: Tempête de Synthétiseur, Beatbox Cyberpunk..."
+                placeholder="Ex: Symphonie Cyberpunk, Beatbox Épique..."
                 className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Sound Designer / Compositeur *
-              </label>
-              <input
-                type="text"
-                required
-                value={creatorName}
-                onChange={(e) => setCreatorName(e.target.value)}
-                placeholder="Votre nom ou pseudo d'artiste"
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Sound Designer / Compositeur *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={creatorName}
+                  onChange={(e) => setCreatorName(e.target.value)}
+                  placeholder="Votre pseudo d'artiste"
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Genre Musical
+                </label>
+                <select
+                  value={genre}
+                  onChange={(e) => setGenre(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-stone-900 cursor-pointer"
+                >
+                  {GENRES.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Genre Musical / Ambiance
-              </label>
-              <select
-                value={genre}
-                onChange={(e) => setGenre(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-stone-900 cursor-pointer"
-              >
-                {GENRES.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Note d'Intention & Description Sonore (Optionnel)
+                Note d'Intention (Optionnel)
               </label>
               <textarea
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Expliquez comment vous avez créé les sons (voix, bruitages d'objets, instruments...)"
+                placeholder="Détaillez vos pistes (beatbox, voix, sifflements, verres d'eau...)"
                 className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-xs text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 resize-none"
               />
             </div>
 
             <button
               type="submit"
-              disabled={isSaving || !recordedAudioBase64 || !projectTitle.trim() || !creatorName.trim()}
+              disabled={isSaving || tracks.length === 0 || !projectTitle.trim() || !creatorName.trim()}
               className="w-full py-3.5 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs sm:text-sm transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md hover:scale-[1.02]"
             >
               <Save className="w-4 h-4" />
-              <span>{isSaving ? 'Publication en cours...' : 'Publier dans MovieToMusik'}</span>
+              <span>{isSaving ? 'Publication en cours...' : `Publier le Mix (${tracks.length} piste${tracks.length > 1 ? 's' : ''})`}</span>
             </button>
           </form>
         </div>

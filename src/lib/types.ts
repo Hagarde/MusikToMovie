@@ -83,6 +83,18 @@ export interface EQSettings {
   volume: number;  // Volume master (0 à 1.5)
 }
 
+export interface AudioTrack {
+  id: string;
+  name: string;
+  audio_data: string; // Base64 de l'audio
+  duration: number;   // Durée brute en secondes
+  trim_start: number; // Rognage début (s) pour éliminer le clic
+  trim_end: number;   // Rognage fin (s)
+  is_muted: boolean;
+  is_solo?: boolean;
+  eq_settings: EQSettings;
+}
+
 export interface MovieToMusikProject {
   id: string;
   title: string;
@@ -90,9 +102,10 @@ export interface MovieToMusikProject {
   genre: string;
   visual_type: 'video' | 'gif' | 'image';
   visual_url: string; // Base64 ou URL de la vidéo / du gif / de l'image
-  audio_data: string;  // Base64 de l'audio enregistré au micro
-  duration: number;    // Durée en secondes
-  eq_settings: EQSettings;
+  tracks: AudioTrack[]; // Liste de toutes les pistes audio du projet
+  audio_data?: string; // Base64 de secours (rétrocompatibilité)
+  duration: number;    // Durée maximale de la composition en secondes
+  eq_settings?: EQSettings;
   description?: string;
   likes_count?: number;
   created_at: string;

@@ -1,4 +1,4 @@
-import { EQSettings } from './types';
+import { EQSettings, AudioTrack } from './types';
 
 // Convertir un Blob audio en chaîne Base64
 export function blobToBase64(blob: Blob): Promise<string> {
@@ -124,100 +124,232 @@ export class MicrophoneRecorder {
   }
 }
 
-// 🎛️ Lecteur Audio avec Mixeur EQ 3 Bandes temps réel (Web Audio API)
-export class FilteredAudioPlayer {
+// 🎛️ Canal de Piste Audio Individuel
+interface TrackChannel {
+  track: AudioTrack;
+  audioElement: HTMLAudioElement;
+  sourceNode: MediaElementAudioSourceNode;
+  bassFilter: BiquadFilterNode;
+  midFilter: BiquadFilterNode;
+  trebleFilter: BiquadFilterNode;
+  gainNode: GainNode;
+  timeUpdateListener?: () => void;
+}
+
+// 🎛️ Moteur Audio Multi-Pistes (Superposition, Rognage Début/Fin, Mute/Solo, EQ indépendants)
+export class MultiTrackAudioEngine {
   private audioContext: AudioContext | null = null;
-  private audioElement: HTMLAudioElement | null = null;
-  private sourceNode: MediaElementAudioSourceNode | null = null;
-  private bassFilter: BiquadFilterNode | null = null;
-  private midFilter: BiquadFilterNode | null = null;
-  private trebleFilter: BiquadFilterNode | null = null;
-  private gainNode: GainNode | null = null;
+  private channels: Map<string, TrackChannel> = new Map();
+  private masterGain: GainNode | null = null;
+  private isPlaying: boolean = false;
 
-  public init(audioUrlOrBase64: string, eqSettings: EQSettings): HTMLAudioElement {
-    this.dispose();
-
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    this.audioContext = new AudioCtx();
-
-    this.audioElement = new Audio();
-    this.audioElement.crossOrigin = 'anonymous';
-    this.audioElement.src = audioUrlOrBase64;
-    this.audioElement.loop = true;
-
-    this.sourceNode = this.audioContext.createMediaElementSource(this.audioElement);
-
-    // 1. Filtre Graves (Bass Low-Shelf à 200 Hz)
-    this.bassFilter = this.audioContext.createBiquadFilter();
-    this.bassFilter.type = 'lowshelf';
-    this.bassFilter.frequency.value = 200;
-    this.bassFilter.gain.value = eqSettings.bass;
-
-    // 2. Filtre Médiums (Mid Peaking à 1200 Hz)
-    this.midFilter = this.audioContext.createBiquadFilter();
-    this.midFilter.type = 'peaking';
-    this.midFilter.frequency.value = 1200;
-    this.midFilter.Q.value = 1.0;
-    this.midFilter.gain.value = eqSettings.mid;
-
-    // 3. Filtre Aigus (Treble High-Shelf à 3500 Hz)
-    this.trebleFilter = this.audioContext.createBiquadFilter();
-    this.trebleFilter.type = 'highshelf';
-    this.trebleFilter.frequency.value = 3500;
-    this.trebleFilter.gain.value = eqSettings.treble;
-
-    // 4. Volume Master (Gain)
-    this.gainNode = this.audioContext.createGain();
-    this.gainNode.gain.value = eqSettings.volume;
-
-    // Chaîne de traitement : Source -> Bass -> Mid -> Treble -> Gain -> Haut-parleurs
-    this.sourceNode
-      .connect(this.bassFilter)
-      .connect(this.midFilter)
-      .connect(this.trebleFilter)
-      .connect(this.gainNode)
-      .connect(this.audioContext.destination);
-
-    return this.audioElement;
+  private initAudioContext(): AudioContext {
+    if (!this.audioContext) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      this.audioContext = new AudioCtx();
+      this.masterGain = this.audioContext.createGain();
+      this.masterGain.gain.value = 1.0;
+      this.masterGain.connect(this.audioContext.destination);
+    }
+    return this.audioContext;
   }
 
-  public updateEQ(settings: EQSettings): void {
-    if (this.bassFilter) this.bassFilter.gain.value = settings.bass;
-    if (this.midFilter) this.midFilter.gain.value = settings.mid;
-    if (this.trebleFilter) this.trebleFilter.gain.value = settings.treble;
-    if (this.gainNode) this.gainNode.gain.value = settings.volume;
+  public loadTracks(tracks: AudioTrack[]): void {
+    this.dispose();
+    const ctx = this.initAudioContext();
+
+    const hasSolo = tracks.some(t => t.is_solo);
+
+    tracks.forEach((t) => {
+      if (!t.audio_data) return;
+
+      const audio = new Audio();
+      audio.crossOrigin = 'anonymous';
+      audio.src = t.audio_data;
+      audio.loop = false; // La boucle est gérée par le moteur
+
+      const sourceNode = ctx.createMediaElementSource(audio);
+
+      // 1. Filtre Graves (Bass Low-Shelf à 200 Hz)
+      const bassFilter = ctx.createBiquadFilter();
+      bassFilter.type = 'lowshelf';
+      bassFilter.frequency.value = 200;
+      bassFilter.gain.value = t.eq_settings?.bass || 0;
+
+      // 2. Filtre Médiums (Mid Peaking à 1200 Hz)
+      const midFilter = ctx.createBiquadFilter();
+      midFilter.type = 'peaking';
+      midFilter.frequency.value = 1200;
+      midFilter.Q.value = 1.0;
+      midFilter.gain.value = t.eq_settings?.mid || 0;
+
+      // 3. Filtre Aigus (Treble High-Shelf à 3500 Hz)
+      const trebleFilter = ctx.createBiquadFilter();
+      trebleFilter.type = 'highshelf';
+      trebleFilter.frequency.value = 3500;
+      trebleFilter.gain.value = t.eq_settings?.treble || 0;
+
+      // 4. Gain de la piste (Volume + Gestion Mute / Solo)
+      const gainNode = ctx.createGain();
+      const isMutedEffective = t.is_muted || (hasSolo && !t.is_solo);
+      gainNode.gain.value = isMutedEffective ? 0 : (t.eq_settings?.volume ?? 1.0);
+
+      // Chaîne : Source -> Bass -> Mid -> Treble -> Gain -> Master
+      sourceNode
+        .connect(bassFilter)
+        .connect(midFilter)
+        .connect(trebleFilter)
+        .connect(gainNode)
+        .connect(this.masterGain!);
+
+      // Surveillance du rognage de fin (trim_end) et boucle (trim_start)
+      const timeUpdateListener = () => {
+        const trimStart = t.trim_start || 0;
+        const trimEnd = t.trim_end && t.trim_end > trimStart ? t.trim_end : (t.duration || 999);
+
+        if (audio.currentTime >= trimEnd) {
+          audio.currentTime = trimStart;
+          if (this.isPlaying) {
+            audio.play().catch(() => {});
+          }
+        }
+      };
+
+      audio.addEventListener('timeupdate', timeUpdateListener);
+
+      this.channels.set(t.id, {
+        track: t,
+        audioElement: audio,
+        sourceNode,
+        bassFilter,
+        midFilter,
+        trebleFilter,
+        gainNode,
+        timeUpdateListener,
+      });
+    });
+  }
+
+  public updateTrackEQ(trackId: string, settings: EQSettings): void {
+    const ch = this.channels.get(trackId);
+    if (!ch) return;
+    ch.bassFilter.gain.value = settings.bass;
+    ch.midFilter.gain.value = settings.mid;
+    ch.trebleFilter.gain.value = settings.treble;
+    ch.gainNode.gain.value = ch.track.is_muted ? 0 : settings.volume;
+  }
+
+  public updateTracksState(tracks: AudioTrack[]): void {
+    const hasSolo = tracks.some(t => t.is_solo);
+
+    tracks.forEach(t => {
+      const ch = this.channels.get(t.id);
+      if (!ch) return;
+      ch.track = t;
+
+      const isMutedEffective = t.is_muted || (hasSolo && !t.is_solo);
+      ch.gainNode.gain.value = isMutedEffective ? 0 : (t.eq_settings?.volume ?? 1.0);
+    });
   }
 
   public async play(): Promise<void> {
     if (this.audioContext && this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
     }
-    if (this.audioElement) {
-      await this.audioElement.play();
-    }
+
+    this.isPlaying = true;
+    const playPromises: Promise<void>[] = [];
+
+    this.channels.forEach((ch) => {
+      const startSecs = ch.track.trim_start || 0;
+      if (ch.audioElement.currentTime < startSecs || ch.audioElement.currentTime >= (ch.track.trim_end || ch.track.duration || 999)) {
+        ch.audioElement.currentTime = startSecs;
+      }
+      playPromises.push(ch.audioElement.play().catch(() => {}));
+    });
+
+    await Promise.all(playPromises);
   }
 
   public pause(): void {
-    if (this.audioElement) {
-      this.audioElement.pause();
-    }
+    this.isPlaying = false;
+    this.channels.forEach((ch) => {
+      ch.audioElement.pause();
+    });
   }
 
   public seek(timeInSeconds: number): void {
-    if (this.audioElement) {
-      this.audioElement.currentTime = timeInSeconds;
-    }
+    this.channels.forEach((ch) => {
+      const start = ch.track.trim_start || 0;
+      const end = ch.track.trim_end || ch.track.duration || 999;
+      const clamped = Math.max(start, Math.min(start + timeInSeconds, end));
+      ch.audioElement.currentTime = clamped;
+    });
+  }
+
+  public restartAll(): void {
+    this.channels.forEach((ch) => {
+      ch.audioElement.currentTime = ch.track.trim_start || 0;
+      if (this.isPlaying) {
+        ch.audioElement.play().catch(() => {});
+      }
+    });
   }
 
   public dispose(): void {
-    if (this.audioElement) {
-      this.audioElement.pause();
-      this.audioElement.src = '';
-      this.audioElement = null;
-    }
+    this.isPlaying = false;
+    this.channels.forEach((ch) => {
+      if (ch.timeUpdateListener) {
+        ch.audioElement.removeEventListener('timeupdate', ch.timeUpdateListener);
+      }
+      ch.audioElement.pause();
+      ch.audioElement.src = '';
+    });
+    this.channels.clear();
+
     if (this.audioContext) {
       try { this.audioContext.close(); } catch (_) {}
       this.audioContext = null;
     }
+  }
+}
+
+// 🎛️ Lecteur Simple rétrocompatible
+export class FilteredAudioPlayer {
+  private engine: MultiTrackAudioEngine = new MultiTrackAudioEngine();
+
+  public init(audioUrlOrBase64: string, eqSettings: EQSettings): HTMLAudioElement {
+    const defaultTrack: AudioTrack = {
+      id: 'single-track',
+      name: 'Piste Principale',
+      audio_data: audioUrlOrBase64,
+      duration: 60,
+      trim_start: 0,
+      trim_end: 60,
+      is_muted: false,
+      eq_settings: eqSettings,
+    };
+    this.engine.loadTracks([defaultTrack]);
+    return new Audio();
+  }
+
+  public updateEQ(settings: EQSettings): void {
+    this.engine.updateTrackEQ('single-track', settings);
+  }
+
+  public play(): Promise<void> {
+    return this.engine.play();
+  }
+
+  public pause(): void {
+    this.engine.pause();
+  }
+
+  public seek(sec: number): void {
+    this.engine.seek(sec);
+  }
+
+  public dispose(): void {
+    this.engine.dispose();
   }
 }
