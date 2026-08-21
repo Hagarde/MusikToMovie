@@ -823,7 +823,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   const isShapeTool = ['rect', 'circle', 'line', 'arrow'].includes(activeTool);
 
   return (
-    <div className="flex flex-col bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-gallery space-y-0">
+    <div className="flex flex-col bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-gallery space-y-0 isolate">
       <input
         type="file"
         ref={fileInputRef}
@@ -918,7 +918,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
               {/* Menu déroulant des formes */}
               {showShapeMenu && (
-                <div className="absolute top-full left-0 mt-1.5 z-30 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
+                <div className="absolute top-full left-0 mt-1.5 z-10 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -1202,9 +1202,9 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </div>
         ) : (
           <>
-            {/* 🧅 Calque Pelure d'Oignon Indépendant SOUS le plan de dessin actif (z-10) */}
+            {/* 🧅 Calque Pelure d'Oignon Indépendant SOUS le plan de dessin actif (z-[1]) */}
             {onionSkin && currentFrameIndex > 0 && frames[currentFrameIndex - 1] && (
-              <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden flex items-center justify-center opacity-30 select-none">
+              <div className="absolute inset-0 pointer-events-none z-[1] overflow-hidden flex items-center justify-center opacity-30 select-none">
                 <img
                   src={frames[currentFrameIndex - 1]}
                   alt="Pelure d'oignon (frame précédente)"
@@ -1214,13 +1214,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             )}
 
             {onionSkin && currentFrameIndex > 0 && frames[currentFrameIndex - 1] && (
-              <div className="absolute top-2 left-2 text-[9px] font-mono font-bold text-amber-300 bg-black/75 border border-amber-500/40 px-2 py-0.5 rounded-full backdrop-blur-sm pointer-events-none z-30 flex items-center gap-1 shadow-sm">
+              <div className="absolute top-2 left-2 text-[9px] font-mono font-bold text-amber-300 bg-black/75 border border-amber-500/40 px-2 py-0.5 rounded-full backdrop-blur-sm pointer-events-none z-[3] flex items-center gap-1 shadow-sm">
                 <span>🧅</span>
                 <span>Oignon (Plan #{currentFrameIndex})</span>
               </div>
             )}
 
-            {/* Canvas de dessin actif SUR l'oignon (z-20) : les nouveaux traits restent 100% opaques et nets */}
+            {/* Canvas de dessin actif SUR l'oignon (z-[2]) : les nouveaux traits restent 100% opaques et nets */}
             <canvas
               ref={canvasRef}
               width={640}
@@ -1232,7 +1232,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               onTouchStart={startDrawing}
               onTouchMove={draw}
               onTouchEnd={stopDrawing}
-              className={`w-full h-full object-contain relative z-20 ${
+              className={`w-full h-full object-contain relative z-[2] ${
                 readOnly 
                   ? 'cursor-default' 
                   : activeTool === 'eraser' 
@@ -1247,7 +1247,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
 
             {/* Grille de Composition Cinématographique (Règle des tiers auto-contrastée sur fond blanc ET noir) */}
             {showGrid && (
-              <div className="absolute inset-0 pointer-events-none z-30 mix-blend-difference">
+              <div className="absolute inset-0 pointer-events-none z-[3] mix-blend-difference">
                 <div className="w-full h-full grid grid-cols-3 grid-rows-3 border border-white/40">
                   <div className="border-r border-b border-white/70" />
                   <div className="border-r border-b border-white/70" />
@@ -1283,7 +1283,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             {/* 🔤 Champ d'annotation texte flottant sur le Canvas */}
             {textInputState && (
               <div 
-                className="absolute z-40 bg-stone-900/95 border border-white/30 p-2 rounded-2xl shadow-2xl flex items-center gap-1.5 backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+                className="absolute z-[5] bg-stone-900/95 border border-white/30 p-2 rounded-2xl shadow-2xl flex items-center gap-1.5 backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
                 style={{
                   left: `${Math.min(80, Math.max(10, (textInputState.x / 640) * 100))}%`,
                   top: `${Math.min(80, Math.max(10, (textInputState.y / 360) * 100))}%`,
@@ -1327,7 +1327,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </>
         )}
 
-        <div className="absolute bottom-2 right-2 text-[10px] font-mono text-stone-400 pointer-events-none bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-sm z-30">
+        <div className="absolute bottom-2 right-2 text-[10px] font-mono text-stone-400 pointer-events-none bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-sm z-[3]">
           16:9 • Frame {currentFrameIndex + 1} / {frames.length}
         </div>
       </div>
