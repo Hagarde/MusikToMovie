@@ -27,6 +27,42 @@ export function base64ToBlob(base64: string, type: string = 'audio/webm'): Blob 
   return new Blob([uInt8Array], { type: contentType });
 }
 
+// 🌊 Décodage Web Audio DSP pour extraire la vraie forme d'onde (Waveform Peaks)
+export async function extractWaveformData(
+  base64OrBlob: string | Blob, 
+  samplesCount: number = 100
+): Promise<number[]> {
+  try {
+    const blob = typeof base64OrBlob === 'string' ? base64ToBlob(base64OrBlob) : base64OrBlob;
+    const arrayBuffer = await blob.arrayBuffer();
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+    const channelData = audioBuffer.getChannelData(0);
+    const blockSize = Math.floor(channelData.length / samplesCount);
+    const peaks: number[] = [];
+
+    for (let i = 0; i < samplesCount; i++) {
+      const start = i * blockSize;
+      let sum = 0;
+      for (let j = 0; j < blockSize; j++) {
+        sum += Math.abs(channelData[start + j]);
+      }
+      peaks.push(sum / blockSize);
+    }
+
+    const max = Math.max(...peaks, 0.001);
+    const normalized = peaks.map((p) => Math.max(0.08, Math.min(1.0, p / max)));
+    try { audioCtx.close(); } catch (_) {}
+    return normalized;
+  } catch (e) {
+    console.warn('Erreur extraction waveform:', e);
+    // Fallback dynamique
+    return Array.from({ length: samplesCount }, () => 0.15 + Math.random() * 0.7);
+  }
+}
+
 // 🎙️ Classe Enregistreur Microphone avec visualiseur en direct
 export class MicrophoneRecorder {
   private mediaRecorder: MediaRecorder | null = null;
@@ -285,6 +321,15 @@ export class MultiTrackAudioEngine {
       const clamped = Math.max(start, Math.min(start + timeInSeconds, end));
       ch.audioElement.currentTime = clamped;
     });
+  }
+
+  public getCurrentPlayheadTime(): number {
+    for (const [, ch] of this.channels) {
+      if (!ch.audioElement.paused) {
+        return ch.audioElement.currentTime;
+      }
+    }
+    return 0;
   }
 
   public restartAll(): void {

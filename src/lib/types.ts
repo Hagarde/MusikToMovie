@@ -93,6 +93,7 @@ export interface AudioTrack {
   is_muted: boolean;
   is_solo?: boolean;
   eq_settings: EQSettings;
+  waveform?: number[]; // Tableau des crêtes d'amplitude pour la timeline style Audacity
 }
 
 export interface MovieToMusikProject {

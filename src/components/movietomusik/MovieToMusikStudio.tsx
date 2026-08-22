@@ -22,10 +22,11 @@ import {
   Scissors,
   Headphones,
   Layers,
-  Music2
+  Music2,
+  Clock
 } from 'lucide-react';
 import { MovieToMusikProject, AudioTrack, EQSettings, GENRES } from '../../lib/types';
-import { MicrophoneRecorder, MultiTrackAudioEngine, blobToBase64 } from '../../lib/audioEngine';
+import { MicrophoneRecorder, MultiTrackAudioEngine, blobToBase64, extractWaveformData } from '../../lib/audioEngine';
 import { createMovieToMusikProject } from '../../lib/supabase';
 
 interface MovieToMusikStudioProps {
@@ -60,6 +61,281 @@ const PRESET_VISUALS = [
   },
 ];
 
+// Composant individuel pour afficher la forme d'onde et les poignées de rognage style Audacity
+interface WaveformTrackProps {
+  track: AudioTrack;
+  maxTimelineDuration: number;
+  playheadTime: number;
+  isSelected: boolean;
+  onSelect: () => void;
+  onUpdateTrim: (trimStart: number, trimEnd: number) => void;
+  onToggleMute: () => void;
+  onToggleSolo: () => void;
+  onDelete: () => void;
+  onRename: (newName: string) => void;
+  index: number;
+}
+
+const WaveformTrackRow: React.FC<WaveformTrackProps> = ({
+  track,
+  maxTimelineDuration,
+  playheadTime,
+  isSelected,
+  onSelect,
+  onUpdateTrim,
+  onToggleMute,
+  onToggleSolo,
+  onDelete,
+  onRename,
+  index,
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [draggingHandle, setDraggingHandle] = useState<'start' | 'end' | null>(null);
+
+  const duration = Math.max(track.duration, 0.1);
+  const trackWidthPercent = Math.min(100, (duration / Math.max(maxTimelineDuration, 1)) * 100);
+  const trimStartPercent = (track.trim_start / duration) * 100;
+  const trimEndPercent = (track.trim_end / duration) * 100;
+
+  // Gestion du glissement des poignées de rognage
+  const handlePointerDown = (handle: 'start' | 'end', e: React.PointerEvent) => {
+    e.stopPropagation();
+    setDraggingHandle(handle);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!draggingHandle || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetSeconds = ratio * duration;
+
+    if (draggingHandle === 'start') {
+      const newStart = Math.min(targetSeconds, track.trim_end - 0.05);
+      onUpdateTrim(Math.max(0, newStart), track.trim_end);
+    } else {
+      const newEnd = Math.max(targetSeconds, track.trim_start + 0.05);
+      onUpdateTrim(track.trim_start, Math.min(duration, newEnd));
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (draggingHandle) {
+      setDraggingHandle(null);
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    }
+  };
+
+  // Forme d'onde par défaut si non encore calculée
+  const waveform = track.waveform && track.waveform.length > 0
+    ? track.waveform
+    : Array.from({ length: 60 }, (_, i) => 0.2 + 0.5 * Math.sin(i * 0.3) * Math.sin(i * 0.3));
+
+  return (
+    <div
+      onClick={onSelect}
+      className={`rounded-2xl border-2 transition-all p-3 space-y-2 cursor-pointer ${
+        isSelected
+          ? 'border-rose-500 bg-rose-50/20 shadow-md ring-1 ring-rose-300'
+          : 'border-stone-200 bg-white hover:border-stone-300 shadow-sm'
+      }`}
+    >
+      {/* En-tête de la piste : Titre, durée effective et boutons DAW */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="w-6 h-6 rounded-full bg-stone-900 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+            {index + 1}
+          </span>
+          <input
+            type="text"
+            value={track.name}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onRename(e.target.value)}
+            className="text-xs font-bold text-stone-900 bg-transparent border-b border-transparent hover:border-stone-300 focus:border-stone-900 focus:outline-none truncate"
+          />
+          <span className="text-[10px] font-mono text-stone-500 shrink-0">
+            Actif : <strong className="text-rose-600">{(track.trim_end - track.trim_start).toFixed(2)}s</strong> / {track.duration.toFixed(2)}s
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {/* Mute */}
+          <button
+            type="button"
+            onClick={onToggleMute}
+            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
+              track.is_muted
+                ? 'bg-rose-600 text-white'
+                : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+            }`}
+            title={track.is_muted ? 'Piste coupée (Mute)' : 'Couper le son (Mute)'}
+          >
+            {track.is_muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Solo */}
+          <button
+            type="button"
+            onClick={onToggleSolo}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+              track.is_solo
+                ? 'bg-amber-500 text-white font-extrabold'
+                : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+            }`}
+            title="Isoler la piste (Solo)"
+          >
+            <Headphones className="w-3.5 h-3.5 inline mr-0.5" />
+            SOLO
+          </button>
+
+          {/* Supprimer */}
+          <button
+            type="button"
+            onClick={onDelete}
+            className="p-1.5 rounded-lg bg-stone-100 hover:bg-rose-100 text-stone-400 hover:text-rose-600 transition-colors"
+            title="Supprimer la piste"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* ZONE FORME D'ONDE & POIGNÉES DE ROGNAGE (AUDACITY STYLE) */}
+      <div 
+        ref={containerRef}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        className="relative h-16 sm:h-20 bg-stone-950 rounded-xl overflow-hidden select-none border border-stone-800"
+        style={{ width: `${trackWidthPercent}%` }}
+      >
+        {/* Forme d'onde SVG / Bâtons d'amplitude */}
+        <div className="absolute inset-0 flex items-center justify-between px-1 gap-[2px]">
+          {waveform.map((val, i) => {
+            const barPosPercent = (i / waveform.length) * 100;
+            const isInsideTrim = barPosPercent >= trimStartPercent && barPosPercent <= trimEndPercent;
+
+            return (
+              <div
+                key={i}
+                className="flex-1 flex flex-col items-center justify-center h-full"
+              >
+                <div
+                  className={`w-full rounded-full transition-all ${
+                    track.is_muted
+                      ? 'bg-stone-700 opacity-40'
+                      : isInsideTrim
+                      ? 'bg-gradient-to-t from-rose-500 to-rose-300 shadow-sm shadow-rose-500/50'
+                      : 'bg-stone-800 opacity-30'
+                  }`}
+                  style={{ height: `${Math.max(8, val * 85)}%` }}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Zone Grisée Début (Coupe Clic) */}
+        <div
+          className="absolute top-0 bottom-0 left-0 bg-black/75 backdrop-blur-[1px] border-r border-rose-500/60 flex items-center justify-center overflow-hidden"
+          style={{ width: `${trimStartPercent}%` }}
+        >
+          {trimStartPercent > 8 && (
+            <span className="text-[9px] font-mono text-stone-400 flex items-center gap-0.5 truncate px-1">
+              <Scissors className="w-2.5 h-2.5 text-rose-500" />
+              <span>{track.trim_start.toFixed(2)}s</span>
+            </span>
+          )}
+        </div>
+
+        {/* Zone Grisée Fin */}
+        <div
+          className="absolute top-0 bottom-0 right-0 bg-black/75 backdrop-blur-[1px] border-l border-rose-500/60 flex items-center justify-center overflow-hidden"
+          style={{ width: `${100 - trimEndPercent}%` }}
+        >
+          {100 - trimEndPercent > 8 && (
+            <span className="text-[9px] font-mono text-stone-400 flex items-center gap-0.5 truncate px-1">
+              <Scissors className="w-2.5 h-2.5 text-rose-500" />
+              <span>{(duration - track.trim_end).toFixed(2)}s</span>
+            </span>
+          )}
+        </div>
+
+        {/* Poignée de Rognage DÉBUT (Trim Start) */}
+        <div
+          onPointerDown={(e) => handlePointerDown('start', e)}
+          className="absolute top-0 bottom-0 w-4 -ml-2 cursor-ew-resize flex items-center justify-center z-20 group"
+          style={{ left: `${trimStartPercent}%` }}
+          title={`Début : ${track.trim_start.toFixed(2)}s (Glisser pour couper le clic)`}
+        >
+          <div className="w-1.5 h-full bg-rose-500 group-hover:bg-rose-400 group-hover:w-2 rounded-full shadow-lg shadow-rose-500/50 flex items-center justify-center">
+            <span className="w-0.5 h-4 bg-white rounded-full" />
+          </div>
+        </div>
+
+        {/* Poignée de Rognage FIN (Trim End) */}
+        <div
+          onPointerDown={(e) => handlePointerDown('end', e)}
+          className="absolute top-0 bottom-0 w-4 -ml-2 cursor-ew-resize flex items-center justify-center z-20 group"
+          style={{ left: `${trimEndPercent}%` }}
+          title={`Fin : ${track.trim_end.toFixed(2)}s (Glisser pour raccourcir)`}
+        >
+          <div className="w-1.5 h-full bg-rose-500 group-hover:bg-rose-400 group-hover:w-2 rounded-full shadow-lg shadow-rose-500/50 flex items-center justify-center">
+            <span className="w-0.5 h-4 bg-white rounded-full" />
+          </div>
+        </div>
+
+        {/* Repère Tête de Lecture sur cette piste */}
+        {playheadTime >= 0 && playheadTime <= duration && (
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-white shadow-md shadow-white/80 z-30 pointer-events-none"
+            style={{ left: `${(playheadTime / duration) * 100}%` }}
+          />
+        )}
+      </div>
+
+      {/* Curseurs numériques de haute précision (au centième de seconde) */}
+      <div className="flex items-center justify-between gap-4 text-[10px] font-mono text-stone-500 pt-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5">
+          <span className="text-stone-700 font-bold flex items-center gap-1">
+            <Scissors className="w-3 h-3 text-rose-600" />
+            Début :
+          </span>
+          <input
+            type="number"
+            min="0"
+            max={Math.min(track.duration - 0.05, 5)}
+            step="0.01"
+            value={track.trim_start.toFixed(2)}
+            onChange={(e) => onUpdateTrim(parseFloat(e.target.value) || 0, track.trim_end)}
+            className="w-14 bg-stone-100 border border-stone-200 rounded px-1 py-0.5 text-center font-bold text-stone-900 focus:outline-none focus:border-stone-900"
+          />
+          <span>s (Anti-clic)</span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-stone-700 font-bold flex items-center gap-1">
+            <Scissors className="w-3 h-3 text-rose-600" />
+            Fin :
+          </span>
+          <input
+            type="number"
+            min={track.trim_start + 0.05}
+            max={track.duration}
+            step="0.01"
+            value={track.trim_end.toFixed(2)}
+            onChange={(e) => onUpdateTrim(track.trim_start, parseFloat(e.target.value) || track.duration)}
+            className="w-14 bg-stone-100 border border-stone-200 rounded px-1 py-0.5 text-center font-bold text-stone-900 focus:outline-none focus:border-stone-900"
+          />
+          <span>s</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   onBack,
   onProjectSaved,
@@ -78,8 +354,9 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [countdown, setCountdown] = useState<number | null>(null);
 
-  // Lecture Globale Master
+  // Lecture Globale Master & Playhead Cursor
   const [isPlayingMaster, setIsPlayingMaster] = useState<boolean>(false);
+  const [playheadTime, setPlayheadTime] = useState<number>(0);
 
   // Métadonnées du projet
   const [projectTitle, setProjectTitle] = useState<string>('');
@@ -92,6 +369,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   const engineRef = useRef<MultiTrackAudioEngine | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const timerIntervalRef = useRef<any>(null);
+  const playheadIntervalRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Initialisation du moteur multi-pistes
@@ -103,6 +381,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
       if (recorderRef.current) recorderRef.current.stop();
       if (engineRef.current) engineRef.current.dispose();
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (playheadIntervalRef.current) clearInterval(playheadIntervalRef.current);
     };
   }, []);
 
@@ -115,6 +394,25 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
       }
     }
   }, [tracks.length]);
+
+  // Suivi de la tête de lecture (Playhead)
+  useEffect(() => {
+    if (isPlayingMaster) {
+      playheadIntervalRef.current = setInterval(() => {
+        if (engineRef.current) {
+          const t = engineRef.current.getCurrentPlayheadTime();
+          setPlayheadTime(t);
+        }
+      }, 50);
+    } else {
+      if (playheadIntervalRef.current) {
+        clearInterval(playheadIntervalRef.current);
+      }
+    }
+    return () => {
+      if (playheadIntervalRef.current) clearInterval(playheadIntervalRef.current);
+    };
+  }, [isPlayingMaster]);
 
   // Gestion de l'upload de fichier visuel
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,7 +466,6 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
       videoRef.current.play();
     }
 
-    // Jouer les autres pistes en fond (overdubbing)
     if (engineRef.current && tracks.length > 0) {
       engineRef.current.restartAll();
       engineRef.current.play();
@@ -196,7 +493,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     });
   };
 
-  // Arrêter l'enregistrement et créer la nouvelle piste
+  // Arrêter l'enregistrement, calculer la Waveform et créer la nouvelle piste
   const stopRecording = async () => {
     if (!recorderRef.current) return;
     setIsRecording(false);
@@ -214,16 +511,20 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     const base64 = await blobToBase64(blob);
     const duration = Math.max(1, recordingSeconds);
 
+    // 🌊 Extraction réelle de la forme d'onde DSP
+    const waveform = await extractWaveformData(blob, 100);
+
     const newTrackIndex = tracks.length + 1;
     const newTrack: AudioTrack = {
       id: crypto.randomUUID(),
       name: `Piste ${newTrackIndex} (${newTrackIndex === 1 ? 'Rythme / Voix' : 'Superposition'})`,
       audio_data: base64,
       duration,
-      trim_start: 0.1, // Anti-clic par défaut léger (100ms) pour supprimer le bruit de clic initial
+      trim_start: 0.08, // Coupe du clic initial automatique par défaut
       trim_end: duration,
       is_muted: false,
       is_solo: false,
+      waveform,
       eq_settings: {
         bass: 0,
         mid: 0,
@@ -245,8 +546,8 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   const handleUpdateTrim = (trackId: string, trimStart: number, trimEnd: number) => {
     const updated = tracks.map((t) => {
       if (t.id === trackId) {
-        const safeStart = Math.max(0, Math.min(trimStart, t.duration - 0.1));
-        const safeEnd = Math.max(safeStart + 0.1, Math.min(trimEnd, t.duration));
+        const safeStart = Math.max(0, Math.min(trimStart, t.duration - 0.05));
+        const safeEnd = Math.max(safeStart + 0.05, Math.min(trimEnd, t.duration));
         return { ...t, trim_start: safeStart, trim_end: safeEnd };
       }
       return t;
@@ -356,6 +657,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   };
 
   const activeTrack = tracks.find((t) => t.id === activeTrackId) || tracks[0];
+  const maxTimelineDuration = Math.max(...tracks.map((t) => t.duration), 5);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
@@ -373,14 +675,14 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-extrabold flex items-center gap-1.5 font-mono">
             <Radio className="w-3.5 h-3.5 animate-pulse text-rose-600" />
-            <span>Studio Multi-Pistes & Overdub</span>
+            <span>Studio Multi-Pistes & Timeline Audacity</span>
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* COLONNE GAUCHE (6/12) : ÉCRAN VISUEL, CABINE MICRO & MASTER */}
-        <div className="lg:col-span-6 space-y-6">
+        {/* COLONNE GAUCHE (5/12) : ÉCRAN VISUEL, CABINE MICRO & PUBLICATION */}
+        <div className="lg:col-span-5 space-y-6">
           {/* Moniteur Visuel */}
           <div className="bg-stone-900 rounded-3xl overflow-hidden shadow-2xl border border-stone-800 relative group aspect-video flex items-center justify-center">
             {visualType === 'video' ? (
@@ -407,7 +709,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
               </span>
             </div>
 
-            {/* Overlay Compte à rebours géant */}
+            {/* Overlay Compte à rebours */}
             {countdown !== null && (
               <div className="absolute inset-0 z-30 bg-black/80 backdrop-blur-sm flex items-center justify-center animate-in fade-in">
                 <span className="text-7xl sm:text-9xl font-black text-rose-500 font-mono animate-ping">
@@ -425,46 +727,46 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
             )}
           </div>
 
-          {/* Visualiseur d'ondes Audio en direct */}
+          {/* Visualiseur d'ondes Micro en direct */}
           <div className="bg-stone-900 rounded-2xl p-4 border border-stone-800 space-y-2">
             <div className="flex items-center justify-between text-xs text-stone-400 font-mono">
               <span className="flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5 text-rose-500" />
-                Spectre Micro en Temps Réel
+                Capture Micro Live
               </span>
-              <span>{isRecording ? 'Capture de la piste en cours...' : 'Prêt à enregistrer'}</span>
+              <span>{isRecording ? 'Enregistrement en cours...' : 'Prêt à capturer'}</span>
             </div>
             <canvas
               ref={canvasRef}
               width={600}
-              height={55}
-              className="w-full h-14 bg-stone-950 rounded-xl border border-stone-800/80"
+              height={50}
+              className="w-full h-12 bg-stone-950 rounded-xl border border-stone-800/80"
             />
           </div>
 
           {/* Boutons d'action Enregistrement & Master Play */}
-          <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
             {!isRecording ? (
               <button
                 type="button"
                 onClick={startRecordingFlow}
-                className="px-6 py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2.5 transition-transform hover:scale-105 shadow-md shadow-rose-200"
+                className="px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-transform hover:scale-105 shadow-md shadow-rose-200 flex-1 justify-center"
               >
-                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <Plus className="w-4 h-4 stroke-[2.5]" />
                 <Mic className="w-4 h-4" />
                 <span>
                   {tracks.length === 0
                     ? 'Enregistrer la 1ère Piste'
-                    : `Ajouter la Piste ${tracks.length + 1} (Overdub)`}
+                    : `Ajouter la Piste ${tracks.length + 1}`}
                 </span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={stopRecording}
-                className="px-6 py-3.5 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2.5 transition-transform hover:scale-105 shadow-md animate-pulse"
+                className="px-5 py-3 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-transform hover:scale-105 shadow-md animate-pulse flex-1 justify-center"
               >
-                <Square className="w-5 h-5 fill-current text-rose-500" />
+                <Square className="w-4 h-4 fill-current text-rose-500" />
                 <span>Terminer la prise ({recordingSeconds}s)</span>
               </button>
             )}
@@ -473,218 +775,159 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
               <button
                 type="button"
                 onClick={togglePlayMaster}
-                className={`px-5 py-3.5 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center gap-2 transition-all ${
+                className={`px-4 py-3 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center gap-2 transition-all shrink-0 ${
                   isPlayingMaster
                     ? 'bg-rose-600 text-white shadow-rose-200'
                     : 'bg-stone-900 hover:bg-stone-800 text-white shadow-sm'
                 }`}
               >
                 {isPlayingMaster ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-                <span>{isPlayingMaster ? 'Pause Master' : `🔁 Écouter le Mix (${tracks.length} piste${tracks.length > 1 ? 's' : ''})`}</span>
+                <span>{isPlayingMaster ? 'Pause' : '🔁 Play Mix'}</span>
               </button>
             )}
           </div>
 
-          {/* Sélecteur de Visuel & Importation */}
-          <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-stone-900 flex items-center gap-1.5 uppercase font-mono tracking-wider">
-                <Film className="w-4 h-4 text-stone-700" />
-                Changer de Visuel
-              </h4>
-              <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-transform hover:scale-105 flex items-center gap-1.5 shadow-sm">
-                <Upload className="w-3.5 h-3.5" />
-                <span>Importer MP4 / GIF / Image</span>
-                <input
-                  type="file"
-                  accept="video/mp4,image/gif,image/png,image/jpeg,image/webp"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
+          {/* Formulaire de publication */}
+          <form onSubmit={handleSaveProject} className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm space-y-3.5">
+            <h4 className="text-xs font-bold text-stone-900 uppercase font-mono tracking-wider">
+              📝 Publication du Projet Multi-Pistes
+            </h4>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Titre de l'Œuvre Sonore *
               </label>
+              <input
+                type="text"
+                required
+                value={projectTitle}
+                onChange={(e) => setProjectTitle(e.target.value)}
+                placeholder="Ex: Symphonie Cyberpunk, Beatbox Épique..."
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
+              />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {PRESET_VISUALS.map((preset) => (
-                <button
-                  key={preset.title}
-                  type="button"
-                  onClick={() => {
-                    setVisualType(preset.type);
-                    setVisualUrl(preset.url);
-                    setVisualTitle(preset.title);
-                  }}
-                  className={`group text-left rounded-2xl overflow-hidden border-2 transition-all p-1 ${
-                    visualUrl === preset.url
-                      ? 'border-rose-600 ring-2 ring-rose-200'
-                      : 'border-stone-200 hover:border-stone-400 opacity-80 hover:opacity-100'
-                  }`}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Compositeur / Sound Designer *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={creatorName}
+                  onChange={(e) => setCreatorName(e.target.value)}
+                  placeholder="Votre pseudo"
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Genre Musical
+                </label>
+                <select
+                  value={genre}
+                  onChange={(e) => setGenre(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-stone-900 cursor-pointer"
                 >
-                  <div className="aspect-video rounded-xl overflow-hidden bg-black mb-1.5">
-                    <img
-                      src={preset.url}
-                      alt={preset.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                  </div>
-                  <p className="text-[11px] font-bold text-stone-900 truncate">{preset.title}</p>
-                </button>
-              ))}
+                  {GENRES.map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Note d'Intention (Optionnel)
+              </label>
+              <textarea
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Expliquez comment vous avez composé vos pistes..."
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 resize-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSaving || tracks.length === 0 || !projectTitle.trim() || !creatorName.trim()}
+              className="w-full py-3 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs sm:text-sm transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md hover:scale-[1.01]"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isSaving ? 'Publication en cours...' : `Publier (${tracks.length} piste${tracks.length > 1 ? 's' : ''})`}</span>
+            </button>
+          </form>
         </div>
 
-        {/* COLONNE DROITE (6/12) : TIMELINE MULTI-PISTES, DÉCOUPE & EQ */}
-        <div className="lg:col-span-6 space-y-6">
-          {/* GESTIONNAIRE DE PISTES (TIMELINE) */}
-          <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <h3 className="font-bold text-sm text-stone-900 flex items-center gap-2 font-display">
-                <Layers className="w-4 h-4 text-rose-600" />
-                <span>Pistes Audio Enregistrées ({tracks.length})</span>
-              </h3>
-              <span className="text-[10px] font-mono text-stone-500">
-                Superposition & Rognage
-              </span>
+        {/* COLONNE DROITE (7/12) : TIMELINE MULTI-PISTES STYLE AUDACITY & EQ */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* 🎚️ TIMELINE MULTI-PISTES AVEC FORMES D'ONDE */}
+          <div className="bg-stone-900 text-white rounded-3xl p-6 border border-stone-800 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-rose-500" />
+                <h3 className="font-bold text-sm font-display tracking-wide">
+                  Timeline Multi-Pistes & Formes d'Onde ({tracks.length})
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-mono text-stone-400">
+                <Clock className="w-3 h-3 text-rose-400" />
+                <span>Max : {maxTimelineDuration.toFixed(1)}s</span>
+              </div>
             </div>
 
+            {/* RÈGLE TEMPORELLE (TIME RULER STYLE DAW) */}
+            <div className="relative h-6 bg-stone-950 rounded-lg px-2 flex items-center justify-between text-[9px] font-mono text-stone-500 border border-stone-800 select-none">
+              {Array.from({ length: Math.ceil(maxTimelineDuration) + 1 }).map((_, sec) => (
+                <div key={sec} className="flex flex-col items-center">
+                  <span className="text-stone-400 font-bold">{sec}.0s</span>
+                  <div className="w-0.5 h-1.5 bg-stone-700 mt-0.5" />
+                </div>
+              ))}
+              {/* Ligne Playhead rouge */}
+              {isPlayingMaster && (
+                <div
+                  className="absolute top-0 bottom-0 w-1 bg-rose-500 shadow-lg shadow-rose-500/80 pointer-events-none z-30 transition-all duration-75"
+                  style={{ left: `${(playheadTime / maxTimelineDuration) * 100}%` }}
+                />
+              )}
+            </div>
+
+            {/* LISTE DES PISTES EMPILÉES VERTICALEMENT */}
             {tracks.length > 0 ? (
               <div className="space-y-4">
-                {tracks.map((track, idx) => {
-                  const isSelected = activeTrack?.id === track.id;
-
-                  return (
-                    <div
-                      key={track.id}
-                      onClick={() => setActiveTrackId(track.id)}
-                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer space-y-3 ${
-                        isSelected
-                          ? 'border-rose-500 bg-rose-50/20 shadow-md ring-1 ring-rose-300'
-                          : 'border-stone-200 bg-stone-50 hover:border-stone-300'
-                      }`}
-                    >
-                      {/* En-tête de la piste : Titre, Durée, Mute, Solo, Suppr */}
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="w-6 h-6 rounded-full bg-stone-900 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                            {idx + 1}
-                          </span>
-                          <input
-                            type="text"
-                            value={track.name}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => handleRenameTrack(track.id, e.target.value)}
-                            className="text-xs font-bold text-stone-900 bg-transparent border-b border-transparent hover:border-stone-300 focus:border-stone-900 focus:outline-none truncate"
-                          />
-                          <span className="text-[10px] font-mono text-stone-400 shrink-0">
-                            ({track.duration}s)
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          {/* Mute */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleMute(track.id)}
-                            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
-                              track.is_muted
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-white hover:bg-stone-200 text-stone-700 border border-stone-200'
-                            }`}
-                            title={track.is_muted ? 'Piste coupée (Cliquer pour activer)' : 'Couper le son (Mute)'}
-                          >
-                            {track.is_muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                          </button>
-
-                          {/* Solo */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSolo(track.id)}
-                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${
-                              track.is_solo
-                                ? 'bg-amber-500 text-white font-extrabold'
-                                : 'bg-white hover:bg-stone-200 text-stone-700 border border-stone-200'
-                            }`}
-                            title="Isoler cette piste (Solo)"
-                          >
-                            <Headphones className="w-3.5 h-3.5 inline mr-0.5" />
-                            SOLO
-                          </button>
-
-                          {/* Supprimer */}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteTrack(track.id)}
-                            className="p-1.5 rounded-lg bg-white hover:bg-rose-100 text-stone-400 hover:text-rose-600 border border-stone-200 transition-colors"
-                            title="Supprimer cette piste"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* ✂️ Rognage Anti-Clic (Début et Fin) */}
-                      <div className="bg-white p-3 rounded-xl border border-stone-200/80 space-y-2" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between text-[11px] font-mono">
-                          <span className="font-bold text-stone-700 flex items-center gap-1">
-                            <Scissors className="w-3 h-3 text-rose-600" />
-                            <span>Découpe Anti-Clic (Début / Fin)</span>
-                          </span>
-                          <span className="text-rose-600 font-bold">
-                            {track.trim_start.toFixed(2)}s → {track.trim_end.toFixed(2)}s ({(track.trim_end - track.trim_start).toFixed(2)}s)
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 pt-1">
-                          <div>
-                            <div className="flex justify-between text-[10px] text-stone-500 mb-0.5">
-                              <span>Couper début (Clic)</span>
-                              <span className="font-mono font-bold">{track.trim_start.toFixed(2)}s</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max={Math.min(3, track.duration - 0.1)}
-                              step="0.02"
-                              value={track.trim_start}
-                              onChange={(e) => handleUpdateTrim(track.id, parseFloat(e.target.value), track.trim_end)}
-                              className="w-full accent-rose-600 bg-stone-100 rounded-lg cursor-pointer h-1.5"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="flex justify-between text-[10px] text-stone-500 mb-0.5">
-                              <span>Couper fin</span>
-                              <span className="font-mono font-bold">{track.trim_end.toFixed(2)}s</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={track.trim_start + 0.1}
-                              max={track.duration}
-                              step="0.05"
-                              value={track.trim_end}
-                              onChange={(e) => handleUpdateTrim(track.id, track.trim_start, parseFloat(e.target.value))}
-                              className="w-full accent-rose-600 bg-stone-100 rounded-lg cursor-pointer h-1.5"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {tracks.map((track, idx) => (
+                  <WaveformTrackRow
+                    key={track.id}
+                    track={track}
+                    maxTimelineDuration={maxTimelineDuration}
+                    playheadTime={playheadTime}
+                    isSelected={activeTrack?.id === track.id}
+                    onSelect={() => setActiveTrackId(track.id)}
+                    onUpdateTrim={(start, end) => handleUpdateTrim(track.id, start, end)}
+                    onToggleMute={() => handleToggleMute(track.id)}
+                    onToggleSolo={() => handleToggleSolo(track.id)}
+                    onDelete={() => handleDeleteTrack(track.id)}
+                    onRename={(newName) => handleRenameTrack(track.id, newName)}
+                    index={idx}
+                  />
+                ))}
               </div>
             ) : (
-              <div className="text-center py-8 bg-stone-50 rounded-2xl border border-dashed border-stone-300 p-6 space-y-2">
-                <Music2 className="w-8 h-8 text-stone-400 mx-auto" />
-                <p className="text-xs font-bold text-stone-700">Aucune piste pour le moment</p>
+              <div className="text-center py-12 bg-stone-950/60 rounded-2xl border border-dashed border-stone-800 p-6 space-y-2">
+                <Music2 className="w-8 h-8 text-stone-600 mx-auto" />
+                <p className="text-xs font-bold text-stone-300">Aucune piste enregistrée</p>
                 <p className="text-[11px] text-stone-500">
-                  Cliquez sur "Enregistrer la 1ère Piste" pour commencer votre création sonore.
+                  Cliquez sur "Enregistrer la 1ère Piste" à gauche pour générer votre première forme d'onde.
                 </p>
               </div>
             )}
           </div>
 
-          {/* 🎛️ CONSOLE DE MIXAGE & ÉGALISEUR DE LA PISTE SÉLECTIONNÉE */}
+          {/* 🎛️ ÉGALISEUR EQ 3 BANDES DE LA PISTE ACTIVE */}
           {activeTrack && (
             <div className="bg-stone-900 text-white rounded-3xl p-6 border border-stone-800 shadow-xl space-y-5 animate-in fade-in">
               <div className="flex items-center justify-between border-b border-stone-800 pb-3">
@@ -699,7 +942,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {/* Graves */}
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px] font-mono">
@@ -757,10 +1000,10 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                   />
                 </div>
 
-                {/* Volume Piste */}
+                {/* Volume */}
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px] font-mono">
-                    <span className="text-stone-300">Volume Piste</span>
+                    <span className="text-stone-300">Volume</span>
                     <span className="text-emerald-400 font-bold">
                       {Math.round(activeTrack.eq_settings.volume * 100)}%
                     </span>
@@ -779,81 +1022,53 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
             </div>
           )}
 
-          {/* FORMULAIRE DE PUBLICATION */}
-          <form onSubmit={handleSaveProject} className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-            <h4 className="text-xs font-bold text-stone-900 uppercase font-mono tracking-wider">
-              📝 Publication du Projet Multi-Pistes
-            </h4>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Titre de l'Œuvre Sonore *
-              </label>
-              <input
-                type="text"
-                required
-                value={projectTitle}
-                onChange={(e) => setProjectTitle(e.target.value)}
-                placeholder="Ex: Symphonie Cyberpunk, Beatbox Épique..."
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Sound Designer / Compositeur *
-                </label>
+          {/* Choix et importation du visuel */}
+          <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-stone-900 flex items-center gap-1.5 uppercase font-mono tracking-wider">
+                <Film className="w-4 h-4 text-stone-700" />
+                Changer de Visuel
+              </h4>
+              <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-transform hover:scale-105 flex items-center gap-1.5 shadow-sm">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Importer MP4 / GIF / Image</span>
                 <input
-                  type="text"
-                  required
-                  value={creatorName}
-                  onChange={(e) => setCreatorName(e.target.value)}
-                  placeholder="Votre pseudo d'artiste"
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
+                  type="file"
+                  accept="video/mp4,image/gif,image/png,image/jpeg,image/webp"
+                  onChange={handleFileUpload}
+                  className="hidden"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Genre Musical
-                </label>
-                <select
-                  value={genre}
-                  onChange={(e) => setGenre(e.target.value)}
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-stone-900 cursor-pointer"
-                >
-                  {GENRES.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Note d'Intention (Optionnel)
               </label>
-              <textarea
-                rows={2}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Détaillez vos pistes (beatbox, voix, sifflements, verres d'eau...)"
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-xs text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900 resize-none"
-              />
             </div>
 
-            <button
-              type="submit"
-              disabled={isSaving || tracks.length === 0 || !projectTitle.trim() || !creatorName.trim()}
-              className="w-full py-3.5 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs sm:text-sm transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md hover:scale-[1.02]"
-            >
-              <Save className="w-4 h-4" />
-              <span>{isSaving ? 'Publication en cours...' : `Publier le Mix (${tracks.length} piste${tracks.length > 1 ? 's' : ''})`}</span>
-            </button>
-          </form>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {PRESET_VISUALS.map((preset) => (
+                <button
+                  key={preset.title}
+                  type="button"
+                  onClick={() => {
+                    setVisualType(preset.type);
+                    setVisualUrl(preset.url);
+                    setVisualTitle(preset.title);
+                  }}
+                  className={`group text-left rounded-2xl overflow-hidden border-2 transition-all p-1 ${
+                    visualUrl === preset.url
+                      ? 'border-rose-600 ring-2 ring-rose-200'
+                      : 'border-stone-200 hover:border-stone-400 opacity-80 hover:opacity-100'
+                  }`}
+                >
+                  <div className="aspect-video rounded-xl overflow-hidden bg-black mb-1.5">
+                    <img
+                      src={preset.url}
+                      alt={preset.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    />
+                  </div>
+                  <p className="text-[11px] font-bold text-stone-900 truncate">{preset.title}</p>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
