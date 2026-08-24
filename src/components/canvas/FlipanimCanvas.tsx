@@ -285,28 +285,31 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     };
   }, []);
 
-  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement> | MouseEvent | TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
-    if ('touches' in e && e.touches.length > 0) {
-      return {
-        x: Math.round((e.touches[0].clientX - rect.left) * scaleX),
-        y: Math.round((e.touches[0].clientY - rect.top) * scaleY)
-      };
-    } else if ('changedTouches' in e && e.changedTouches.length > 0) {
-      return {
-        x: Math.round((e.changedTouches[0].clientX - rect.left) * scaleX),
-        y: Math.round((e.changedTouches[0].clientY - rect.top) * scaleY)
-      };
+    let clientX = 0;
+    let clientY = 0;
+
+    if ('touches' in e && (e as TouchEvent).touches && (e as TouchEvent).touches.length > 0) {
+      clientX = (e as TouchEvent).touches[0].clientX;
+      clientY = (e as TouchEvent).touches[0].clientY;
+    } else if ('changedTouches' in e && (e as TouchEvent).changedTouches && (e as TouchEvent).changedTouches.length > 0) {
+      clientX = (e as TouchEvent).changedTouches[0].clientX;
+      clientY = (e as TouchEvent).changedTouches[0].clientY;
+    } else {
+      const mouseEvent = e as MouseEvent;
+      clientX = mouseEvent.clientX;
+      clientY = mouseEvent.clientY;
     }
-    const mouseEvent = e as React.MouseEvent<HTMLCanvasElement>;
+
     return {
-      x: Math.round((mouseEvent.clientX - rect.left) * scaleX),
-      y: Math.round((mouseEvent.clientY - rect.top) * scaleY)
+      x: Math.round((clientX - rect.left) * scaleX),
+      y: Math.round((clientY - rect.top) * scaleY)
     };
   };
 
@@ -1194,6 +1197,31 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     saveCurrentFrameToState();
   };
 
+  // 🌐 Écouteurs globaux Window pour continuer à glisser en dehors de la surface du canvas sans couper le tracé (lignes, lasso, brush, déplacement)
+  useEffect(() => {
+    if (!isDrawing && !transformInteraction) return;
+
+    const onWindowMove = (e: MouseEvent | TouchEvent) => {
+      handlePointerMove(e as any);
+    };
+
+    const onWindowUp = () => {
+      handlePointerUp();
+    };
+
+    window.addEventListener('mousemove', onWindowMove);
+    window.addEventListener('mouseup', onWindowUp);
+    window.addEventListener('touchmove', onWindowMove, { passive: false });
+    window.addEventListener('touchend', onWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onWindowMove);
+      window.removeEventListener('mouseup', onWindowUp);
+      window.removeEventListener('touchmove', onWindowMove);
+      window.removeEventListener('touchend', onWindowUp);
+    };
+  }, [isDrawing, transformInteraction]);
+
   // 🔄 Annuler & Rétablir
   const undo = useCallback(() => {
     if (floatingObject) {
@@ -2000,7 +2028,6 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               onMouseDown={handlePointerDown}
               onMouseMove={handlePointerMove}
               onMouseUp={handlePointerUp}
-              onMouseLeave={handlePointerUp}
               onTouchStart={handlePointerDown}
               onTouchMove={handlePointerMove}
               onTouchEnd={handlePointerUp}
