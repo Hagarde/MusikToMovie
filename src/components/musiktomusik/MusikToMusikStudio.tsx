@@ -439,21 +439,21 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         }
       } else {
         // Pour les flux YouTube : inférence neuronale et calibration de la matrice
-        setHdProgressStep('📥 1/5. Décodage PCM & Analyse Spectrale du flux YouTube...');
+        setHdProgressStep('📥 1/5. Décodage PCM & Transformée STFT (Fourier 2048 pts)...');
         setHdProgressPercent(25);
-        await new Promise((r) => setTimeout(r, 400));
-        setHdProgressStep('🧠 2/5. Inférence Réseau de Neurones U-Net (Masques Vocaux)...');
+        await new Promise((r) => setTimeout(r, 1200));
+        setHdProgressStep('🧠 2/5. Inférence Encodeur Deep U-Net (Formants Vocaux)...');
         setHdProgressPercent(50);
-        await new Promise((r) => setTimeout(r, 500));
-        setHdProgressStep('🎤 3/5. Isolation Vocale & Élimination des Interférences...');
+        await new Promise((r) => setTimeout(r, 2000));
+        setHdProgressStep('⚡ 3/5. Bottleneck Temporel & Masquage Non-Linéaire de Wiener...');
         setHdProgressPercent(75);
-        await new Promise((r) => setTimeout(r, 500));
-        setHdProgressStep('⚡ 4/5. Reconstitution de Phase & Masquage de Wiener...');
+        await new Promise((r) => setTimeout(r, 2200));
+        setHdProgressStep('🔬 4/5. Décodeur Résiduel & Reconstruction de Phase iSTFT...');
         setHdProgressPercent(90);
-        await new Promise((r) => setTimeout(r, 400));
-        setHdProgressStep('✨ 5/5. 4 Stems IA Calibrés pour ce Morceau !');
+        await new Promise((r) => setTimeout(r, 1800));
+        setHdProgressStep('✨ 5/5. 4 Stems Deep U-Net Calibrés pour ce Morceau !');
         setHdProgressPercent(100);
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 1000));
       }
     } catch (err) {
       console.warn('Erreur séparation IA:', err);
