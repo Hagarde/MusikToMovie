@@ -34,7 +34,8 @@ import {
   Film,
   ZoomIn,
   ZoomOut,
-  Stamp
+  Stamp,
+  Moon
 } from 'lucide-react';
 
 interface FlipanimCanvasProps {
@@ -1019,17 +1020,18 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       ctx.strokeStyle = 'rgba(0,0,0,1)';
       ctx.lineWidth = brushSize * 3;
       ctx.globalAlpha = 1.0;
+    } else if (activeTool === 'marker') {
+      // 🌒 Véritable outil d'ombrage : mode Multiply / Assombrissement volumétrique
+      ctx.globalCompositeOperation = 'multiply';
+      const isNeutralColor = color === '#ffffff' || color === '#1c1917' || color === '#000000' || color === '#1f2937';
+      ctx.strokeStyle = isNeutralColor ? 'rgba(0, 0, 0, 0.35)' : color;
+      ctx.lineWidth = brushSize * 2.8;
+      ctx.globalAlpha = 0.38;
     } else {
       ctx.globalCompositeOperation = 'source-over';
-      if (activeTool === 'marker') {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = brushSize * 2.5;
-        ctx.globalAlpha = 0.35;
-      } else {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = brushSize;
-        ctx.globalAlpha = 1.0;
-      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = brushSize;
+      ctx.globalAlpha = 1.0;
     }
   };
 
@@ -1546,7 +1548,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               )}
             </div>
 
-            {/* Marqueur ombrage */}
+            {/* Outil Ombrage / Assombrir */}
             <button
               type="button"
               onClick={() => { if (floatingObject) commitFloatingObject(); setActiveTool('marker'); setShowShapeMenu(false); setShowSelectMenu(false); }}
@@ -1555,9 +1557,9 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                   ? 'bg-stone-900 text-white shadow-sm'
                   : 'bg-white hover:bg-stone-200/70 text-stone-700 border border-stone-200'
               }`}
-              title="Marqueur ombrage (M)"
+              title="Ombrage / Assombrir (M) - Assombrit progressivement la zone pour donner du volume et du relief"
             >
-              <Highlighter className="w-4 h-4 text-amber-500" />
+              <Moon className="w-4 h-4 text-violet-400" />
               <span className="hidden md:inline text-[11px]">Ombrage</span>
             </button>
 
