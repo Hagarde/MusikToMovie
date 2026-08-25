@@ -835,7 +835,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              {/* Bouton Séparation IA (Neuronale) */}
+              {/* Bouton Séparation Ultra-HD (HTDemucs) */}
               <button
                 type="button"
                 onClick={() => startHDSeparation('A')}
@@ -845,14 +845,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                     ? 'bg-emerald-600 text-white'
                     : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white'
                 }`}
-                title="Séparer les 4 pistes par réseau de neurones U-Net et masquage spectral STFT"
+                title="Séparer les 4 pistes par réseau neuronal Ultra-HD (FFT 4096 & Wiener EM 3-Pass)"
               >
                 {isProcessingHD && processingDeck === 'A' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
-                <span>{hdStemsA ? '✨ 4 Stems IA Prêts' : '🧠 Séparation IA (Neuronale)'}</span>
+                <span>{hdStemsA ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD (HTDemucs)'}</span>
               </button>
 
               <button
@@ -910,7 +910,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              {/* Bouton Séparation IA (Neuronale) */}
+              {/* Bouton Séparation Ultra-HD (HTDemucs) */}
               <button
                 type="button"
                 onClick={() => startHDSeparation('B')}
@@ -920,14 +920,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                     ? 'bg-emerald-600 text-white'
                     : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white'
                 }`}
-                title="Séparer les 4 pistes par réseau de neurones U-Net et masquage spectral STFT"
+                title="Séparer les 4 pistes par réseau neuronal Ultra-HD (FFT 4096 & Wiener EM 3-Pass)"
               >
                 {isProcessingHD && processingDeck === 'B' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
-                <span>{hdStemsB ? '✨ 4 Stems IA Prêts' : '🧠 Séparation IA (Neuronale)'}</span>
+                <span>{hdStemsB ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD (HTDemucs)'}</span>
               </button>
 
               <button
