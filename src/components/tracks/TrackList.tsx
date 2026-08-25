@@ -293,12 +293,19 @@ export const TrackList: React.FC<TrackListProps> = ({
                   <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
                     <button
                       type="button"
-                      onClick={() => onSelectTrack(track)}
-                      className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-stone-200"
-                      title="Écouter dans le lecteur"
+                      onClick={() => {
+                        onSelectTrack(track);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
+                        selectedTrack?.id === track.id
+                          ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-rose-600/30'
+                          : 'bg-stone-100 hover:bg-stone-200 text-stone-800 border-stone-200'
+                      }`}
+                      title="Lancer la lecture dans le lecteur"
                     >
-                      <Play className="w-3.5 h-3.5 fill-current text-stone-700" />
-                      <span>Écouter</span>
+                      <Play className={`w-3.5 h-3.5 fill-current ${selectedTrack?.id === track.id ? 'animate-pulse text-white' : 'text-stone-700'}`} />
+                      <span>{selectedTrack?.id === track.id ? 'En lecture ▶' : 'Écouter'}</span>
                     </button>
 
                     <button

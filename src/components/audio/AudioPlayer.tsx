@@ -144,6 +144,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   }, [forcePlayAtTime]);
 
+  // Lancement automatique de la musique si autoPlay est actif
+  useEffect(() => {
+    if (autoPlay && track) {
+      if (isYouTube && ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
+        ytPlayerRef.current.playVideo();
+        setIsPlaying(true);
+      } else if (audioRef.current) {
+        audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+      }
+    }
+  }, [track?.id, autoPlay]);
+
   // Initialisation du lecteur YouTube
   useEffect(() => {
     if (!track?.youtube_id) return;

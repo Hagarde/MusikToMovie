@@ -32,6 +32,7 @@ export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+  const [autoPlayAudio, setAutoPlayAudio] = useState<boolean>(false);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
 
@@ -342,7 +343,7 @@ export default function App() {
             {/* Lecteur Audio global si sur vue Bibliothèque ou Galerie */}
             {(currentView === 'tracks' || currentView === 'proposals') && selectedTrack && (
               <div className="mb-8">
-                <AudioPlayer track={selectedTrack} autoPlay={false} />
+                <AudioPlayer track={selectedTrack} autoPlay={autoPlayAudio} />
               </div>
             )}
 
@@ -366,7 +367,10 @@ export default function App() {
               <TrackList
                 tracks={tracks}
                 selectedTrack={selectedTrack}
-                onSelectTrack={(t) => setSelectedTrack(t)}
+                onSelectTrack={(t) => {
+                  setSelectedTrack(t);
+                  setAutoPlayAudio(true);
+                }}
                 onCreateProposal={handleCreateProposal}
                 onOpenUploadModal={() => setIsUploadModalOpen(true)}
                 onDeleteTrack={handleDeleteTrack}
