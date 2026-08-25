@@ -31,7 +31,7 @@ export type ProgressCallback = (step: string, percent: number) => void;
 
 /**
  * 🔬 Algorithme de Séparation Avancée HPSS (Harmonic-Percussive Source Separation)
- * + Décorrélation Spatiale Mid/Side + Filtrage Spectral
+ * pour les flux audio directs & fichiers importés
  */
 export class EnhancedStemSeparator {
   private audioCtx: AudioContext;
@@ -41,9 +41,6 @@ export class EnhancedStemSeparator {
     this.audioCtx = new AudioCtx();
   }
 
-  /**
-   * Convertit un AudioBuffer en Blob WAV stéréo 16-bit
-   */
   private audioBufferToWavBlob(buffer: AudioBuffer): Blob {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
@@ -56,22 +53,20 @@ export class EnhancedStemSeparator {
       }
     };
 
-    // En-tête WAV RIFF
     writeString(out, 0, 'RIFF');
     out.setUint32(4, length - 8, true);
     writeString(out, 8, 'WAVE');
     writeString(out, 12, 'fmt ');
-    out.setUint32(16, 16, true); // PCM Chunk size
-    out.setUint16(20, 1, true);  // Audio format 1 (PCM)
+    out.setUint32(16, 16, true);
+    out.setUint16(20, 1, true);
     out.setUint16(22, numChannels, true);
     out.setUint32(24, sampleRate, true);
-    out.setUint32(28, sampleRate * numChannels * 2, true); // Byte rate
-    out.setUint16(32, numChannels * 2, true);              // Block align
-    out.setUint16(34, 16, true);                           // Bits per sample
+    out.setUint32(28, sampleRate * numChannels * 2, true);
+    out.setUint16(32, numChannels * 2, true);
+    out.setUint16(34, 16, true);
     writeString(out, 36, 'data');
     out.setUint32(40, length - 44, true);
 
-    // Écriture entrelacée des canaux PCM 16-bit
     let offset = 44;
     const channels: Float32Array[] = [];
     for (let c = 0; c < numChannels; c++) {
@@ -90,9 +85,6 @@ export class EnhancedStemSeparator {
     return new Blob([out.buffer], { type: 'audio/wav' });
   }
 
-  /**
-   * Exécute le pipeline de séparation HPSS complet
-   */
   public async separateAudio(
     audioSource: string | Blob | ArrayBuffer,
     onProgress?: ProgressCallback
@@ -108,56 +100,17 @@ export class EnhancedStemSeparator {
       await this.audioCtx.resume();
     }
 
-    let decodedBuffer: AudioBuffer | null = null;
-
-    try {
-      if (typeof audioSource === 'string') {
-        const urlToFetch = isDirectAudioUrl(audioSource)
-          ? audioSource
-          : 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-        const res = await fetch(urlToFetch);
-        const arrayBuf = await res.arrayBuffer();
-        decodedBuffer = await this.audioCtx.decodeAudioData(arrayBuf.slice(0));
-      } else if (audioSource instanceof Blob) {
-        const arrayBuf = await audioSource.arrayBuffer();
-        decodedBuffer = await this.audioCtx.decodeAudioData(arrayBuf.slice(0));
-      } else if (audioSource instanceof ArrayBuffer) {
-        decodedBuffer = await this.audioCtx.decodeAudioData(audioSource.slice(0));
-      }
-    } catch (err) {
-      console.warn('Erreur décodage flux direct, génération de secours:', err);
+    let arrayBuf: ArrayBuffer;
+    if (typeof audioSource === 'string') {
+      const res = await fetch(audioSource);
+      arrayBuf = await res.arrayBuffer();
+    } else if (audioSource instanceof Blob) {
+      arrayBuf = await audioSource.arrayBuffer();
+    } else {
+      arrayBuf = audioSource;
     }
 
-    // Si le décodage externe n'a pas pu aboutir (ex: CORS strict), synthèse d'un buffer PCM riche
-    if (!decodedBuffer) {
-      const sr = this.audioCtx.sampleRate || 44100;
-      const len = sr * 30; // 30 secondes
-      decodedBuffer = this.audioCtx.createBuffer(2, len, sr);
-      const chL = decodedBuffer.getChannelData(0);
-      const chR = decodedBuffer.getChannelData(1);
-
-      for (let i = 0; i < len; i++) {
-        const t = i / sr;
-        // Percussions 120 BPM
-        const beatEnv = Math.exp(-((t % 0.5) * 25));
-        const kick = Math.sin(2 * Math.PI * 60 * t) * beatEnv * 0.7;
-        const snare = (Math.random() * 2 - 1) * Math.exp(-(((t + 0.25) % 0.5) * 30)) * 0.4;
-
-        // Ligne de basse 80Hz
-        const bass = Math.sin(2 * Math.PI * 82.4 * t) * 0.35;
-
-        // Voix / Synthé central
-        const voc = Math.sin(2 * Math.PI * 440 * t) * 0.25 + Math.sin(2 * Math.PI * 880 * t) * 0.15;
-
-        // Nappes spatiales stéréo
-        const padL = Math.sin(2 * Math.PI * 554.37 * t) * 0.2;
-        const padR = Math.sin(2 * Math.PI * 659.25 * t) * 0.2;
-
-        chL[i] = kick + snare + bass + voc + padL;
-        chR[i] = kick + snare + bass + voc + padR;
-      }
-    }
-
+    const decodedBuffer = await this.audioCtx.decodeAudioData(arrayBuf.slice(0));
     const sampleRate = decodedBuffer.sampleRate;
     const length = decodedBuffer.length;
     const numChannels = decodedBuffer.numberOfChannels;
@@ -168,7 +121,6 @@ export class EnhancedStemSeparator {
     notify('📊 Calcul du spectrogramme temps-fréquence (STFT)...', 35);
     await new Promise((r) => setTimeout(r, 300));
 
-    // Préparation des buffers de destination
     const vocalsBuf = this.audioCtx.createBuffer(2, length, sampleRate);
     const drumsBuf = this.audioCtx.createBuffer(2, length, sampleRate);
     const bassBuf = this.audioCtx.createBuffer(2, length, sampleRate);
@@ -186,20 +138,14 @@ export class EnhancedStemSeparator {
     notify('🥁 Décomposition Harmonique & Percussions (HPSS)...', 60);
     await new Promise((r) => setTimeout(r, 400));
 
-    // Décorrélation Spatiale Mid/Side & HPSS
-    // Mid = (L + R) / 2  (Centre : Voix, Basse, Kick)
-    // Side = (L - R) / 2 (Côtés : Nappes, Guitares stéréo, Réverbération)
     const chunkSize = 4096;
     const totalChunks = Math.ceil(length / chunkSize);
 
-    // Filtres IIR pour la Basse (Passe-bas raide 160Hz)
     const dt = 1 / sampleRate;
     const rcBass = 1 / (2 * Math.PI * 160);
     const alphaBass = dt / (rcBass + dt);
-    let prevBassL = 0;
-    let prevBassR = 0;
+    let prevBassL = 0, prevBassR = 0;
 
-    // Filtres Passe-haut pour les transitoires percussives (Drums)
     const rcDrumHigh = 1 / (2 * Math.PI * 3200);
     const alphaDrumHigh = rcDrumHigh / (rcDrumHigh + dt);
     let prevDrumInL = 0, prevDrumOutL = 0;
@@ -213,25 +159,22 @@ export class EnhancedStemSeparator {
         const smpL = left[i];
         const smpR = right[i];
 
-        // 1. Décomposition spatiale Mid/Side
         const mid = (smpL + smpR) * 0.5;
         const side = (smpL - smpR) * 0.5;
 
-        // 2. Extraction BASS (Passe-bas 20Hz - 160Hz sur le canal central Mid)
+        // 1. Bass
         prevBassL = prevBassL + alphaBass * (mid - prevBassL);
         prevBassR = prevBassR + alphaBass * (mid - prevBassR);
-        const bassVal = prevBassL * 1.3;
+        const bassVal = prevBassL * 1.2;
         bL[i] = bassVal;
         bR[i] = bassVal;
 
-        // 3. Extraction DRUMS (Attaques transitoires & percussions)
-        // Highpass transient filter
+        // 2. Drums
         prevDrumOutL = alphaDrumHigh * (prevDrumOutL + mid - prevDrumInL);
         prevDrumInL = mid;
         prevDrumOutR = alphaDrumHigh * (prevDrumOutR + mid - prevDrumInR);
         prevDrumInR = mid;
 
-        // Transient energy detection
         const transL = Math.abs(smpL - (i > 0 ? left[i - 1] : 0));
         const transR = Math.abs(smpR - (i > 0 ? right[i - 1] : 0));
         const isTransient = (transL + transR) > 0.08;
@@ -241,13 +184,12 @@ export class EnhancedStemSeparator {
         dL[i] = Math.max(-1, Math.min(1, drumValL));
         dR[i] = Math.max(-1, Math.min(1, drumValR));
 
-        // 4. Extraction VOCALS (Centre Mid sans la basse ni les percussions extrêmes)
+        // 3. Vocals
         const vocalRaw = (mid - bassVal * 0.9 - drumValL * 0.4);
-        // Emphase formantique vocale (300Hz - 3.5kHz)
         vL[i] = Math.max(-1, Math.min(1, vocalRaw * 1.25));
         vR[i] = Math.max(-1, Math.min(1, vocalRaw * 1.25));
 
-        // 5. Extraction MELODY & SYNTHS (Composantes spatiales Side + harmonies sans percussions)
+        // 4. Melody
         const melL = side * 1.3 + (smpL - vL[i] * 0.7 - dL[i] * 0.7 - bL[i] * 0.8) * 0.5;
         const melR = -side * 1.3 + (smpR - vR[i] * 0.7 - dR[i] * 0.7 - bR[i] * 0.8) * 0.5;
         mL[i] = Math.max(-1, Math.min(1, melL));
@@ -264,7 +206,6 @@ export class EnhancedStemSeparator {
     notify('✨ Finalisation et calibration des 4 stems HD...', 95);
     await new Promise((r) => setTimeout(r, 200));
 
-    // Conversion en Blobs WAV
     const vocBlob = this.audioBufferToWavBlob(vocalsBuf);
     const drumBlob = this.audioBufferToWavBlob(drumsBuf);
     const bassBlob = this.audioBufferToWavBlob(bassBuf);
@@ -287,27 +228,22 @@ class DeckStemProcessor {
   public audioContext: AudioContext;
   public sourceNode: MediaElementAudioSourceNode;
   
-  // Stems Gain Nodes
   public vocalsGain: GainNode;
   public drumsGain: GainNode;
   public bassGain: GainNode;
   public melodyGain: GainNode;
 
-  // Filtres Vocals (Mid/Center extraction 300Hz - 3400Hz)
   private vocalFilterLow: BiquadFilterNode;
   private vocalFilterHigh: BiquadFilterNode;
   private vocalPeaking: BiquadFilterNode;
 
-  // Filtres Drums (Percussion pass 60Hz - 220Hz + High transients)
   private drumLowpass: BiquadFilterNode;
   private drumHighpass: BiquadFilterNode;
   private drumSnap: BiquadFilterNode;
 
-  // Filtres Bass (Sub 20Hz - 180Hz)
   private bassFilter1: BiquadFilterNode;
   private bassFilter2: BiquadFilterNode;
 
-  // Filtres Melody (Harmonies, Synths, Highs > 2500Hz + side band)
   private melodyHighpass: BiquadFilterNode;
   private melodyHighShelf: BiquadFilterNode;
 
@@ -315,7 +251,7 @@ class DeckStemProcessor {
     this.audioContext = audioContext;
     this.sourceNode = audioContext.createMediaElementSource(audioElement);
 
-    // 1. Branche VOCALS
+    // 1. VOCALS
     this.vocalFilterLow = audioContext.createBiquadFilter();
     this.vocalFilterLow.type = 'highpass';
     this.vocalFilterLow.frequency.value = 280;
@@ -339,7 +275,7 @@ class DeckStemProcessor {
       .connect(this.vocalPeaking)
       .connect(this.vocalsGain);
 
-    // 2. Branche DRUMS
+    // 2. DRUMS
     this.drumHighpass = audioContext.createBiquadFilter();
     this.drumHighpass.type = 'highpass';
     this.drumHighpass.frequency.value = 55;
@@ -362,7 +298,7 @@ class DeckStemProcessor {
       .connect(this.drumSnap)
       .connect(this.drumsGain);
 
-    // 3. Branche BASS
+    // 3. BASS
     this.bassFilter1 = audioContext.createBiquadFilter();
     this.bassFilter1.type = 'lowpass';
     this.bassFilter1.frequency.value = 180;
@@ -379,7 +315,7 @@ class DeckStemProcessor {
       .connect(this.bassFilter2)
       .connect(this.bassGain);
 
-    // 4. Branche MELODY & SYNTHS
+    // 4. MELODY & SYNTHS
     this.melodyHighpass = audioContext.createBiquadFilter();
     this.melodyHighpass.type = 'highpass';
     this.melodyHighpass.frequency.value = 1200;
@@ -421,15 +357,6 @@ export class MashupAudioEngine {
   private processorA: DeckStemProcessor | null = null;
   private processorB: DeckStemProcessor | null = null;
 
-  // Stems discrets HD (Deck A & Deck B)
-  private hdAudioNodes: {
-    audioA: { vocals?: HTMLAudioElement; drums?: HTMLAudioElement; bass?: HTMLAudioElement; melody?: HTMLAudioElement };
-    audioB: { vocals?: HTMLAudioElement; drums?: HTMLAudioElement; bass?: HTMLAudioElement; melody?: HTMLAudioElement };
-    gainsA: { vocals?: GainNode; drums?: GainNode; bass?: GainNode; melody?: GainNode };
-    gainsB: { vocals?: GainNode; drums?: GainNode; bass?: GainNode; melody?: GainNode };
-  } = { audioA: {}, audioB: {}, gainsA: {}, gainsB: {} };
-
-  private isUsingHD: boolean = false;
   private masterGain: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private mediaDest: MediaStreamAudioDestinationNode | null = null;
@@ -463,7 +390,6 @@ export class MashupAudioEngine {
   public loadDecks(urlA: string, urlB: string, config: StemMixConfig): void {
     this.dispose();
     const ctx = this.initContext();
-    this.isUsingHD = false;
 
     if (isDirectAudioUrl(urlA)) {
       try {
@@ -494,57 +420,6 @@ export class MashupAudioEngine {
     this.applyStemConfig(config);
   }
 
-  /**
-   * Charger des Stems HD discrets (HPSS) pour Deck A et/ou Deck B
-   */
-  public loadHDStems(
-    stemsA: HDSeparatedStems | null,
-    stemsB: HDSeparatedStems | null,
-    config: StemMixConfig
-  ): void {
-    this.dispose();
-    const ctx = this.initContext();
-    this.isUsingHD = true;
-
-    const createHDStem = (url: string, isDeckB: boolean) => {
-      const audio = new Audio();
-      audio.crossOrigin = 'anonymous';
-      audio.src = url;
-      audio.loop = true;
-      if (isDeckB) audio.playbackRate = this.speedB;
-
-      const source = ctx.createMediaElementSource(audio);
-      const gain = ctx.createGain();
-      gain.gain.value = 1.0;
-      source.connect(gain);
-      gain.connect(this.masterGain!);
-
-      return { audio, gain };
-    };
-
-    if (stemsA) {
-      const voc = createHDStem(stemsA.vocalsUrl, false);
-      const drm = createHDStem(stemsA.drumsUrl, false);
-      const bas = createHDStem(stemsA.bassUrl, false);
-      const mel = createHDStem(stemsA.melodyUrl, false);
-
-      this.hdAudioNodes.audioA = { vocals: voc.audio, drums: drm.audio, bass: bas.audio, melody: mel.audio };
-      this.hdAudioNodes.gainsA = { vocals: voc.gain, drums: drm.gain, bass: bas.gain, melody: mel.gain };
-    }
-
-    if (stemsB) {
-      const voc = createHDStem(stemsB.vocalsUrl, true);
-      const drm = createHDStem(stemsB.drumsUrl, true);
-      const bas = createHDStem(stemsB.bassUrl, true);
-      const mel = createHDStem(stemsB.melodyUrl, true);
-
-      this.hdAudioNodes.audioB = { vocals: voc.audio, drums: drm.audio, bass: bas.audio, melody: mel.audio };
-      this.hdAudioNodes.gainsB = { vocals: voc.gain, drums: drm.gain, bass: bas.gain, melody: mel.gain };
-    }
-
-    this.applyStemConfig(config);
-  }
-
   // Appliquer la matrice de mixage Stems
   public applyStemConfig(config: StemMixConfig): void {
     const applyStem = (
@@ -557,15 +432,6 @@ export class MashupAudioEngine {
       const gainA = (isMuted || source === 'none' || source === 'B') ? 0 : volA;
       const gainB = (isMuted || source === 'none' || source === 'A') ? 0 : volB;
 
-      // 1. Si mode HD discrets
-      if (this.isUsingHD) {
-        const gA = this.hdAudioNodes.gainsA[stem];
-        const gB = this.hdAudioNodes.gainsB[stem];
-        if (gA) gA.gain.value = gainA;
-        if (gB) gB.gain.value = gainB;
-      }
-
-      // 2. Si mode filtres DSP standard
       if (this.processorA) this.processorA.setStemGain(stem, gainA);
       if (this.processorB) this.processorB.setStemGain(stem, gainB);
     };
@@ -582,11 +448,6 @@ export class MashupAudioEngine {
     if (this.deckB) {
       this.deckB.playbackRate = this.speedB;
     }
-    if (this.isUsingHD) {
-      Object.values(this.hdAudioNodes.audioB).forEach((audio) => {
-        if (audio) audio.playbackRate = this.speedB;
-      });
-    }
   }
 
   // Calage Décalage Temporel (Offset Deck B)
@@ -595,12 +456,6 @@ export class MashupAudioEngine {
     if (this.deckA && this.deckB) {
       this.deckB.currentTime = (this.deckA.currentTime + this.offsetB) % (this.deckB.duration || 100);
     }
-    if (this.isUsingHD) {
-      const refTime = this.hdAudioNodes.audioA.vocals?.currentTime || 0;
-      Object.values(this.hdAudioNodes.audioB).forEach((audio) => {
-        if (audio) audio.currentTime = (refTime + this.offsetB) % (audio.duration || 100);
-      });
-    }
   }
 
   public async play(): Promise<void> {
@@ -608,17 +463,6 @@ export class MashupAudioEngine {
       await this.audioContext.resume();
     }
     this.isPlaying = true;
-
-    if (this.isUsingHD) {
-      Object.values(this.hdAudioNodes.audioA).forEach((a) => a?.play().catch(() => {}));
-      Object.values(this.hdAudioNodes.audioB).forEach((b) => {
-        if (b) {
-          b.playbackRate = this.speedB;
-          b.play().catch(() => {});
-        }
-      });
-      return;
-    }
 
     if (this.deckA) {
       await this.deckA.play().catch(() => {});
@@ -634,31 +478,16 @@ export class MashupAudioEngine {
 
   public pause(): void {
     this.isPlaying = false;
-    if (this.isUsingHD) {
-      Object.values(this.hdAudioNodes.audioA).forEach((a) => a?.pause());
-      Object.values(this.hdAudioNodes.audioB).forEach((b) => b?.pause());
-      return;
-    }
     if (this.deckA) this.deckA.pause();
     if (this.deckB) this.deckB.pause();
   }
 
   public seek(seconds: number): void {
-    if (this.isUsingHD) {
-      Object.values(this.hdAudioNodes.audioA).forEach((a) => { if (a) a.currentTime = seconds; });
-      Object.values(this.hdAudioNodes.audioB).forEach((b) => {
-        if (b) b.currentTime = (seconds + this.offsetB) % (b.duration || 100);
-      });
-      return;
-    }
     if (this.deckA) this.deckA.currentTime = seconds;
     if (this.deckB) this.deckB.currentTime = (seconds + this.offsetB) % (this.deckB.duration || 100);
   }
 
   public getCurrentTime(): number {
-    if (this.isUsingHD) {
-      return this.hdAudioNodes.audioA.vocals?.currentTime || this.hdAudioNodes.audioB.vocals?.currentTime || 0;
-    }
     return this.deckA ? this.deckA.currentTime : 0;
   }
 
@@ -702,12 +531,6 @@ export class MashupAudioEngine {
 
   public dispose(): void {
     this.isPlaying = false;
-    if (this.isUsingHD) {
-      Object.values(this.hdAudioNodes.audioA).forEach((a) => { if (a) { a.pause(); a.src = ''; } });
-      Object.values(this.hdAudioNodes.audioB).forEach((b) => { if (b) { b.pause(); b.src = ''; } });
-      this.hdAudioNodes = { audioA: {}, audioB: {}, gainsA: {}, gainsB: {} };
-      this.isUsingHD = false;
-    }
     if (this.deckA) {
       this.deckA.pause();
       this.deckA.src = '';

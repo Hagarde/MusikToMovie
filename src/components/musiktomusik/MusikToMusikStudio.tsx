@@ -24,13 +24,10 @@ import {
   Link,
   X,
   ExternalLink,
-  Plus,
-  Zap,
-  Wand2,
-  Loader2
+  Plus
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
-import { MashupAudioEngine, isDirectAudioUrl, EnhancedStemSeparator, HDSeparatedStems } from '../../lib/stemEngine';
+import { MashupAudioEngine, isDirectAudioUrl } from '../../lib/stemEngine';
 import { createMusikToMusikProject } from '../../lib/supabase';
 import { resolveUniversalTrack, extractYouTubeId, loadYouTubeAPI } from '../../lib/youtube';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
@@ -89,16 +86,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [trackA, setTrackA] = useState<MashupTrackInfo & { genre?: string }>(DEMO_TRACKS[0]);
   // Morceau B (Deck B)
   const [trackB, setTrackB] = useState<MashupTrackInfo & { genre?: string }>(DEMO_TRACKS[1]);
-
-  // Stems HD séparés (HPSS)
-  const [hdStemsA, setHdStemsA] = useState<HDSeparatedStems | null>(null);
-  const [hdStemsB, setHdStemsB] = useState<HDSeparatedStems | null>(null);
-
-  // État de l'indicateur de progression HD
-  const [isProcessingHD, setIsProcessingHD] = useState<boolean>(false);
-  const [processingDeck, setProcessingDeck] = useState<'A' | 'B' | null>(null);
-  const [hdProgressStep, setHdProgressStep] = useState<string>('');
-  const [hdProgressPercent, setHdProgressPercent] = useState<number>(0);
 
   // Modal de sélection de Morceau / YouTube
   const [selectorTargetDeck, setSelectorTargetDeck] = useState<'A' | 'B' | null>(null);
@@ -257,19 +244,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     }
   }, [trackA.audio_url, trackB.audio_url]);
 
-  // Synchroniser les Stems HD avec le moteur
-  useEffect(() => {
-    if (engineRef.current && (hdStemsA || hdStemsB)) {
-      engineRef.current.loadHDStems(hdStemsA, hdStemsB, stemConfig);
-      engineRef.current.setSpeedB(speedRatioB);
-      engineRef.current.setOffsetB(offsetSecondsB);
-      if (isPlaying) {
-        engineRef.current.play();
-      }
-    }
-  }, [hdStemsA, hdStemsB]);
-
-  // Mettre à jour la matrice DSP quand la configuration change
+  // Mettre à jour la matrice DSP et les volumes YouTube quand la configuration change
   useEffect(() => {
     if (engineRef.current) {
       engineRef.current.applyStemConfig(stemConfig);
@@ -277,52 +252,40 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     // Synchronisation du volume YouTube Deck A
     if (ytPlayerRefA.current && typeof ytPlayerRefA.current.setVolume === 'function') {
-      if (hdStemsA) {
-        // Si les stems HD sont séparés, couper le son du player brut YouTube
+      const volVocalsA = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'A' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeA : 0;
+      const volDrumsA = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'A' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeA : 0;
+      const volBassA = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'A' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeA : 0;
+      const volMelodyA = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'A' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeA : 0;
+
+      const totalActiveA = volVocalsA + volDrumsA + volBassA + volMelodyA;
+      if (totalActiveA <= 0.001) {
         try { ytPlayerRefA.current.mute(); } catch (_) {}
         ytPlayerRefA.current.setVolume(0);
       } else {
-        const volVocalsA = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'A' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeA : 0;
-        const volDrumsA = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'A' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeA : 0;
-        const volBassA = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'A' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeA : 0;
-        const volMelodyA = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'A' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeA : 0;
-
-        const totalActiveA = volVocalsA + volDrumsA + volBassA + volMelodyA;
-        if (totalActiveA <= 0.001) {
-          try { ytPlayerRefA.current.mute(); } catch (_) {}
-          ytPlayerRefA.current.setVolume(0);
-        } else {
-          try { ytPlayerRefA.current.unMute(); } catch (_) {}
-          const avgVolA = Math.min(100, Math.round((totalActiveA / 4) * 100));
-          ytPlayerRefA.current.setVolume(avgVolA);
-        }
+        try { ytPlayerRefA.current.unMute(); } catch (_) {}
+        const avgVolA = Math.min(100, Math.round((totalActiveA / 4) * 100));
+        ytPlayerRefA.current.setVolume(avgVolA);
       }
     }
 
     // Synchronisation du volume YouTube Deck B
     if (ytPlayerRefB.current && typeof ytPlayerRefB.current.setVolume === 'function') {
-      if (hdStemsB) {
-        // Si les stems HD sont séparés, couper le son du player brut YouTube
+      const volVocalsB = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'B' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeB : 0;
+      const volDrumsB = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'B' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeB : 0;
+      const volBassB = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'B' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeB : 0;
+      const volMelodyB = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'B' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeB : 0;
+
+      const totalActiveB = volVocalsB + volDrumsB + volBassB + volMelodyB;
+      if (totalActiveB <= 0.001) {
         try { ytPlayerRefB.current.mute(); } catch (_) {}
         ytPlayerRefB.current.setVolume(0);
       } else {
-        const volVocalsB = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'B' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeB : 0;
-        const volDrumsB = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'B' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeB : 0;
-        const volBassB = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'B' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeB : 0;
-        const volMelodyB = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'B' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeB : 0;
-
-        const totalActiveB = volVocalsB + volDrumsB + volBassB + volMelodyB;
-        if (totalActiveB <= 0.001) {
-          try { ytPlayerRefB.current.mute(); } catch (_) {}
-          ytPlayerRefB.current.setVolume(0);
-        } else {
-          try { ytPlayerRefB.current.unMute(); } catch (_) {}
-          const avgVolB = Math.min(100, Math.round((totalActiveB / 4) * 100));
-          ytPlayerRefB.current.setVolume(avgVolB);
-        }
+        try { ytPlayerRefB.current.unMute(); } catch (_) {}
+        const avgVolB = Math.min(100, Math.round((totalActiveB / 4) * 100));
+        ytPlayerRefB.current.setVolume(avgVolB);
       }
     }
-  }, [stemConfig, hdStemsA, hdStemsB]);
+  }, [stemConfig]);
 
   // Mettre à jour vitesse Deck B
   useEffect(() => {
@@ -388,41 +351,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
   }, [isPlaying]);
-
-  // Déclencher la séparation Haute Définition HPSS
-  const startHDSeparation = async (deck: 'A' | 'B') => {
-    const track = deck === 'A' ? trackA : trackB;
-
-    setIsProcessingHD(true);
-    setProcessingDeck(deck);
-    setHdProgressPercent(5);
-    setHdProgressStep('Initialisation du moteur de séparation spectrale...');
-
-    try {
-      const separator = new EnhancedStemSeparator();
-      const audioSource = isDirectAudioUrl(track.audio_url)
-        ? track.audio_url
-        : (deck === 'A' ? DEMO_TRACKS[0].audio_url : DEMO_TRACKS[1].audio_url);
-
-      const stems = await separator.separateAudio(audioSource, (step, pct) => {
-        setHdProgressStep(step);
-        setHdProgressPercent(pct);
-      });
-
-      if (deck === 'A') {
-        setHdStemsA(stems);
-      } else {
-        setHdStemsB(stems);
-      }
-
-      await new Promise((r) => setTimeout(r, 600));
-    } catch (err) {
-      console.warn('Erreur séparation HPSS:', err);
-    } finally {
-      setIsProcessingHD(false);
-      setProcessingDeck(null);
-    }
-  };
 
   // Lecture / Pause Master
   const togglePlay = async () => {
@@ -563,10 +491,8 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const selectTrackForDeck = (deck: 'A' | 'B', trackInfo: MashupTrackInfo & { genre?: string }) => {
     if (deck === 'A') {
       setTrackA(trackInfo);
-      setHdStemsA(null);
     } else {
       setTrackB(trackInfo);
-      setHdStemsB(null);
     }
     setSelectorTargetDeck(null);
     setResolvedTrackInfo(null);
@@ -670,13 +596,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           <div className="space-y-1 max-w-2xl">
             <span className="text-[10px] font-mono font-bold text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5" />
-              DSP Web Audio + Séparation HPSS Haute Définition
+              Double Deck DJ + Synchronisation YouTube
             </span>
             <h2 className="text-xl sm:text-3xl font-black font-display tracking-tight text-white">
-              Studio Mashup : Branchez vos Musiques & Isolez les Pistes
+              Studio Mashup : Fusionnez vos Musiques YouTube en Direct
             </h2>
             <p className="text-xs sm:text-sm text-stone-300">
-              Choisissez vos musiques et lancez le découpage haute fidélité (<strong className="text-rose-400">Voix</strong>, <strong className="text-amber-400">Batterie</strong>, <strong className="text-violet-400">Basse</strong>, <strong className="text-cyan-400">Mélodie</strong>) pour composer votre remix sur-mesure !
+              Choisissez deux musiques de votre choix et croisez leurs pistes (<strong className="text-rose-400">Voix</strong>, <strong className="text-amber-400">Batterie</strong>, <strong className="text-violet-400">Basse</strong>, <strong className="text-cyan-400">Mélodie</strong>) avec calage BPM en direct !
             </p>
           </div>
 
@@ -754,7 +680,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         </div>
       </div>
 
-      {/* SÉLECTION DES 2 DECKS (MORCEAU A & MORCEAU B AVEC YOUTUBE & BOUTONS HPSS) */}
+      {/* SÉLECTION DES 2 DECKS (MORCEAU A & MORCEAU B AVEC YOUTUBE) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* DECK A */}
         <div className="bg-white rounded-3xl p-6 border-2 border-rose-200 shadow-sm space-y-4 relative overflow-hidden">
@@ -808,19 +734,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
             <span className="text-[10px] font-mono bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-md shrink-0">
               {trackA.genre || 'Piste A'}
             </span>
-          </div>
-
-          {/* Action de Séparation Haute Définition (HPSS) Deck A */}
-          <div className="pt-1 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => startHDSeparation('A')}
-              disabled={isProcessingHD}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 border border-rose-200 text-rose-700 font-extrabold text-xs flex items-center justify-center gap-2 transition-transform hover:scale-[1.01] shadow-sm disabled:opacity-50"
-            >
-              <Wand2 className="w-3.5 h-3.5 text-rose-600" />
-              <span>{hdStemsA ? '✨ Stems HD Isolés (Relancer)' : '✨ Découpage HD Avancé (HPSS)'}</span>
-            </button>
           </div>
         </div>
 
@@ -877,19 +790,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               {trackB.genre || 'Piste B'}
             </span>
           </div>
-
-          {/* Action de Séparation Haute Définition (HPSS) Deck B */}
-          <div className="pt-1 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => startHDSeparation('B')}
-              disabled={isProcessingHD}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-50 to-purple-50 hover:from-violet-100 hover:to-purple-100 border border-violet-200 text-violet-700 font-extrabold text-xs flex items-center justify-center gap-2 transition-transform hover:scale-[1.01] shadow-sm disabled:opacity-50"
-            >
-              <Wand2 className="w-3.5 h-3.5 text-violet-600" />
-              <span>{hdStemsB ? '✨ Stems HD Isolés (Relancer)' : '✨ Découpage HD Avancé (HPSS)'}</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -903,7 +803,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
             </h3>
           </div>
           <span className="text-xs font-mono text-stone-400">
-            Filtres Linkwitz-Riley & HPSS Spectral Separation
+            Filtres DSP Web Audio & Mixeur Multi-Sources
           </span>
         </div>
 
@@ -1197,59 +1097,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           <span>{isSaving ? 'Publication en cours...' : '🚀 Sauvegarder & Partager dans la Galerie'}</span>
         </button>
       </form>
-
-      {/* ⏳ MODALE INDICATEUR DE PROGRESSION SÉPARATION HD (HPSS) */}
-      {isProcessingHD && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-stone-900 border border-stone-700 text-white rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-2xl relative overflow-hidden">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-600 to-violet-600 flex items-center justify-center shadow-md">
-                <Wand2 className="w-5 h-5 text-white animate-spin" style={{ animationDuration: '4s' }} />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-base text-white font-display">
-                  Séparation Stems HD en cours...
-                </h3>
-                <p className="text-xs text-stone-400">
-                  Deck {processingDeck} • Algorithme HPSS & Décorrélation Spatiale
-                </p>
-              </div>
-            </div>
-
-            {/* Barre de progression fluide */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-xs font-mono">
-                <span className="text-rose-400 font-bold">Progression DSP</span>
-                <span className="text-stone-300 font-extrabold">{hdProgressPercent}%</span>
-              </div>
-              <div className="w-full bg-stone-950 rounded-full h-3.5 p-0.5 border border-stone-800 overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-rose-500 via-pink-500 to-violet-500 h-full rounded-full transition-all duration-300 shadow-sm"
-                  style={{ width: `${hdProgressPercent}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Message de l'étape en cours */}
-            <div className="p-3.5 bg-stone-950/80 rounded-2xl border border-stone-800/80 text-xs text-stone-300 flex items-center gap-2.5">
-              <Loader2 className="w-4 h-4 text-violet-400 animate-spin shrink-0" />
-              <span className="font-medium animate-pulse">{hdProgressStep || 'Traitement en cours...'}</span>
-            </div>
-
-            {/* Détails techniques pédagogiques */}
-            <div className="grid grid-cols-2 gap-2 text-[10px] text-stone-400 font-mono">
-              <div className="p-2 rounded-xl bg-stone-950/50 border border-stone-800/50">
-                <span>🎤 Voix & Mélodie</span>
-                <p className="text-stone-500">Harmoniques Mid/Side</p>
-              </div>
-              <div className="p-2 rounded-xl bg-stone-950/50 border border-stone-800/50">
-                <span>🥁 Beat & Basse</span>
-                <p className="text-stone-500">Transitoires & Subs</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 📺 MODALE SÉLECTEUR YOUTUBE & BIBLIOTHÈQUE */}
       {selectorTargetDeck && (
