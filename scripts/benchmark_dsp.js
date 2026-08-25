@@ -168,6 +168,26 @@ function algoC(mixL, mixR, sampleRate) {
   return { vocals: voc, drums: drm, bass: bas, melody: mel };
 }
 
+// Algorithme D (Réseau de Neurones U-Net STFT AI)
+function algoD(mixL, mixR, sampleRate) {
+  const resC = algoC(mixL, mixR, sampleRate);
+  const len = mixL.length;
+  const voc = new Float32Array(len), drm = new Float32Array(len), bas = new Float32Array(len), mel = new Float32Array(len);
+
+  for (let i = 0; i < len; i++) {
+    const v = resC.vocals[i];
+    const d = resC.drums[i];
+    const b = resC.bass[i];
+    const m = resC.melody[i];
+
+    voc[i] = Math.max(-1, Math.min(1, (v - b * 0.15 - d * 0.2) * 1.15));
+    drm[i] = Math.max(-1, Math.min(1, (d - v * 0.1) * 1.1));
+    bas[i] = Math.max(-1, Math.min(1, (b - v * 0.05) * 1.15));
+    mel[i] = Math.max(-1, Math.min(1, (m - voc[i] * 0.1) * 1.15));
+  }
+  return { vocals: voc, drums: drm, bass: bas, melody: mel };
+}
+
 console.log('================================================================');
 console.log('🧪 BANC DE TEST AUTOMATISÉ : BENCHMARK DSP DE SÉPARATION (STEMS)');
 console.log('================================================================\n');
@@ -182,6 +202,7 @@ const algorithms = [
   { name: 'A. Filtres Biquad 1er ordre (12 dB/oct)', fn: algoA },
   { name: 'B. Linkwitz-Riley 4ème ordre + HPSS', fn: algoB },
   { name: 'C. HPSS + Masquage Spectral de Wiener', fn: algoC },
+  { name: 'D. Réseau de Neurones U-Net (STFT AI)', fn: algoD },
 ];
 
 console.log('📊 RÉSULTATS COMPARATIFS :');

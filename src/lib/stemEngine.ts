@@ -30,8 +30,10 @@ export interface HDSeparatedStems {
 
 export type ProgressCallback = (step: string, percent: number) => void;
 
+export { NeuralStemSeparator } from './neuralStemSeparator';
+
 /**
- * 🔬 Algorithme de Séparation Avancée HPSS (Harmonic-Percussive Source Separation)
+ * 🔬 Algorithme de Séparation Avancée HPSS & IA Neuronale (Harmonic-Percussive Source Separation)
  * pour fichiers audio réels (MP3/WAV/Blobs) avec filtres raides 24 dB/oct
  */
 export class EnhancedStemSeparator {
