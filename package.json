@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:dsp": "node scripts/benchmark_dsp.js"
+    "test:dsp": "node scripts/benchmark_dsp.js",
+    "extract:stems": "python scripts/extract_stems_local.py"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
