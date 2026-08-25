@@ -898,7 +898,18 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
-                <span>{hdStemsA ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD (HTDemucs)'}</span>
+                <span>{hdStemsA ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectorTargetDeck('A');
+                  setSelectorTab('library');
+                }}
+                className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm border border-rose-200"
+              >
+                <YouTubeIcon className="w-3.5 h-3.5" />
+                <span>Changer</span>
               </button>
             </div>
           </div>
@@ -941,7 +952,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               <span>📥 Extraire MP3 YouTube</span>
             </button>
 
-            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm">
+            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm border border-stone-200">
               <span>📂 Glisser / Importer MP3</span>
               <input
                 type="file"
@@ -996,7 +1007,18 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
-                <span>{hdStemsB ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD (HTDemucs)'}</span>
+                <span>{hdStemsB ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectorTargetDeck('B');
+                  setSelectorTab('library');
+                }}
+                className="text-[11px] font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm border border-violet-200"
+              >
+                <YouTubeIcon className="w-3.5 h-3.5" />
+                <span>Changer</span>
               </button>
             </div>
           </div>
