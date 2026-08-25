@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
 import { MashupAudioEngine, EnhancedStemSeparator, HDSeparatedStems, isDirectAudioUrl } from '../../lib/stemEngine';
+import { runStemBenchmarkSuite, BenchmarkReport } from '../../lib/stemBenchmark';
 import { createMusikToMusikProject } from '../../lib/supabase';
 import { resolveUniversalTrack, extractYouTubeId, loadYouTubeAPI } from '../../lib/youtube';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
@@ -127,6 +128,24 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [genre, setGenre] = useState<string>('Mashup & Remix');
   const [description, setDescription] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Modal de Benchmark & Qualité DSP
+  const [isBenchmarkOpen, setIsBenchmarkOpen] = useState<boolean>(false);
+  const [benchmarkReport, setBenchmarkReport] = useState<BenchmarkReport | null>(null);
+  const [isRunningBenchmark, setIsRunningBenchmark] = useState<boolean>(false);
+
+  const handleRunBenchmark = async () => {
+    setIsRunningBenchmark(true);
+    await new Promise((r) => setTimeout(r, 150));
+    try {
+      const report = runStemBenchmarkSuite(5, 44100);
+      setBenchmarkReport(report);
+    } catch (e) {
+      console.warn('Erreur benchmark:', e);
+    } finally {
+      setIsRunningBenchmark(false);
+    }
+  };
 
   // YouTube IFrame Player refs
   const ytContainerRefA = useRef<HTMLDivElement | null>(null);
@@ -655,9 +674,21 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setIsBenchmarkOpen(true);
+              if (!benchmarkReport) handleRunBenchmark();
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm hover:scale-105"
+            title="Lancer le banc de test et de mesure scientifique de la séparation DSP"
+          >
+            <span>🧪 Benchmark DSP & Métriques</span>
+          </button>
+
           <span className="px-3 py-1 rounded-full bg-gradient-to-r from-rose-500/10 to-violet-500/10 text-violet-700 border border-violet-200 text-xs font-extrabold flex items-center gap-1.5 font-mono">
             <Radio className="w-3.5 h-3.5 animate-pulse text-rose-600" />
-            <span>Studio MusikToMusik • YouTube Stems & Mashup Lab</span>
+            <span>Studio MusikToMusik • YouTube Stems Lab</span>
           </span>
         </div>
       </div>
@@ -680,6 +711,17 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
           {/* Boutons de Presets Rapides */}
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsBenchmarkOpen(true);
+                if (!benchmarkReport) handleRunBenchmark();
+              }}
+              className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-xs font-bold transition-transform hover:scale-105 flex items-center gap-1.5 shadow-sm text-violet-300"
+              title="Tester et comparer scientifiquement l'isolation des stems"
+            >
+              <span>🧪 Benchmark Qualité</span>
+            </button>
             <button
               type="button"
               onClick={() => applyPreset('acapella_A_beat_B')}
@@ -1483,6 +1525,125 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                       </button>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 🧪 MODALE DE BENCHMARK & RAPPORT SCIENTIFIQUE DSP */}
+      {isBenchmarkOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-stone-950 border-2 border-violet-500/50 rounded-3xl max-w-2xl w-full p-6 sm:p-8 text-white shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            {/* Header Modale */}
+            <div className="flex items-center justify-between border-b border-stone-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-rose-600 flex items-center justify-center shadow-md">
+                  <Sparkles className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-display text-white">
+                    Banc de Test & Benchmark DSP (Séparation Stems)
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Mesure acoustique normalisée du SIR (Signal-to-Interference Ratio) et du taux de fuite
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsBenchmarkOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-stone-800 text-stone-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Bouton pour relancer le benchmark */}
+            <div className="flex items-center justify-between bg-stone-900/90 p-4 rounded-2xl border border-stone-800">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-stone-200">Test sur Signal Témoin Calibré (Ground Truth 5s)</span>
+                <p className="text-[11px] text-stone-400">Évalue 4 pistes indépendantes (Voix, Batterie, Basse, Mélodie)</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRunBenchmark}
+                disabled={isRunningBenchmark}
+                className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs transition-all flex items-center gap-1.5 shadow-md disabled:opacity-50"
+              >
+                {isRunningBenchmark ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                <span>{isRunningBenchmark ? 'Mesure en cours...' : 'Relancer le Test'}</span>
+              </button>
+            </div>
+
+            {/* Tableau Comparatif des 3 Algorithmes */}
+            {benchmarkReport && (
+              <div className="space-y-4">
+                <div className="overflow-x-auto rounded-2xl border border-stone-800">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-stone-900/90 text-stone-400 font-mono text-[10px] uppercase border-b border-stone-800">
+                        <th className="p-3">Algorithme Testé</th>
+                        <th className="p-3 text-center">Score Global</th>
+                        <th className="p-3 text-center">SIR Voix</th>
+                        <th className="p-3 text-center">SIR Beat</th>
+                        <th className="p-3 text-center">SIR Basse</th>
+                        <th className="p-3 text-center">SIR Mélodie</th>
+                        <th className="p-3 text-right">Vitesse</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-800/80 font-mono text-[11px]">
+                      {benchmarkReport.results.map((res, idx) => {
+                        const isBest = res.name === benchmarkReport.recommendedAlgorithm;
+                        return (
+                          <tr
+                            key={res.name}
+                            className={`transition-colors ${
+                              isBest ? 'bg-violet-950/40 text-violet-200' : 'bg-stone-950/60 text-stone-300'
+                            }`}
+                          >
+                            <td className="p-3 font-sans font-bold">
+                              <div className="flex items-center gap-1.5">
+                                {isBest && <span className="text-amber-400 font-bold text-xs">★</span>}
+                                <span>{res.name}</span>
+                              </div>
+                              <span className="text-[10px] font-normal text-stone-400 block font-sans">
+                                {res.description}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-md font-bold ${
+                                res.overallScore >= 50
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                  : 'bg-stone-800 text-stone-300'
+                              }`}>
+                                {res.overallScore}/100
+                              </span>
+                            </td>
+                            <td className="p-3 text-center font-semibold text-rose-300">{res.stems.vocals.sirDb} dB</td>
+                            <td className="p-3 text-center font-semibold text-amber-300">{res.stems.drums.sirDb} dB</td>
+                            <td className="p-3 text-center font-semibold text-violet-300">{res.stems.bass.sirDb} dB</td>
+                            <td className="p-3 text-center font-semibold text-cyan-300">{res.stems.melody.sirDb} dB</td>
+                            <td className="p-3 text-right font-mono text-stone-400">
+                              {res.durationMs}ms ({res.realtimeFactor}x RT)
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Synthèse & Recommandation */}
+                <div className="bg-gradient-to-r from-violet-950/60 to-stone-900 p-4 rounded-2xl border border-violet-800/60 space-y-1">
+                  <span className="text-[10px] font-mono text-violet-400 uppercase font-bold flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    Analyse du Banc de Test
+                  </span>
+                  <p className="text-xs text-stone-200">{benchmarkReport.summary}</p>
                 </div>
               </div>
             )}
