@@ -463,6 +463,7 @@ export default function App() {
               <MusikToMusikStudio
                 onBack={() => setCurrentView('m2m_mashup_gallery')}
                 onProjectSaved={handleMashupSaved}
+                libraryTracks={tracks}
               />
             )}
           </>

@@ -128,6 +128,8 @@ export interface MashupTrackInfo {
   artist: string;
   audio_url: string;
   thumbnail_url?: string;
+  youtube_id?: string;
+  genre?: string;
 }
 
 export interface MusikToMusikProject {

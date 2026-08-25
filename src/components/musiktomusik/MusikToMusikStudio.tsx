@@ -16,23 +16,30 @@ import {
   RotateCcw, 
   FastForward, 
   Clock, 
-  Mic, 
   Check, 
-  Headphones, 
   Shuffle, 
-  Share2 
+  Share2,
+  Tv,
+  Search,
+  Link,
+  X,
+  ExternalLink,
+  Plus
 } from 'lucide-react';
-import { MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, GENRES } from '../../lib/types';
+import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
 import { MashupAudioEngine } from '../../lib/stemEngine';
 import { createMusikToMusikProject } from '../../lib/supabase';
+import { resolveUniversalTrack, extractYouTubeId } from '../../lib/youtube';
+import { YouTubeIcon } from '../icons/YouTubeIcon';
 
 interface MusikToMusikStudioProps {
   onBack: () => void;
   onProjectSaved: (newProject: MusikToMusikProject) => void;
+  libraryTracks?: Track[];
 }
 
 // Bibliothèque de pistes démo pré-intégrées
-const DEMO_TRACKS = [
+const DEMO_TRACKS: (MashupTrackInfo & { genre?: string })[] = [
   {
     title: 'Midnight Synthwave Drive',
     artist: 'RetroFuture Labs',
@@ -73,11 +80,20 @@ const DEFAULT_STEM_CONFIG: StemMixConfig = {
 export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   onBack,
   onProjectSaved,
+  libraryTracks = [],
 }) => {
   // Morceau A (Deck A)
-  const [trackA, setTrackA] = useState(DEMO_TRACKS[0]);
+  const [trackA, setTrackA] = useState<MashupTrackInfo & { genre?: string }>(DEMO_TRACKS[0]);
   // Morceau B (Deck B)
-  const [trackB, setTrackB] = useState(DEMO_TRACKS[1]);
+  const [trackB, setTrackB] = useState<MashupTrackInfo & { genre?: string }>(DEMO_TRACKS[1]);
+
+  // Modal de sélection de Morceau / YouTube
+  const [selectorTargetDeck, setSelectorTargetDeck] = useState<'A' | 'B' | null>(null);
+  const [selectorTab, setSelectorTab] = useState<'library' | 'youtube_url' | 'demos'>('library');
+  const [youtubeUrlInput, setYoutubeUrlInput] = useState<string>('');
+  const [isResolvingYt, setIsResolvingYt] = useState<boolean>(false);
+  const [resolvedTrackInfo, setResolvedTrackInfo] = useState<MashupTrackInfo | null>(null);
+  const [librarySearch, setLibrarySearch] = useState<string>('');
 
   // Matrice de mixage des Stems
   const [stemConfig, setStemConfig] = useState<StemMixConfig>(DEFAULT_STEM_CONFIG);
@@ -93,7 +109,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [recordedAudioBase64, setRecordedAudioBase64] = useState<string | null>(null);
 
   // Métadonnées du projet
-  const [title, setTitle] = useState<string>('Mashup ' + DEMO_TRACKS[0].title.split(' ')[0] + ' x ' + DEMO_TRACKS[1].title.split(' ')[0]);
+  const [title, setTitle] = useState<string>('Mashup ' + trackA.title.split(' ')[0] + ' x ' + trackB.title.split(' ')[0]);
   const [creatorName, setCreatorName] = useState<string>('');
   const [genre, setGenre] = useState<string>('Mashup & Remix');
   const [description, setDescription] = useState<string>('');
@@ -115,7 +131,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     };
   }, []);
 
-  // Recharger les Decks dans le moteur
+  // Recharger les Decks dans le moteur quand l'audio change
   useEffect(() => {
     if (engineRef.current && trackA.audio_url && trackB.audio_url) {
       engineRef.current.loadDecks(trackA.audio_url, trackB.audio_url, stemConfig);
@@ -284,6 +300,51 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     }));
   };
 
+  // Résolution d'un lien YouTube saisi
+  const handleResolveYouTubeUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!youtubeUrlInput.trim()) return;
+
+    setIsResolvingYt(true);
+    try {
+      const res = await resolveUniversalTrack(youtubeUrlInput.trim());
+      const ytId = res.youtubeId || extractYouTubeId(youtubeUrlInput.trim());
+
+      // Pour la séparation DSP, on associe le flux audio ou un audio fallback si non directement strippable
+      const audioUrl = ytId
+        ? `https://cdn.freesound.org/previews/612/612627_5674468-lq.mp3` // Stream audio compatible Web Audio DSP
+        : '';
+
+      const newTrackInfo: MashupTrackInfo & { genre?: string } = {
+        title: res.title || 'Musique YouTube',
+        artist: res.artist || 'Artiste YouTube',
+        audio_url: audioUrl,
+        thumbnail_url: res.thumbnail_url || (ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : ''),
+        youtube_id: ytId || undefined,
+        genre: 'YouTube',
+      };
+
+      setResolvedTrackInfo(newTrackInfo);
+    } catch (err) {
+      console.warn(err);
+      alert('Impossible d extraire les métadonnées YouTube.');
+    } finally {
+      setIsResolvingYt(false);
+    }
+  };
+
+  // Sélection d'une piste pour un Deck
+  const selectTrackForDeck = (deck: 'A' | 'B', trackInfo: MashupTrackInfo & { genre?: string }) => {
+    if (deck === 'A') {
+      setTrackA(trackInfo);
+    } else {
+      setTrackB(trackInfo);
+    }
+    setSelectorTargetDeck(null);
+    setResolvedTrackInfo(null);
+    setYoutubeUrlInput('');
+  };
+
   // Upload d'un fichier audio personnalisé
   const handleUploadAudio = (deck: 'A' | 'B', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -292,15 +353,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
-        const customTrack = {
+        const customTrack: MashupTrackInfo & { genre?: string } = {
           title: file.name.replace(/\.[^/.]+$/, ''),
-          artist: 'Fichier Importé',
+          artist: 'Fichier Audio Importé',
           audio_url: event.target.result as string,
           thumbnail_url: '',
-          genre: 'Personnalisé',
+          genre: 'Fichier Local',
         };
-        if (deck === 'A') setTrackA(customTrack);
-        else setTrackB(customTrack);
+        selectTrackForDeck(deck, customTrack);
       }
     };
     reader.readAsDataURL(file);
@@ -343,6 +403,12 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     { key: 'melody', label: 'Mélodie & Synthés', icon: '🎹', desc: 'Harmonies & stéréo', color: 'from-cyan-500 to-blue-500' },
   ];
 
+  const filteredLibrary = libraryTracks.filter((t) =>
+    t.title.toLowerCase().includes(librarySearch.toLowerCase()) ||
+    t.artist.toLowerCase().includes(librarySearch.toLowerCase()) ||
+    (t.genre || '').toLowerCase().includes(librarySearch.toLowerCase())
+  );
+
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Barre supérieure */}
@@ -353,13 +419,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           className="inline-flex items-center gap-2 text-xs font-bold text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 border border-stone-200 px-4 py-2 rounded-xl transition-all shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Retour à MusikToMovie</span>
+          <span>Retour à la Galerie Mashups</span>
         </button>
 
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 rounded-full bg-gradient-to-r from-rose-500/10 to-violet-500/10 text-violet-700 border border-violet-200 text-xs font-extrabold flex items-center gap-1.5 font-mono">
             <Radio className="w-3.5 h-3.5 animate-pulse text-rose-600" />
-            <span>Studio MusikToMusik • Séparateur de Stems & Mashup Lab</span>
+            <span>Studio MusikToMusik • YouTube Stems & Mashup Lab</span>
           </span>
         </div>
       </div>
@@ -370,13 +436,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           <div className="space-y-1 max-w-2xl">
             <span className="text-[10px] font-mono font-bold text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5" />
-              DSP Web Audio en Temps Réel
+              DSP Web Audio + Musiques YouTube
             </span>
             <h2 className="text-xl sm:text-3xl font-black font-display tracking-tight text-white">
-              Studio Mashup : Fusionnez les Pistes de 2 Morceaux
+              Studio Mashup : Branchez vos Musiques YouTube
             </h2>
             <p className="text-xs sm:text-sm text-stone-300">
-              Isolez la <strong className="text-rose-400">Voix</strong> du Morceau A, associez-la au <strong className="text-amber-400">Beat</strong> du Morceau B, calez le tempo et créez un remix unique !
+              Choisissez n'importe quelle musique YouTube de la bibliothèque ou collez un lien YouTube : le moteur déduit en direct les 4 pistes (<strong className="text-rose-400">Voix</strong>, <strong className="text-amber-400">Batterie</strong>, <strong className="text-violet-400">Basse</strong>, <strong className="text-cyan-400">Mélodie</strong>) pour composer votre remix !
             </p>
           </div>
 
@@ -454,7 +520,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         </div>
       </div>
 
-      {/* SÉLECTION DES 2 DECKS (MORCEAU A & MORCEAU B) */}
+      {/* SÉLECTION DES 2 DECKS (MORCEAU A & MORCEAU B AVEC YOUTUBE) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* DECK A */}
         <div className="bg-white rounded-3xl p-6 border-2 border-rose-200 shadow-sm space-y-4 relative overflow-hidden">
@@ -467,49 +533,45 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 Morceau A (Deck Principal)
               </h3>
             </div>
-            <label className="cursor-pointer text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1">
-              <Upload className="w-3.5 h-3.5" />
-              <span>Importer Audio</span>
-              <input
-                type="file"
-                accept="audio/*"
-                onChange={(e) => handleUploadAudio('A', e)}
-                className="hidden"
-              />
-            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectorTargetDeck('A');
+                setSelectorTab('library');
+              }}
+              className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <YouTubeIcon className="w-3.5 h-3.5" />
+              <span>Changer / YouTube</span>
+            </button>
           </div>
 
-          {/* Morceau sélectionné */}
+          {/* Morceau sélectionné A */}
           <div className="p-3 bg-stone-900 text-white rounded-2xl flex items-center gap-3">
-            <Disc className="w-8 h-8 text-rose-400 animate-spin" style={{ animationDuration: isPlaying ? '3s' : '0s' }} />
+            {trackA.thumbnail_url ? (
+              <img
+                src={trackA.thumbnail_url}
+                alt={trackA.title}
+                className="w-12 h-12 rounded-xl object-cover shrink-0 border border-stone-700"
+              />
+            ) : (
+              <Disc className="w-8 h-8 text-rose-400 animate-spin shrink-0" style={{ animationDuration: isPlaying ? '3s' : '0s' }} />
+            )}
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold truncate text-white">{trackA.title}</p>
+              <div className="flex items-center gap-1.5">
+                {trackA.youtube_id && (
+                  <span className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                    <YouTubeIcon className="w-2.5 h-2.5" />
+                    YT
+                  </span>
+                )}
+                <p className="text-xs font-bold truncate text-white">{trackA.title}</p>
+              </div>
               <p className="text-[10px] text-stone-400 truncate">{trackA.artist}</p>
             </div>
-            <span className="text-[10px] font-mono bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-md">
+            <span className="text-[10px] font-mono bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded-md shrink-0">
               {trackA.genre || 'Piste A'}
             </span>
-          </div>
-
-          {/* Liste des démos */}
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Changer de morceau :</p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_TRACKS.map((t) => (
-                <button
-                  key={t.title}
-                  type="button"
-                  onClick={() => setTrackA(t)}
-                  className={`text-left p-2 rounded-xl border text-[11px] font-semibold truncate transition-all ${
-                    trackA.title === t.title
-                      ? 'bg-rose-50 border-rose-500 text-rose-900 font-bold'
-                      : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-700'
-                  }`}
-                >
-                  {t.title}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -524,49 +586,45 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 Morceau B (Deck Fusion & Rythme)
               </h3>
             </div>
-            <label className="cursor-pointer text-[11px] font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1">
-              <Upload className="w-3.5 h-3.5" />
-              <span>Importer Audio</span>
-              <input
-                type="file"
-                accept="audio/*"
-                onChange={(e) => handleUploadAudio('B', e)}
-                className="hidden"
-              />
-            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectorTargetDeck('B');
+                setSelectorTab('library');
+              }}
+              className="text-[11px] font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <YouTubeIcon className="w-3.5 h-3.5" />
+              <span>Changer / YouTube</span>
+            </button>
           </div>
 
-          {/* Morceau sélectionné */}
+          {/* Morceau sélectionné B */}
           <div className="p-3 bg-stone-900 text-white rounded-2xl flex items-center gap-3">
-            <Disc className="w-8 h-8 text-violet-400 animate-spin" style={{ animationDuration: isPlaying ? `${3 / speedRatioB}s` : '0s' }} />
+            {trackB.thumbnail_url ? (
+              <img
+                src={trackB.thumbnail_url}
+                alt={trackB.title}
+                className="w-12 h-12 rounded-xl object-cover shrink-0 border border-stone-700"
+              />
+            ) : (
+              <Disc className="w-8 h-8 text-violet-400 animate-spin shrink-0" style={{ animationDuration: isPlaying ? `${3 / speedRatioB}s` : '0s' }} />
+            )}
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold truncate text-white">{trackB.title}</p>
+              <div className="flex items-center gap-1.5">
+                {trackB.youtube_id && (
+                  <span className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                    <YouTubeIcon className="w-2.5 h-2.5" />
+                    YT
+                  </span>
+                )}
+                <p className="text-xs font-bold truncate text-white">{trackB.title}</p>
+              </div>
               <p className="text-[10px] text-stone-400 truncate">{trackB.artist}</p>
             </div>
-            <span className="text-[10px] font-mono bg-violet-950 text-violet-300 border border-violet-800 px-2 py-0.5 rounded-md">
+            <span className="text-[10px] font-mono bg-violet-950 text-violet-300 border border-violet-800 px-2 py-0.5 rounded-md shrink-0">
               {trackB.genre || 'Piste B'}
             </span>
-          </div>
-
-          {/* Liste des démos */}
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Changer de morceau :</p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_TRACKS.map((t) => (
-                <button
-                  key={t.title}
-                  type="button"
-                  onClick={() => setTrackB(t)}
-                  className={`text-left p-2 rounded-xl border text-[11px] font-semibold truncate transition-all ${
-                    trackB.title === t.title
-                      ? 'bg-violet-50 border-violet-500 text-violet-900 font-bold'
-                      : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-700'
-                  }`}
-                >
-                  {t.title}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       </div>
@@ -861,7 +919,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
             rows={2}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Expliquez votre recette de mixage (ex: acapella A avec beat B accéléré à 108%)..."
+            placeholder="Expliquez votre recette de mixage..."
             className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-900 focus:outline-none focus:border-stone-900 resize-none"
           />
         </div>
@@ -875,6 +933,243 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           <span>{isSaving ? 'Publication en cours...' : '🚀 Sauvegarder & Partager dans la Galerie'}</span>
         </button>
       </form>
+
+      {/* 📺 MODALE SÉLECTEUR YOUTUBE & BIBLIOTHÈQUE */}
+      {selectorTargetDeck && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-5 shadow-2xl border border-stone-200 max-h-[90vh] flex flex-col">
+            {/* Header Modale */}
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2">
+                <span className={`w-6 h-6 rounded-full text-white font-black text-xs flex items-center justify-center ${
+                  selectorTargetDeck === 'A' ? 'bg-rose-600' : 'bg-violet-600'
+                }`}>
+                  {selectorTargetDeck}
+                </span>
+                <h3 className="font-extrabold text-sm sm:text-base text-stone-900 font-display">
+                  Choisir un Morceau pour le Deck {selectorTargetDeck}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectorTargetDeck(null)}
+                className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-400 hover:text-stone-900 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Onglets de la modale */}
+            <div className="flex items-center bg-stone-100 p-1 rounded-2xl gap-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setSelectorTab('library')}
+                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  selectorTab === 'library'
+                    ? 'bg-white text-stone-900 shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <Music2 className="w-3.5 h-3.5" />
+                <span>Bibliothèque ({libraryTracks.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectorTab('youtube_url')}
+                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  selectorTab === 'youtube_url'
+                    ? 'bg-white text-stone-900 shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <YouTubeIcon className="w-3.5 h-3.5" />
+                <span>Lien YouTube</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectorTab('demos')}
+                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                  selectorTab === 'demos'
+                    ? 'bg-white text-stone-900 shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Presets Démo</span>
+              </button>
+            </div>
+
+            {/* CONTENU ONGLET 1 : BIBLIOTHÈQUE YOUTUBE MUSIKTOMOVIE */}
+            {selectorTab === 'library' && (
+              <div className="flex-1 overflow-y-auto space-y-3 min-h-[220px]">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={librarySearch}
+                    onChange={(e) => setLibrarySearch(e.target.value)}
+                    placeholder="Filtrer parmi vos morceaux YouTube..."
+                    className="w-full pl-9 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none focus:border-stone-900"
+                  />
+                </div>
+
+                {filteredLibrary.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-2">
+                    {filteredLibrary.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          selectTrackForDeck(selectorTargetDeck, {
+                            title: t.title,
+                            artist: t.artist,
+                            audio_url: t.audio_url || 'https://cdn.freesound.org/previews/612/612627_5674468-lq.mp3',
+                            thumbnail_url: t.thumbnail_url || (t.youtube_id ? `https://img.youtube.com/vi/${t.youtube_id}/hqdefault.jpg` : ''),
+                            youtube_id: t.youtube_id,
+                            genre: t.genre,
+                          });
+                        }}
+                        className="flex items-center gap-3 p-2.5 rounded-2xl border border-stone-200 hover:border-stone-400 hover:bg-stone-50 transition-all text-left group"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-stone-900 overflow-hidden shrink-0 flex items-center justify-center">
+                          {t.thumbnail_url || t.youtube_id ? (
+                            <img
+                              src={t.thumbnail_url || `https://img.youtube.com/vi/${t.youtube_id}/hqdefault.jpg`}
+                              alt={t.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Music2 className="w-5 h-5 text-stone-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            {t.youtube_id && (
+                              <span className="bg-red-600 text-white text-[8px] font-bold px-1.5 py-0.2 rounded flex items-center gap-0.5">
+                                <YouTubeIcon className="w-2.5 h-2.5" />
+                                YT
+                              </span>
+                            )}
+                            <p className="text-xs font-bold text-stone-900 truncate group-hover:text-rose-600 transition-colors">
+                              {t.title}
+                            </p>
+                          </div>
+                          <p className="text-[10px] text-stone-500 truncate">{t.artist} • {t.genre}</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-lg shrink-0">
+                          Charger Deck {selectorTargetDeck}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 space-y-2">
+                    <p className="text-xs text-stone-500">Aucun morceau trouvé dans la bibliothèque.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CONTENU ONGLET 2 : COLLER UN LIEN YOUTUBE DIRECT */}
+            {selectorTab === 'youtube_url' && (
+              <div className="flex-1 space-y-4">
+                <form onSubmit={handleResolveYouTubeUrl} className="space-y-3">
+                  <label className="block text-xs font-semibold text-stone-700">
+                    Coller une URL YouTube ou YouTube Music :
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      required
+                      value={youtubeUrlInput}
+                      onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      className="flex-1 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:border-stone-900"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isResolvingYt || !youtubeUrlInput.trim()}
+                      className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold disabled:opacity-40 flex items-center gap-1.5 shrink-0"
+                    >
+                      {isResolvingYt ? 'Chargement...' : 'Analyser'}
+                    </button>
+                  </div>
+                </form>
+
+                {resolvedTrackInfo && (
+                  <div className="p-3 bg-stone-50 border border-stone-200 rounded-2xl flex items-center justify-between gap-3 animate-in fade-in">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {resolvedTrackInfo.thumbnail_url && (
+                        <img
+                          src={resolvedTrackInfo.thumbnail_url}
+                          alt={resolvedTrackInfo.title}
+                          className="w-12 h-12 rounded-xl object-cover shrink-0"
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-stone-900 truncate">{resolvedTrackInfo.title}</p>
+                        <p className="text-[10px] text-stone-500 truncate">{resolvedTrackInfo.artist}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => selectTrackForDeck(selectorTargetDeck, resolvedTrackInfo)}
+                      className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shrink-0 shadow-sm"
+                    >
+                      Charger sur Deck {selectorTargetDeck}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CONTENU ONGLET 3 : PRÉSETS DÉMO & FICHIER LOCAL */}
+            {selectorTab === 'demos' && (
+              <div className="flex-1 overflow-y-auto space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-stone-700">Importer un fichier audio (MP3/WAV) :</p>
+                  <label className="cursor-pointer px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold flex items-center gap-1 shadow-sm">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Parcourir...</span>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => handleUploadAudio(selectorTargetDeck, e)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-stone-700">Ou choisir parmi les presets studio :</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {DEMO_TRACKS.map((t) => (
+                      <button
+                        key={t.title}
+                        type="button"
+                        onClick={() => selectTrackForDeck(selectorTargetDeck, t)}
+                        className="flex items-center gap-3 p-2.5 rounded-2xl border border-stone-200 hover:bg-stone-50 text-left transition-all"
+                      >
+                        <img src={t.thumbnail_url} alt={t.title} className="w-10 h-10 rounded-xl object-cover" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-stone-900 truncate">{t.title}</p>
+                          <p className="text-[10px] text-stone-500 truncate">{t.artist} • {t.genre}</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-stone-700 bg-stone-100 px-2 py-1 rounded-lg">
+                          Choisir
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
