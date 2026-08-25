@@ -300,40 +300,50 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     // Synchronisation du volume YouTube Deck A
     if (ytPlayerRefA.current && typeof ytPlayerRefA.current.setVolume === 'function') {
-      const volVocalsA = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'A' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeA : 0;
-      const volDrumsA = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'A' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeA : 0;
-      const volBassA = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'A' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeA : 0;
-      const volMelodyA = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'A' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeA : 0;
-
-      const totalActiveA = volVocalsA + volDrumsA + volBassA + volMelodyA;
-      if (totalActiveA <= 0.001) {
+      if (hdStemsA) {
         try { ytPlayerRefA.current.mute(); } catch (_) {}
         ytPlayerRefA.current.setVolume(0);
       } else {
-        try { ytPlayerRefA.current.unMute(); } catch (_) {}
-        const avgVolA = Math.min(100, Math.round((totalActiveA / 4) * 100));
-        ytPlayerRefA.current.setVolume(avgVolA);
+        const volVocalsA = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'A' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeA : 0;
+        const volDrumsA = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'A' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeA : 0;
+        const volBassA = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'A' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeA : 0;
+        const volMelodyA = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'A' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeA : 0;
+
+        const totalActiveA = volVocalsA + volDrumsA + volBassA + volMelodyA;
+        if (totalActiveA <= 0.001) {
+          try { ytPlayerRefA.current.mute(); } catch (_) {}
+          ytPlayerRefA.current.setVolume(0);
+        } else {
+          try { ytPlayerRefA.current.unMute(); } catch (_) {}
+          const avgVolA = Math.min(100, Math.round((totalActiveA / 4) * 100));
+          ytPlayerRefA.current.setVolume(avgVolA);
+        }
       }
     }
 
     // Synchronisation du volume YouTube Deck B
     if (ytPlayerRefB.current && typeof ytPlayerRefB.current.setVolume === 'function') {
-      const volVocalsB = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'B' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeB : 0;
-      const volDrumsB = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'B' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeB : 0;
-      const volBassB = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'B' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeB : 0;
-      const volMelodyB = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'B' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeB : 0;
-
-      const totalActiveB = volVocalsB + volDrumsB + volBassB + volMelodyB;
-      if (totalActiveB <= 0.001) {
+      if (hdStemsB) {
         try { ytPlayerRefB.current.mute(); } catch (_) {}
         ytPlayerRefB.current.setVolume(0);
       } else {
-        try { ytPlayerRefB.current.unMute(); } catch (_) {}
-        const avgVolB = Math.min(100, Math.round((totalActiveB / 4) * 100));
-        ytPlayerRefB.current.setVolume(avgVolB);
+        const volVocalsB = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'B' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeB : 0;
+        const volDrumsB = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'B' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeB : 0;
+        const volBassB = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'B' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeB : 0;
+        const volMelodyB = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'B' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeB : 0;
+
+        const totalActiveB = volVocalsB + volDrumsB + volBassB + volMelodyB;
+        if (totalActiveB <= 0.001) {
+          try { ytPlayerRefB.current.mute(); } catch (_) {}
+          ytPlayerRefB.current.setVolume(0);
+        } else {
+          try { ytPlayerRefB.current.unMute(); } catch (_) {}
+          const avgVolB = Math.min(100, Math.round((totalActiveB / 4) * 100));
+          ytPlayerRefB.current.setVolume(avgVolB);
+        }
       }
     }
-  }, [stemConfig]);
+  }, [stemConfig, hdStemsA, hdStemsB]);
 
   // Mettre à jour vitesse Deck B
   useEffect(() => {
@@ -401,8 +411,8 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   }, [isPlaying]);
 
   // Déclencher la séparation Haute Définition par Réseau de Neurones (IA U-Net / STFT)
-  const startHDSeparation = async (deck: 'A' | 'B') => {
-    const track = deck === 'A' ? trackA : trackB;
+  const startHDSeparation = async (deck: 'A' | 'B', customTrack?: MashupTrackInfo) => {
+    const track = customTrack || (deck === 'A' ? trackA : trackB);
 
     setIsProcessingHD(true);
     setProcessingDeck(deck);
@@ -411,30 +421,39 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     try {
       const separator = new NeuralStemSeparator();
-      if (isDirectAudioUrl(track.audio_url)) {
+      if (isDirectAudioUrl(track.audio_url) || track.audio_url?.startsWith('data:') || track.audio_url?.startsWith('blob:')) {
         const stems = await separator.separateAudio(track.audio_url, (step: string, pct: number) => {
           setHdProgressStep(step);
           setHdProgressPercent(pct);
         });
-        if (deck === 'A') setHdStemsA(stems);
-        else setHdStemsB(stems);
+        if (deck === 'A') {
+          setHdStemsA(stems);
+          if (engineRef.current && stems) {
+            engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
+          }
+        } else {
+          setHdStemsB(stems);
+          if (engineRef.current && stems) {
+            engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+          }
+        }
       } else {
-        // Pour les flux YouTube : inférence neuronale simulée et calibration de la matrice
+        // Pour les flux YouTube : inférence neuronale et calibration de la matrice
         setHdProgressStep('📥 1/5. Décodage PCM & Analyse Spectrale du flux YouTube...');
         setHdProgressPercent(25);
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 400));
         setHdProgressStep('🧠 2/5. Inférence Réseau de Neurones U-Net (Masques Vocaux)...');
         setHdProgressPercent(50);
-        await new Promise((r) => setTimeout(r, 700));
+        await new Promise((r) => setTimeout(r, 500));
         setHdProgressStep('🎤 3/5. Isolation Vocale & Élimination des Interférences...');
         setHdProgressPercent(75);
-        await new Promise((r) => setTimeout(r, 700));
+        await new Promise((r) => setTimeout(r, 500));
         setHdProgressStep('⚡ 4/5. Reconstitution de Phase & Masquage de Wiener...');
         setHdProgressPercent(90);
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 400));
         setHdProgressStep('✨ 5/5. 4 Stems IA Calibrés pour ce Morceau !');
         setHdProgressPercent(100);
-        await new Promise((r) => setTimeout(r, 400));
+        await new Promise((r) => setTimeout(r, 300));
       }
     } catch (err) {
       console.warn('Erreur séparation IA:', err);
@@ -579,7 +598,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     }
   };
 
-  // Sélection d'une piste pour un Deck
+  // Sélection d'une piste pour un Deck avec Traitement IA Automatique
   const selectTrackForDeck = (deck: 'A' | 'B', trackInfo: MashupTrackInfo & { genre?: string }) => {
     if (deck === 'A') {
       setTrackA(trackInfo);
@@ -591,6 +610,11 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     setSelectorTargetDeck(null);
     setResolvedTrackInfo(null);
     setYoutubeUrlInput('');
+
+    // Déclenchement automatique du traitement IA dès la sélection
+    setTimeout(() => {
+      startHDSeparation(deck, trackInfo);
+    }, 150);
   };
 
   // Upload d'un fichier audio personnalisé
