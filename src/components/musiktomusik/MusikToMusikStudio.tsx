@@ -446,46 +446,33 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const startHDSeparation = async (deck: 'A' | 'B', customTrack?: MashupTrackInfo) => {
     const track = customTrack || (deck === 'A' ? trackA : trackB);
 
+    // Si c'est un flux YouTube pur sans fichier audio direct : ouvrir l'assistant d'extraction MP3 sans faux popup
+    if (!isDirectAudioUrl(track.audio_url) && !track.audio_url?.startsWith('data:') && !track.audio_url?.startsWith('blob:')) {
+      setShowYtExtractorModal(deck);
+      return;
+    }
+
     setIsProcessingHD(true);
     setProcessingDeck(deck);
-    setHdProgressPercent(15);
-    setHdProgressStep('📥 1/5. Décodage PCM & Décomposition Stéréo Mid/Side...');
+    setHdProgressPercent(10);
+    setHdProgressStep('📥 1/6. Initialisation du moteur d inférence ONNX Runtime Web...');
 
     try {
       const separator = new NeuralStemSeparator();
-      if (isDirectAudioUrl(track.audio_url) || track.audio_url?.startsWith('data:') || track.audio_url?.startsWith('blob:')) {
-        const stems = await separator.separateAudio(track.audio_url, (step: string, pct: number) => {
-          setHdProgressStep(step);
-          setHdProgressPercent(pct);
-        });
-        if (deck === 'A') {
-          setHdStemsA(stems);
-          if (engineRef.current && stems) {
-            engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
-          }
-        } else {
-          setHdStemsB(stems);
-          if (engineRef.current && stems) {
-            engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
-          }
+      const stems = await separator.separateAudio(track.audio_url, (step: string, pct: number) => {
+        setHdProgressStep(step);
+        setHdProgressPercent(pct);
+      });
+      if (deck === 'A') {
+        setHdStemsA(stems);
+        if (engineRef.current && stems) {
+          engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
         }
       } else {
-        // Pour les flux YouTube : inférence neuronale et calibration de la matrice
-        setHdProgressStep('📥 1/5. Décodage PCM & Transformée STFT (Fourier 2048 pts)...');
-        setHdProgressPercent(25);
-        await new Promise((r) => setTimeout(r, 1200));
-        setHdProgressStep('🧠 2/5. Inférence Encodeur Deep U-Net (Formants Vocaux)...');
-        setHdProgressPercent(50);
-        await new Promise((r) => setTimeout(r, 2000));
-        setHdProgressStep('⚡ 3/5. Bottleneck Temporel & Masquage Non-Linéaire de Wiener...');
-        setHdProgressPercent(75);
-        await new Promise((r) => setTimeout(r, 2200));
-        setHdProgressStep('🔬 4/5. Décodeur Résiduel & Reconstruction de Phase iSTFT...');
-        setHdProgressPercent(90);
-        await new Promise((r) => setTimeout(r, 1800));
-        setHdProgressStep('✨ 5/5. 4 Stems Deep U-Net Calibrés pour ce Morceau !');
-        setHdProgressPercent(100);
-        await new Promise((r) => setTimeout(r, 1000));
+        setHdStemsB(stems);
+        if (engineRef.current && stems) {
+          engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+        }
       }
     } catch (err) {
       console.warn('Erreur séparation IA:', err);
@@ -889,16 +876,30 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
                   hdStemsA
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white'
+                    : isDirectAudioUrl(trackA.audio_url) || trackA.audio_url?.startsWith('data:') || trackA.audio_url?.startsWith('blob:')
+                    ? 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white'
+                    : 'bg-amber-600 hover:bg-amber-500 text-white'
                 }`}
-                title="Séparer les 4 pistes par réseau neuronal Ultra-HD (FFT 4096 & Wiener EM 3-Pass)"
+                title={
+                  hdStemsA
+                    ? '4 Stems isolés en mémoire'
+                    : isDirectAudioUrl(trackA.audio_url) || trackA.audio_url?.startsWith('data:') || trackA.audio_url?.startsWith('blob:')
+                    ? 'Lancer la séparation neuronale Ultra-HD sur ce fichier'
+                    : 'Extraire le fichier MP3 pour pouvoir séparer les 4 pistes'
+                }
               >
                 {isProcessingHD && processingDeck === 'A' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
-                <span>{hdStemsA ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD'}</span>
+                <span>
+                  {hdStemsA
+                    ? '✨ 4 Stems Prêts'
+                    : isDirectAudioUrl(trackA.audio_url) || trackA.audio_url?.startsWith('data:') || trackA.audio_url?.startsWith('blob:')
+                    ? '🧠 Séparation Ultra-HD'
+                    : '📥 Extraire MP3'}
+                </span>
               </button>
               <button
                 type="button"
@@ -998,16 +999,30 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
                   hdStemsB
                     ? 'bg-emerald-600 text-white'
-                    : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white'
+                    : isDirectAudioUrl(trackB.audio_url) || trackB.audio_url?.startsWith('data:') || trackB.audio_url?.startsWith('blob:')
+                    ? 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white'
+                    : 'bg-amber-600 hover:bg-amber-500 text-white'
                 }`}
-                title="Séparer les 4 pistes par réseau neuronal Ultra-HD (FFT 4096 & Wiener EM 3-Pass)"
+                title={
+                  hdStemsB
+                    ? '4 Stems isolés en mémoire'
+                    : isDirectAudioUrl(trackB.audio_url) || trackB.audio_url?.startsWith('data:') || trackB.audio_url?.startsWith('blob:')
+                    ? 'Lancer la séparation neuronale Ultra-HD sur ce fichier'
+                    : 'Extraire le fichier MP3 pour pouvoir séparer les 4 pistes'
+                }
               >
                 {isProcessingHD && processingDeck === 'B' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
-                <span>{hdStemsB ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD'}</span>
+                <span>
+                  {hdStemsB
+                    ? '✨ 4 Stems Prêts'
+                    : isDirectAudioUrl(trackB.audio_url) || trackB.audio_url?.startsWith('data:') || trackB.audio_url?.startsWith('blob:')
+                    ? '🧠 Séparation Ultra-HD'
+                    : '📥 Extraire MP3'}
+                </span>
               </button>
               <button
                 type="button"
