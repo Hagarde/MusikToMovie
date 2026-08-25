@@ -31,7 +31,7 @@ export type ProgressCallback = (step: string, percent: number) => void;
 
 /**
  * 🔬 Algorithme de Séparation Avancée HPSS (Harmonic-Percussive Source Separation)
- * pour les flux audio directs & fichiers importés
+ * + Décorrélation Spatiale Mid/Side + Filtrage Spectral
  */
 export class EnhancedStemSeparator {
   private audioCtx: AudioContext;
@@ -357,6 +357,15 @@ export class MashupAudioEngine {
   private processorA: DeckStemProcessor | null = null;
   private processorB: DeckStemProcessor | null = null;
 
+  // Stems discrets HD (Deck A & Deck B)
+  private hdAudioNodes: {
+    audioA: { vocals?: HTMLAudioElement; drums?: HTMLAudioElement; bass?: HTMLAudioElement; melody?: HTMLAudioElement };
+    audioB: { vocals?: HTMLAudioElement; drums?: HTMLAudioElement; bass?: HTMLAudioElement; melody?: HTMLAudioElement };
+    gainsA: { vocals?: GainNode; drums?: GainNode; bass?: GainNode; melody?: GainNode };
+    gainsB: { vocals?: GainNode; drums?: GainNode; bass?: GainNode; melody?: GainNode };
+  } = { audioA: {}, audioB: {}, gainsA: {}, gainsB: {} };
+
+  private isUsingHD: boolean = false;
   private masterGain: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private mediaDest: MediaStreamAudioDestinationNode | null = null;
@@ -390,6 +399,7 @@ export class MashupAudioEngine {
   public loadDecks(urlA: string, urlB: string, config: StemMixConfig): void {
     this.dispose();
     const ctx = this.initContext();
+    this.isUsingHD = false;
 
     if (isDirectAudioUrl(urlA)) {
       try {
@@ -420,6 +430,57 @@ export class MashupAudioEngine {
     this.applyStemConfig(config);
   }
 
+  /**
+   * Charger des Stems HD discrets (HPSS) pour Deck A et/ou Deck B
+   */
+  public loadHDStems(
+    stemsA: HDSeparatedStems | null,
+    stemsB: HDSeparatedStems | null,
+    config: StemMixConfig
+  ): void {
+    this.dispose();
+    const ctx = this.initContext();
+    this.isUsingHD = true;
+
+    const createHDStem = (url: string, isDeckB: boolean) => {
+      const audio = new Audio();
+      audio.crossOrigin = 'anonymous';
+      audio.src = url;
+      audio.loop = true;
+      if (isDeckB) audio.playbackRate = this.speedB;
+
+      const source = ctx.createMediaElementSource(audio);
+      const gain = ctx.createGain();
+      gain.gain.value = 1.0;
+      source.connect(gain);
+      gain.connect(this.masterGain!);
+
+      return { audio, gain };
+    };
+
+    if (stemsA) {
+      const voc = createHDStem(stemsA.vocalsUrl, false);
+      const drm = createHDStem(stemsA.drumsUrl, false);
+      const bas = createHDStem(stemsA.bassUrl, false);
+      const mel = createHDStem(stemsA.melodyUrl, false);
+
+      this.hdAudioNodes.audioA = { vocals: voc.audio, drums: drm.audio, bass: bas.audio, melody: mel.audio };
+      this.hdAudioNodes.gainsA = { vocals: voc.gain, drums: drm.gain, bass: bas.gain, melody: mel.gain };
+    }
+
+    if (stemsB) {
+      const voc = createHDStem(stemsB.vocalsUrl, true);
+      const drm = createHDStem(stemsB.drumsUrl, true);
+      const bas = createHDStem(stemsB.bassUrl, true);
+      const mel = createHDStem(stemsB.melodyUrl, true);
+
+      this.hdAudioNodes.audioB = { vocals: voc.audio, drums: drm.audio, bass: bas.audio, melody: mel.audio };
+      this.hdAudioNodes.gainsB = { vocals: voc.gain, drums: drm.gain, bass: bas.gain, melody: mel.gain };
+    }
+
+    this.applyStemConfig(config);
+  }
+
   // Appliquer la matrice de mixage Stems
   public applyStemConfig(config: StemMixConfig): void {
     const applyStem = (
@@ -432,6 +493,15 @@ export class MashupAudioEngine {
       const gainA = (isMuted || source === 'none' || source === 'B') ? 0 : volA;
       const gainB = (isMuted || source === 'none' || source === 'A') ? 0 : volB;
 
+      // 1. Si mode HD discrets
+      if (this.isUsingHD) {
+        const gA = this.hdAudioNodes.gainsA[stem];
+        const gB = this.hdAudioNodes.gainsB[stem];
+        if (gA) gA.gain.value = gainA;
+        if (gB) gB.gain.value = gainB;
+      }
+
+      // 2. Si mode filtres DSP standard
       if (this.processorA) this.processorA.setStemGain(stem, gainA);
       if (this.processorB) this.processorB.setStemGain(stem, gainB);
     };
@@ -448,6 +518,11 @@ export class MashupAudioEngine {
     if (this.deckB) {
       this.deckB.playbackRate = this.speedB;
     }
+    if (this.isUsingHD) {
+      Object.values(this.hdAudioNodes.audioB).forEach((audio) => {
+        if (audio) audio.playbackRate = this.speedB;
+      });
+    }
   }
 
   // Calage Décalage Temporel (Offset Deck B)
@@ -456,6 +531,12 @@ export class MashupAudioEngine {
     if (this.deckA && this.deckB) {
       this.deckB.currentTime = (this.deckA.currentTime + this.offsetB) % (this.deckB.duration || 100);
     }
+    if (this.isUsingHD) {
+      const refTime = this.hdAudioNodes.audioA.vocals?.currentTime || 0;
+      Object.values(this.hdAudioNodes.audioB).forEach((audio) => {
+        if (audio) audio.currentTime = (refTime + this.offsetB) % (audio.duration || 100);
+      });
+    }
   }
 
   public async play(): Promise<void> {
@@ -463,6 +544,17 @@ export class MashupAudioEngine {
       await this.audioContext.resume();
     }
     this.isPlaying = true;
+
+    if (this.isUsingHD) {
+      Object.values(this.hdAudioNodes.audioA).forEach((a) => a?.play().catch(() => {}));
+      Object.values(this.hdAudioNodes.audioB).forEach((b) => {
+        if (b) {
+          b.playbackRate = this.speedB;
+          b.play().catch(() => {});
+        }
+      });
+      return;
+    }
 
     if (this.deckA) {
       await this.deckA.play().catch(() => {});
@@ -478,16 +570,31 @@ export class MashupAudioEngine {
 
   public pause(): void {
     this.isPlaying = false;
+    if (this.isUsingHD) {
+      Object.values(this.hdAudioNodes.audioA).forEach((a) => a?.pause());
+      Object.values(this.hdAudioNodes.audioB).forEach((b) => b?.pause());
+      return;
+    }
     if (this.deckA) this.deckA.pause();
     if (this.deckB) this.deckB.pause();
   }
 
   public seek(seconds: number): void {
+    if (this.isUsingHD) {
+      Object.values(this.hdAudioNodes.audioA).forEach((a) => { if (a) a.currentTime = seconds; });
+      Object.values(this.hdAudioNodes.audioB).forEach((b) => {
+        if (b) b.currentTime = (seconds + this.offsetB) % (b.duration || 100);
+      });
+      return;
+    }
     if (this.deckA) this.deckA.currentTime = seconds;
     if (this.deckB) this.deckB.currentTime = (seconds + this.offsetB) % (this.deckB.duration || 100);
   }
 
   public getCurrentTime(): number {
+    if (this.isUsingHD) {
+      return this.hdAudioNodes.audioA.vocals?.currentTime || this.hdAudioNodes.audioB.vocals?.currentTime || 0;
+    }
     return this.deckA ? this.deckA.currentTime : 0;
   }
 
@@ -531,6 +638,12 @@ export class MashupAudioEngine {
 
   public dispose(): void {
     this.isPlaying = false;
+    if (this.isUsingHD) {
+      Object.values(this.hdAudioNodes.audioA).forEach((a) => { if (a) { a.pause(); a.src = ''; } });
+      Object.values(this.hdAudioNodes.audioB).forEach((b) => { if (b) { b.pause(); b.src = ''; } });
+      this.hdAudioNodes = { audioA: {}, audioB: {}, gainsA: {}, gainsB: {} };
+      this.isUsingHD = false;
+    }
     if (this.deckA) {
       this.deckA.pause();
       this.deckA.src = '';

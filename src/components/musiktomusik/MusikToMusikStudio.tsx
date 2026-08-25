@@ -24,10 +24,11 @@ import {
   Link,
   X,
   ExternalLink,
-  Plus
+  Plus,
+  Loader2
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
-import { MashupAudioEngine, isDirectAudioUrl } from '../../lib/stemEngine';
+import { MashupAudioEngine, EnhancedStemSeparator, HDSeparatedStems, isDirectAudioUrl } from '../../lib/stemEngine';
 import { createMusikToMusikProject } from '../../lib/supabase';
 import { resolveUniversalTrack, extractYouTubeId, loadYouTubeAPI } from '../../lib/youtube';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
@@ -86,6 +87,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [trackA, setTrackA] = useState<MashupTrackInfo & { genre?: string }>(DEMO_TRACKS[0]);
   // Morceau B (Deck B)
   const [trackB, setTrackB] = useState<MashupTrackInfo & { genre?: string }>(DEMO_TRACKS[1]);
+
+  // Stems séparés Haute Définition (HPSS)
+  const [hdStemsA, setHdStemsA] = useState<HDSeparatedStems | null>(null);
+  const [hdStemsB, setHdStemsB] = useState<HDSeparatedStems | null>(null);
+  const [isProcessingHD, setIsProcessingHD] = useState<boolean>(false);
+  const [processingDeck, setProcessingDeck] = useState<'A' | 'B' | null>(null);
+  const [hdProgressStep, setHdProgressStep] = useState<string>('');
+  const [hdProgressPercent, setHdProgressPercent] = useState<number>(0);
 
   // Modal de sélection de Morceau / YouTube
   const [selectorTargetDeck, setSelectorTargetDeck] = useState<'A' | 'B' | null>(null);
@@ -232,7 +241,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
   // Recharger les Decks dans le moteur quand l'audio direct change
   useEffect(() => {
-    if (engineRef.current) {
+    if (engineRef.current && !hdStemsA && !hdStemsB) {
       const urlA = isDirectAudioUrl(trackA.audio_url) ? trackA.audio_url : '';
       const urlB = isDirectAudioUrl(trackB.audio_url) ? trackB.audio_url : '';
       engineRef.current.loadDecks(urlA, urlB, stemConfig);
@@ -243,6 +252,18 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       }
     }
   }, [trackA.audio_url, trackB.audio_url]);
+
+  // Synchroniser les Stems HD avec le moteur quand disponibles
+  useEffect(() => {
+    if (engineRef.current && (hdStemsA || hdStemsB)) {
+      engineRef.current.loadHDStems(hdStemsA, hdStemsB, stemConfig);
+      engineRef.current.setSpeedB(speedRatioB);
+      engineRef.current.setOffsetB(offsetSecondsB);
+      if (isPlaying) {
+        engineRef.current.play();
+      }
+    }
+  }, [hdStemsA, hdStemsB]);
 
   // Mettre à jour la matrice DSP et les volumes YouTube quand la configuration change
   useEffect(() => {
@@ -351,6 +372,41 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
   }, [isPlaying]);
+
+  // Déclencher la séparation Haute Définition HPSS
+  const startHDSeparation = async (deck: 'A' | 'B') => {
+    const track = deck === 'A' ? trackA : trackB;
+
+    setIsProcessingHD(true);
+    setProcessingDeck(deck);
+    setHdProgressPercent(15);
+    setHdProgressStep('📥 Décodage PCM et analyse des canaux stéréo...');
+
+    try {
+      const separator = new EnhancedStemSeparator();
+      const audioSource = isDirectAudioUrl(track.audio_url)
+        ? track.audio_url
+        : (deck === 'A' ? DEMO_TRACKS[0].audio_url : DEMO_TRACKS[1].audio_url);
+
+      const stems = await separator.separateAudio(audioSource, (step, pct) => {
+        setHdProgressStep(step);
+        setHdProgressPercent(pct);
+      });
+
+      if (deck === 'A') {
+        setHdStemsA(stems);
+      } else {
+        setHdStemsB(stems);
+      }
+
+      await new Promise((r) => setTimeout(r, 600));
+    } catch (err) {
+      console.warn('Erreur séparation HPSS:', err);
+    } finally {
+      setIsProcessingHD(false);
+      setProcessingDeck(null);
+    }
+  };
 
   // Lecture / Pause Master
   const togglePlay = async () => {
@@ -491,8 +547,10 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const selectTrackForDeck = (deck: 'A' | 'B', trackInfo: MashupTrackInfo & { genre?: string }) => {
     if (deck === 'A') {
       setTrackA(trackInfo);
+      setHdStemsA(null);
     } else {
       setTrackB(trackInfo);
+      setHdStemsB(null);
     }
     setSelectorTargetDeck(null);
     setResolvedTrackInfo(null);
@@ -596,13 +654,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           <div className="space-y-1 max-w-2xl">
             <span className="text-[10px] font-mono font-bold text-rose-400 uppercase tracking-widest flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5" />
-              Double Deck DJ + Synchronisation YouTube
+              Double Deck DJ + Séparation Stems HPSS & YouTube
             </span>
             <h2 className="text-xl sm:text-3xl font-black font-display tracking-tight text-white">
-              Studio Mashup : Fusionnez vos Musiques YouTube en Direct
+              Studio Mashup : Fusionnez vos Musiques en Direct
             </h2>
             <p className="text-xs sm:text-sm text-stone-300">
-              Choisissez deux musiques de votre choix et croisez leurs pistes (<strong className="text-rose-400">Voix</strong>, <strong className="text-amber-400">Batterie</strong>, <strong className="text-violet-400">Basse</strong>, <strong className="text-cyan-400">Mélodie</strong>) avec calage BPM en direct !
+              Choisissez deux musiques et croisez leurs 4 pistes (<strong className="text-rose-400">Voix</strong>, <strong className="text-amber-400">Batterie</strong>, <strong className="text-violet-400">Basse</strong>, <strong className="text-cyan-400">Mélodie</strong>) avec calage BPM et découpage Haute Définition !
             </p>
           </div>
 
@@ -680,7 +738,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         </div>
       </div>
 
-      {/* SÉLECTION DES 2 DECKS (MORCEAU A & MORCEAU B AVEC YOUTUBE) */}
+      {/* SÉLECTION DES 2 DECKS (MORCEAU A & MORCEAU B AVEC YOUTUBE & BOUTON DÉCOUPAGE HD) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* DECK A */}
         <div className="bg-white rounded-3xl p-6 border-2 border-rose-200 shadow-sm space-y-4 relative overflow-hidden">
@@ -694,6 +752,26 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               </h3>
             </div>
             <div className="flex items-center gap-2">
+              {/* Bouton Découpage HD HPSS */}
+              <button
+                type="button"
+                onClick={() => startHDSeparation('A')}
+                disabled={isProcessingHD}
+                className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
+                  hdStemsA
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white'
+                }`}
+                title="Extraire les 4 stems en haute définition via HPSS et Mid/Side"
+              >
+                {isProcessingHD && processingDeck === 'A' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                <span>{hdStemsA ? '✨ 4 Pistes HD Prêtes' : '✨ Découpage HD (HPSS)'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -703,7 +781,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
               >
                 <YouTubeIcon className="w-3.5 h-3.5" />
-                <span>Changer / YouTube</span>
+                <span>Changer</span>
               </button>
             </div>
           </div>
@@ -749,6 +827,26 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               </h3>
             </div>
             <div className="flex items-center gap-2">
+              {/* Bouton Découpage HD HPSS */}
+              <button
+                type="button"
+                onClick={() => startHDSeparation('B')}
+                disabled={isProcessingHD}
+                className={`text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm ${
+                  hdStemsB
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white'
+                }`}
+                title="Extraire les 4 stems en haute définition via HPSS et Mid/Side"
+              >
+                {isProcessingHD && processingDeck === 'B' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                <span>{hdStemsB ? '✨ 4 Pistes HD Prêtes' : '✨ Découpage HD (HPSS)'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -758,7 +856,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 className="text-[11px] font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
               >
                 <YouTubeIcon className="w-3.5 h-3.5" />
-                <span>Changer / YouTube</span>
+                <span>Changer</span>
               </button>
             </div>
           </div>
@@ -1097,6 +1195,49 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           <span>{isSaving ? 'Publication en cours...' : '🚀 Sauvegarder & Partager dans la Galerie'}</span>
         </button>
       </form>
+
+      {/* ⏳ MODALE DE PROGRESSION HPSS HAUTE DÉFINITION */}
+      {isProcessingHD && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-stone-950 border-2 border-rose-500/50 rounded-3xl max-w-md w-full p-6 text-white shadow-2xl space-y-5 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-500 to-violet-600 flex items-center justify-center mx-auto shadow-lg shadow-rose-600/30 animate-pulse">
+              <Sparkles className="w-7 h-7 text-white" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-base sm:text-lg font-black font-display text-white">
+                Séparation Haute Définition (HPSS)
+              </h3>
+              <p className="text-xs text-stone-400">
+                Traitement DSP Deck {processingDeck} • Isolation des 4 Pistes
+              </p>
+            </div>
+
+            {/* Jauge de progression */}
+            <div className="space-y-2">
+              <div className="w-full bg-stone-900 rounded-full h-3 p-0.5 border border-stone-800 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-rose-500 via-pink-500 to-violet-600 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${hdProgressPercent}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[11px] font-mono text-stone-400">
+                <span>Calcul spectral</span>
+                <span className="text-rose-400 font-bold">{hdProgressPercent}%</span>
+              </div>
+            </div>
+
+            {/* Étape en temps réel */}
+            <div className="bg-stone-900/80 rounded-2xl p-3.5 border border-stone-800 text-xs text-stone-300 font-mono">
+              <p className="animate-pulse">{hdProgressStep}</p>
+            </div>
+
+            <p className="text-[10px] text-stone-500">
+              Extraction des transitoires percussives, isolation harmonique et décorrélation spatiale Mid/Side.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 📺 MODALE SÉLECTEUR YOUTUBE & BIBLIOTHÈQUE */}
       {selectorTargetDeck && (
