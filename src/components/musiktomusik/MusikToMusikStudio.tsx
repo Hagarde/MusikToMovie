@@ -257,6 +257,18 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     }
   }, [trackA.audio_url, trackB.audio_url]);
 
+  // Synchroniser les Stems HD avec le moteur
+  useEffect(() => {
+    if (engineRef.current && (hdStemsA || hdStemsB)) {
+      engineRef.current.loadHDStems(hdStemsA, hdStemsB, stemConfig);
+      engineRef.current.setSpeedB(speedRatioB);
+      engineRef.current.setOffsetB(offsetSecondsB);
+      if (isPlaying) {
+        engineRef.current.play();
+      }
+    }
+  }, [hdStemsA, hdStemsB]);
+
   // Mettre à jour la matrice DSP quand la configuration change
   useEffect(() => {
     if (engineRef.current) {
@@ -265,28 +277,52 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     // Synchronisation du volume YouTube Deck A
     if (ytPlayerRefA.current && typeof ytPlayerRefA.current.setVolume === 'function') {
-      const activeStemsA = (
-        (stemConfig.vocals.source === 'A' || stemConfig.vocals.source === 'both' ? stemConfig.vocals.volumeA : 0) +
-        (stemConfig.drums.source === 'A' || stemConfig.drums.source === 'both' ? stemConfig.drums.volumeA : 0) +
-        (stemConfig.bass.source === 'A' || stemConfig.bass.source === 'both' ? stemConfig.bass.volumeA : 0) +
-        (stemConfig.melody.source === 'A' || stemConfig.melody.source === 'both' ? stemConfig.melody.volumeA : 0)
-      );
-      const avgVolA = Math.min(100, Math.round((activeStemsA / 4) * 100));
-      ytPlayerRefA.current.setVolume(avgVolA);
+      if (hdStemsA) {
+        // Si les stems HD sont séparés, couper le son du player brut YouTube
+        try { ytPlayerRefA.current.mute(); } catch (_) {}
+        ytPlayerRefA.current.setVolume(0);
+      } else {
+        const volVocalsA = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'A' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeA : 0;
+        const volDrumsA = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'A' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeA : 0;
+        const volBassA = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'A' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeA : 0;
+        const volMelodyA = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'A' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeA : 0;
+
+        const totalActiveA = volVocalsA + volDrumsA + volBassA + volMelodyA;
+        if (totalActiveA <= 0.001) {
+          try { ytPlayerRefA.current.mute(); } catch (_) {}
+          ytPlayerRefA.current.setVolume(0);
+        } else {
+          try { ytPlayerRefA.current.unMute(); } catch (_) {}
+          const avgVolA = Math.min(100, Math.round((totalActiveA / 4) * 100));
+          ytPlayerRefA.current.setVolume(avgVolA);
+        }
+      }
     }
 
     // Synchronisation du volume YouTube Deck B
     if (ytPlayerRefB.current && typeof ytPlayerRefB.current.setVolume === 'function') {
-      const activeStemsB = (
-        (stemConfig.vocals.source === 'B' || stemConfig.vocals.source === 'both' ? stemConfig.vocals.volumeB : 0) +
-        (stemConfig.drums.source === 'B' || stemConfig.drums.source === 'both' ? stemConfig.drums.volumeB : 0) +
-        (stemConfig.bass.source === 'B' || stemConfig.bass.source === 'both' ? stemConfig.bass.volumeB : 0) +
-        (stemConfig.melody.source === 'B' || stemConfig.melody.source === 'both' ? stemConfig.melody.volumeB : 0)
-      );
-      const avgVolB = Math.min(100, Math.round((activeStemsB / 4) * 100));
-      ytPlayerRefB.current.setVolume(avgVolB);
+      if (hdStemsB) {
+        // Si les stems HD sont séparés, couper le son du player brut YouTube
+        try { ytPlayerRefB.current.mute(); } catch (_) {}
+        ytPlayerRefB.current.setVolume(0);
+      } else {
+        const volVocalsB = (!stemConfig.vocals.isMuted && (stemConfig.vocals.source === 'B' || stemConfig.vocals.source === 'both')) ? stemConfig.vocals.volumeB : 0;
+        const volDrumsB = (!stemConfig.drums.isMuted && (stemConfig.drums.source === 'B' || stemConfig.drums.source === 'both')) ? stemConfig.drums.volumeB : 0;
+        const volBassB = (!stemConfig.bass.isMuted && (stemConfig.bass.source === 'B' || stemConfig.bass.source === 'both')) ? stemConfig.bass.volumeB : 0;
+        const volMelodyB = (!stemConfig.melody.isMuted && (stemConfig.melody.source === 'B' || stemConfig.melody.source === 'both')) ? stemConfig.melody.volumeB : 0;
+
+        const totalActiveB = volVocalsB + volDrumsB + volBassB + volMelodyB;
+        if (totalActiveB <= 0.001) {
+          try { ytPlayerRefB.current.mute(); } catch (_) {}
+          ytPlayerRefB.current.setVolume(0);
+        } else {
+          try { ytPlayerRefB.current.unMute(); } catch (_) {}
+          const avgVolB = Math.min(100, Math.round((totalActiveB / 4) * 100));
+          ytPlayerRefB.current.setVolume(avgVolB);
+        }
+      }
     }
-  }, [stemConfig]);
+  }, [stemConfig, hdStemsA, hdStemsB]);
 
   // Mettre à jour vitesse Deck B
   useEffect(() => {
