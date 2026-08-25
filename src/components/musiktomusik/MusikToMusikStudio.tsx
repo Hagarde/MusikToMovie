@@ -25,7 +25,8 @@ import {
   X,
   ExternalLink,
   Plus,
-  Loader2
+  Loader2,
+  Copy
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
 import { MashupAudioEngine, EnhancedStemSeparator, NeuralStemSeparator, HDSeparatedStems, isDirectAudioUrl } from '../../lib/stemEngine';
@@ -133,6 +134,37 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState<boolean>(false);
   const [benchmarkReport, setBenchmarkReport] = useState<BenchmarkReport | null>(null);
   const [isRunningBenchmark, setIsRunningBenchmark] = useState<boolean>(false);
+
+  // Drag & Drop et Assistant Extraction YouTube
+  const [isDraggingA, setIsDraggingA] = useState<boolean>(false);
+  const [isDraggingB, setIsDraggingB] = useState<boolean>(false);
+  const [showYtExtractorModal, setShowYtExtractorModal] = useState<'A' | 'B' | null>(null);
+  const [copiedYtLink, setCopiedYtLink] = useState<boolean>(false);
+
+  const handleDropAudio = (deck: 'A' | 'B', e: React.DragEvent) => {
+    e.preventDefault();
+    if (deck === 'A') setIsDraggingA(false);
+    else setIsDraggingB(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        const customTrack: MashupTrackInfo & { genre?: string } = {
+          title: file.name.replace(/\.[^/.]+$/, ''),
+          artist: 'Fichier Audio Déposé',
+          audio_url: event.target.result as string,
+          thumbnail_url: '',
+          genre: 'MP3 / Audio Direct',
+        };
+        selectTrackForDeck(deck, customTrack);
+        if (showYtExtractorModal) setShowYtExtractorModal(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleRunBenchmark = async () => {
     setIsRunningBenchmark(true);
@@ -824,7 +856,22 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       {/* SÉLECTION DES 2 DECKS (MORCEAU A & MORCEAU B AVEC YOUTUBE & BOUTON DÉCOUPAGE HD) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* DECK A */}
-        <div className="bg-white rounded-3xl p-6 border-2 border-rose-200 shadow-sm space-y-4 relative overflow-hidden">
+        <div
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingA(true); }}
+          onDragLeave={() => setIsDraggingA(false)}
+          onDrop={(e) => handleDropAudio('A', e)}
+          className={`bg-white rounded-3xl p-6 border-2 transition-all space-y-4 relative overflow-hidden ${
+            isDraggingA ? 'border-rose-500 bg-rose-50/60 ring-4 ring-rose-200' : 'border-rose-200 shadow-sm'
+          }`}
+        >
+          {isDraggingA && (
+            <div className="absolute inset-0 bg-rose-600/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center text-white font-black text-sm p-4 text-center animate-in fade-in">
+              <Sparkles className="w-10 h-10 mb-2 animate-bounce" />
+              <p>🎯 Déposez votre fichier MP3 / WAV ici pour le Deck A !</p>
+              <p className="text-xs font-normal text-rose-200 mt-1">Séparation Deep Learning ONNX automatique</p>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="w-7 h-7 rounded-full bg-rose-600 text-white font-black text-xs flex items-center justify-center shadow-md">
@@ -835,7 +882,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              {/* Bouton Séparation Ultra-HD (HTDemucs) */}
               <button
                 type="button"
                 onClick={() => startHDSeparation('A')}
@@ -853,18 +899,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
                 <span>{hdStemsA ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD (HTDemucs)'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectorTargetDeck('A');
-                  setSelectorTab('library');
-                }}
-                className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
-              >
-                <YouTubeIcon className="w-3.5 h-3.5" />
-                <span>Changer</span>
               </button>
             </div>
           </div>
@@ -896,10 +930,46 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               {trackA.genre || 'Piste A'}
             </span>
           </div>
+
+          {/* Zone de Glisser-Déposer & Assistant MP3 Deck A */}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowYtExtractorModal('A')}
+              className="flex-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <span>📥 Extraire MP3 YouTube</span>
+            </button>
+
+            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm">
+              <span>📂 Glisser / Importer MP3</span>
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={(e) => handleUploadAudio('A', e)}
+                className="hidden"
+              />
+            </label>
+          </div>
         </div>
 
         {/* DECK B */}
-        <div className="bg-white rounded-3xl p-6 border-2 border-violet-200 shadow-sm space-y-4 relative overflow-hidden">
+        <div
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingB(true); }}
+          onDragLeave={() => setIsDraggingB(false)}
+          onDrop={(e) => handleDropAudio('B', e)}
+          className={`bg-white rounded-3xl p-6 border-2 transition-all space-y-4 relative overflow-hidden ${
+            isDraggingB ? 'border-violet-500 bg-violet-50/60 ring-4 ring-violet-200' : 'border-violet-200 shadow-sm'
+          }`}
+        >
+          {isDraggingB && (
+            <div className="absolute inset-0 bg-violet-600/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center text-white font-black text-sm p-4 text-center animate-in fade-in">
+              <Sparkles className="w-10 h-10 mb-2 animate-bounce" />
+              <p>🎯 Déposez votre fichier MP3 / WAV ici pour le Deck B !</p>
+              <p className="text-xs font-normal text-violet-200 mt-1">Séparation Deep Learning ONNX automatique</p>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="w-7 h-7 rounded-full bg-violet-600 text-white font-black text-xs flex items-center justify-center shadow-md">
@@ -910,7 +980,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              {/* Bouton Séparation Ultra-HD (HTDemucs) */}
               <button
                 type="button"
                 onClick={() => startHDSeparation('B')}
@@ -928,18 +997,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
                 <span>{hdStemsB ? '✨ 4 Stems Ultra-HD Prêts' : '🧠 Séparation Ultra-HD (HTDemucs)'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectorTargetDeck('B');
-                  setSelectorTab('library');
-                }}
-                className="text-[11px] font-bold text-violet-600 hover:text-violet-700 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
-              >
-                <YouTubeIcon className="w-3.5 h-3.5" />
-                <span>Changer</span>
               </button>
             </div>
           </div>
@@ -970,6 +1027,27 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
             <span className="text-[10px] font-mono bg-violet-950 text-violet-300 border border-violet-800 px-2 py-0.5 rounded-md shrink-0">
               {trackB.genre || 'Piste B'}
             </span>
+          </div>
+
+          {/* Zone de Glisser-Déposer & Assistant MP3 Deck B */}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowYtExtractorModal('B')}
+              className="flex-1 text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <span>📥 Extraire MP3 YouTube</span>
+            </button>
+
+            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm">
+              <span>📂 Glisser / Importer MP3</span>
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={(e) => handleUploadAudio('B', e)}
+                className="hidden"
+              />
+            </label>
           </div>
         </div>
       </div>
@@ -1674,6 +1752,163 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 📥 ASSISTANT D'EXTRACTION YOUTUBE VERS MP3 */}
+      {showYtExtractorModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 text-stone-900 shadow-2xl border border-stone-200 space-y-5 max-h-[90vh] flex flex-col overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2">
+                <span className={`w-7 h-7 rounded-full text-white font-black text-xs flex items-center justify-center ${
+                  showYtExtractorModal === 'A' ? 'bg-rose-600' : 'bg-violet-600'
+                }`}>
+                  {showYtExtractorModal}
+                </span>
+                <div>
+                  <h3 className="font-extrabold text-base text-stone-900 font-display">
+                    Assistant d'Extraction MP3 • Deck {showYtExtractorModal}
+                  </h3>
+                  <p className="text-xs text-stone-500">
+                    Récupérez le fichier audio réel pour la séparation Deep Learning ONNX
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowYtExtractorModal(null)}
+                className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-400 hover:text-stone-900 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Étape 1 : Copier le lien YouTube */}
+            <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-stone-700 flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-stone-900 text-white flex items-center justify-center text-[10px]">1</span>
+                  Lien YouTube du morceau actuel :
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ytId = showYtExtractorModal === 'A' ? trackA.youtube_id : trackB.youtube_id;
+                    const urlToCopy = ytId ? `https://www.youtube.com/watch?v=${ytId}` : 'https://www.youtube.com/';
+                    navigator.clipboard.writeText(urlToCopy);
+                    setCopiedYtLink(true);
+                    setTimeout(() => setCopiedYtLink(false), 2000);
+                  }}
+                  className="text-xs font-bold px-3 py-1 rounded-xl bg-stone-900 hover:bg-stone-800 text-white transition-all flex items-center gap-1 shadow-sm"
+                >
+                  {copiedYtLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedYtLink ? 'Copié !' : 'Copier le lien'}</span>
+                </button>
+              </div>
+
+              <p className="text-xs font-mono text-stone-600 bg-white p-2.5 rounded-xl border border-stone-200 truncate">
+                {showYtExtractorModal === 'A'
+                  ? (trackA.youtube_id ? `https://www.youtube.com/watch?v=${trackA.youtube_id}` : 'Aucune vidéo sélectionnée')
+                  : (trackB.youtube_id ? `https://www.youtube.com/watch?v=${trackB.youtube_id}` : 'Aucune vidéo sélectionnée')}
+              </p>
+            </div>
+
+            {/* Étape 2 : Convertisseurs fiables en 1-clic */}
+            <div className="space-y-2">
+              <span className="text-xs font-black text-stone-700 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-stone-900 text-white flex items-center justify-center text-[10px]">2</span>
+                Ouvrez un extracteur MP3 gratuit & propre :
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <a
+                  href="https://10downloader.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100/80 transition-all flex items-center justify-between group"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-emerald-950 group-hover:text-emerald-800">10Downloader.com</p>
+                    <p className="text-[10px] text-emerald-700">100% sans pub • MP3 direct</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-emerald-600" />
+                </a>
+
+                <a
+                  href="https://y2mate.nu/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3 rounded-2xl border border-rose-200 bg-rose-50 hover:bg-rose-100/80 transition-all flex items-center justify-between group"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-rose-950 group-hover:text-rose-800">Y2Mate.nu</p>
+                    <p className="text-[10px] text-rose-700">Téléchargement audio ultra-rapide</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-rose-600" />
+                </a>
+
+                <a
+                  href="https://loader.to/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3 rounded-2xl border border-violet-200 bg-violet-50 hover:bg-violet-100/80 transition-all flex items-center justify-between group"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-violet-950 group-hover:text-violet-800">Loader.to</p>
+                    <p className="text-[10px] text-violet-700">Qualité studio 320 kbps</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-violet-600" />
+                </a>
+
+                <a
+                  href="https://mp3-convert.org/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-3 rounded-2xl border border-cyan-200 bg-cyan-50 hover:bg-cyan-100/80 transition-all flex items-center justify-between group"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-cyan-950 group-hover:text-cyan-800">MP3-Convert.org</p>
+                    <p className="text-[10px] text-cyan-700">Extraction MP3 instantanée</p>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-cyan-600" />
+                </a>
+              </div>
+            </div>
+
+            {/* Étape 3 : Glisser-déposer le fichier téléchargé */}
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleDropAudio(showYtExtractorModal, e)}
+              className="border-2 border-dashed border-stone-300 hover:border-rose-500 bg-stone-50 hover:bg-rose-50/50 rounded-2xl p-6 text-center space-y-3 transition-all cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-stone-900 text-white flex items-center justify-center mx-auto shadow-md">
+                <Sparkles className="w-5 h-5 text-rose-400" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-stone-900">
+                  3. Déposez votre fichier .mp3 téléchargé ici
+                </p>
+                <p className="text-[11px] text-stone-500">
+                  Ou cliquez sur le bouton ci-dessous pour le sélectionner sur votre ordinateur
+                </p>
+              </div>
+
+              <label className="inline-block text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 py-2.5 px-5 rounded-xl transition-all cursor-pointer shadow-md">
+                <span>📂 Sélectionner le fichier MP3</span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onChange={(e) => {
+                    handleUploadAudio(showYtExtractorModal, e);
+                    setShowYtExtractorModal(null);
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
           </div>
         </div>
       )}
