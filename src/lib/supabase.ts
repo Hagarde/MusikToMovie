@@ -458,3 +458,102 @@ export function hasUserVotedM2M(projectId: string): boolean {
   const votes = safeGetLocalStorage<Record<string, boolean>>(LOCAL_STORAGE_M2M_VOTES_KEY, {});
   return !!votes[projectId];
 }
+
+// ==========================================
+// 🎛️ SECTION MUSIK TO MUSIK (MASHUP & STEMS)
+// ==========================================
+const LOCAL_STORAGE_MASHUP_KEY = 'musiktomusik_projects';
+const LOCAL_STORAGE_MASHUP_VOTES_KEY = 'musiktomusik_user_votes';
+
+export async function getMusikToMusikProjects(): Promise<import('./types').MusikToMusikProject[]> {
+  try {
+    const { data, error } = await supabase
+      .from('musiktomusik_projects')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return data;
+    }
+  } catch (e) {
+    console.warn('Erreur Supabase MusikToMusik, fallback local:', e);
+  }
+
+  return safeGetLocalStorage<import('./types').MusikToMusikProject[]>(LOCAL_STORAGE_MASHUP_KEY, []);
+}
+
+export async function createMusikToMusikProject(
+  projectData: Omit<import('./types').MusikToMusikProject, 'id' | 'created_at' | 'likes_count'>
+): Promise<import('./types').MusikToMusikProject> {
+  const newProject: import('./types').MusikToMusikProject = {
+    id: crypto.randomUUID(),
+    ...projectData,
+    likes_count: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from('musiktomusik_projects')
+      .insert([newProject])
+      .select()
+      .single();
+
+    if (!error && data) {
+      return data;
+    }
+  } catch (e) {
+    console.warn('Erreur Supabase MusikToMusik creation, fallback local:', e);
+  }
+
+  const all = safeGetLocalStorage<import('./types').MusikToMusikProject[]>(LOCAL_STORAGE_MASHUP_KEY, []);
+  all.unshift(newProject);
+  safeSetLocalStorage(LOCAL_STORAGE_MASHUP_KEY, all);
+  return newProject;
+}
+
+export async function deleteMusikToMusikProject(projectId: string): Promise<boolean> {
+  try {
+    await supabase.from('musiktomusik_projects').delete().eq('id', projectId);
+  } catch (e) {}
+
+  const all = safeGetLocalStorage<import('./types').MusikToMusikProject[]>(LOCAL_STORAGE_MASHUP_KEY, []);
+  const filtered = all.filter((p) => p.id !== projectId);
+  safeSetLocalStorage(LOCAL_STORAGE_MASHUP_KEY, filtered);
+  return true;
+}
+
+export async function voteMusikToMusikProject(projectId: string): Promise<number> {
+  const votes = safeGetLocalStorage<Record<string, boolean>>(LOCAL_STORAGE_MASHUP_VOTES_KEY, {});
+  const hasVoted = !!votes[projectId];
+
+  let newCount = 1;
+  const all = safeGetLocalStorage<import('./types').MusikToMusikProject[]>(LOCAL_STORAGE_MASHUP_KEY, []);
+  const target = all.find((p) => p.id === projectId);
+
+  if (hasVoted) {
+    delete votes[projectId];
+    newCount = Math.max(0, (target?.likes_count || 1) - 1);
+  } else {
+    votes[projectId] = true;
+    newCount = (target?.likes_count || 0) + 1;
+  }
+
+  safeSetLocalStorage(LOCAL_STORAGE_MASHUP_VOTES_KEY, votes);
+
+  if (target) {
+    target.likes_count = newCount;
+    safeSetLocalStorage(LOCAL_STORAGE_MASHUP_KEY, all);
+  }
+
+  try {
+    await supabase.from('musiktomusik_projects').update({ likes_count: newCount }).eq('id', projectId);
+  } catch (_) {}
+
+  return newCount;
+}
+
+export function hasUserVotedMashup(projectId: string): boolean {
+  const votes = safeGetLocalStorage<Record<string, boolean>>(LOCAL_STORAGE_MASHUP_VOTES_KEY, {});
+  return !!votes[projectId];
+}

@@ -1,8 +1,18 @@
 import React from 'react';
-import { Film, Music, Compass, Sparkles, Plus, Shield, ShieldCheck, LogOut, Radio, Mic } from 'lucide-react';
+import { Film, Music, Compass, Sparkles, Plus, Shield, ShieldCheck, LogOut, Radio, Mic, Layers, Disc } from 'lucide-react';
 
-export type AppView = 'concept' | 'tracks' | 'proposals' | 'create' | 'view' | 'm2m_gallery' | 'm2m_studio';
-export type AppMode = 'musiktomovie' | 'movietomusik';
+export type AppView = 
+  | 'concept' 
+  | 'tracks' 
+  | 'proposals' 
+  | 'create' 
+  | 'view' 
+  | 'm2m_gallery' 
+  | 'm2m_studio'
+  | 'm2m_mashup_gallery'
+  | 'm2m_mashup_studio';
+
+export type AppMode = 'musiktomovie' | 'movietomusik' | 'musiktomusik';
 
 interface NavbarProps {
   currentView: AppView;
@@ -34,35 +44,40 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={() => {
               if (appMode === 'musiktomovie') onNavigate('concept');
-              else onNavigate('m2m_gallery');
+              else if (appMode === 'movietomusik') onNavigate('m2m_gallery');
+              else onNavigate('m2m_mashup_gallery');
             }}
             className="flex items-center gap-2 group text-left shrink-0"
           >
             <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center text-white font-black shadow-md group-hover:scale-105 transition-transform ${
-              appMode === 'musiktomovie' ? 'bg-stone-900' : 'bg-rose-600'
+              appMode === 'musiktomovie' ? 'bg-stone-900' : appMode === 'movietomusik' ? 'bg-rose-600' : 'bg-gradient-to-br from-violet-600 to-rose-600'
             }`}>
               {appMode === 'musiktomovie' ? (
                 <Film className="w-4 h-4 sm:w-5 sm:h-5" />
-              ) : (
+              ) : appMode === 'movietomusik' ? (
                 <Radio className="w-4 h-4 sm:w-5 sm:h-5" />
+              ) : (
+                <Disc className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" style={{ animationDuration: '6s' }} />
               )}
             </div>
             <div>
               <span className="text-sm sm:text-base font-black text-stone-900 tracking-tight flex items-center gap-0.5 sm:gap-1 font-display">
                 {appMode === 'musiktomovie' ? (
                   <>Musik<span className="text-rose-600">To</span>Movie</>
-                ) : (
+                ) : appMode === 'movietomusik' ? (
                   <>Movie<span className="text-rose-600">To</span>Musik</>
+                ) : (
+                  <>Musik<span className="text-violet-600">To</span>Musik</>
                 )}
               </span>
               <span className="hidden sm:block text-[9px] text-stone-500 tracking-widest uppercase font-semibold">
-                {appMode === 'musiktomovie' ? 'Musique → Storyboard' : 'Visuel → Composition Micro'}
+                {appMode === 'musiktomovie' ? 'Musique → Storyboard' : appMode === 'movietomusik' ? 'Visuel → Composition Micro' : 'Stems & Mashup Lab'}
               </span>
             </div>
           </button>
 
-          {/* Switch de Mode créatif : MusikToMovie vs MovieToMusik */}
-          <div className="hidden md:flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200 text-[11px] font-bold">
+          {/* Switch de Mode à 3 Univers : MusikToMovie vs MovieToMusik vs MusikToMusik */}
+          <div className="hidden lg:flex items-center bg-stone-100 p-0.5 rounded-xl border border-stone-200 text-[11px] font-bold">
             <button
               type="button"
               onClick={() => onSelectMode('musiktomovie')}
@@ -87,11 +102,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Radio className="w-3 h-3 text-rose-300 animate-pulse" />
               <span>MovieToMusik</span>
             </button>
+            <button
+              type="button"
+              onClick={() => onSelectMode('musiktomusik')}
+              className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 ${
+                appMode === 'musiktomusik'
+                  ? 'bg-gradient-to-r from-violet-600 to-rose-600 text-white shadow-sm font-extrabold'
+                  : 'text-stone-500 hover:text-stone-900'
+              }`}
+            >
+              <Disc className="w-3 h-3 text-violet-200" />
+              <span>MusikToMusik</span>
+            </button>
           </div>
         </div>
 
         {/* Navigation principale selon le mode actif */}
-        {appMode === 'musiktomovie' ? (
+        {appMode === 'musiktomovie' && (
           <nav className="flex items-center gap-0.5 sm:gap-1 bg-stone-100/90 p-0.5 sm:p-1 rounded-2xl border border-stone-200 text-[11px] sm:text-xs shrink min-w-0">
             <button
               type="button"
@@ -133,7 +160,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="sm:hidden">Films</span>
             </button>
           </nav>
-        ) : (
+        )}
+
+        {appMode === 'movietomusik' && (
           <nav className="flex items-center gap-0.5 sm:gap-1 bg-stone-100/90 p-0.5 sm:p-1 rounded-2xl border border-stone-200 text-[11px] sm:text-xs shrink min-w-0">
             <button
               type="button"
@@ -163,17 +192,50 @@ export const Navbar: React.FC<NavbarProps> = ({
           </nav>
         )}
 
+        {appMode === 'musiktomusik' && (
+          <nav className="flex items-center gap-0.5 sm:gap-1 bg-stone-100/90 p-0.5 sm:p-1 rounded-2xl border border-stone-200 text-[11px] sm:text-xs shrink min-w-0">
+            <button
+              type="button"
+              onClick={() => onNavigate('m2m_mashup_gallery')}
+              className={`px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                currentView === 'm2m_mashup_gallery'
+                  ? 'bg-gradient-to-r from-violet-600 to-rose-600 text-white shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              <span>Galerie Mashups</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('m2m_mashup_studio')}
+              className={`px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                currentView === 'm2m_mashup_studio'
+                  ? 'bg-stone-900 text-white shadow-sm'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              <Disc className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+              <span>Studio Mashup</span>
+            </button>
+          </nav>
+        )}
+
         {/* Actions : Ajouter Musique / Switch Mobile / Admin */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Switcher Mode sur mobile */}
-          <button
-            type="button"
-            onClick={() => onSelectMode(appMode === 'musiktomovie' ? 'movietomusik' : 'musiktomovie')}
-            className="md:hidden px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 border border-stone-200 text-[10px] font-bold text-stone-800"
-            title="Basculer vers l'autre mode"
-          >
-            {appMode === 'musiktomovie' ? '🎙️ MovieToMusik' : '🎬 MusikToMovie'}
-          </button>
+          <div className="lg:hidden flex items-center bg-stone-100 rounded-xl p-0.5 border border-stone-200 text-[10px] font-bold">
+            <button
+              type="button"
+              onClick={() => onSelectMode(
+                appMode === 'musiktomovie' ? 'movietomusik' : appMode === 'movietomusik' ? 'musiktomusik' : 'musiktomovie'
+              )}
+              className="px-2 py-1 rounded-lg bg-white shadow-sm text-stone-900"
+            >
+              {appMode === 'musiktomovie' ? '🎬 M2M' : appMode === 'movietomusik' ? '🎙️ Movie' : '🎛️ Remix'}
+            </button>
+          </div>
 
           {appMode === 'musiktomovie' && (
             <button

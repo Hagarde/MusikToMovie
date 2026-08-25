@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Track, Proposal, MovieToMusikProject } from './lib/types';
+import { Track, Proposal, MovieToMusikProject, MusikToMusikProject } from './lib/types';
 import { 
   getTracks, 
   getProposals, 
@@ -20,9 +20,11 @@ import { AudioPlayer } from './components/audio/AudioPlayer';
 import { CineClippy } from './components/clippy/CineClippy';
 import { MovieToMusikStudio } from './components/movietomusik/MovieToMusikStudio';
 import { MovieToMusikGallery } from './components/movietomusik/MovieToMusikGallery';
+import { MusikToMusikStudio } from './components/musiktomusik/MusikToMusikStudio';
+import { MusikToMusikGallery } from './components/musiktomusik/MusikToMusikGallery';
 
 export default function App() {
-  // Mode actif : MusikToMovie (Classique) ou MovieToMusik (Studio Inversé)
+  // Mode actif : MusikToMovie (Classique), MovieToMusik (Studio Inversé) ou MusikToMusik (Mashup & Stems)
   const [appMode, setAppMode] = useState<AppMode>('musiktomovie');
   const [currentView, setCurrentView] = useState<AppView>('concept');
 
@@ -35,6 +37,9 @@ export default function App() {
 
   // Données MovieToMusik
   const [m2mProjects, setM2mProjects] = useState<MovieToMusikProject[]>([]);
+
+  // Données MusikToMusik
+  const [targetMashupId, setTargetMashupId] = useState<string | null>(null);
 
   // Modales & Chargement
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -84,7 +89,16 @@ export default function App() {
 
       if (typeof window !== 'undefined') {
         const urlParams = new URLSearchParams(window.location.search);
-        
+
+        // Deep link MusikToMusik (?mashup=ID ou ?mode=musiktomusik)
+        const mashupId = urlParams.get('mashup') || urlParams.get('remix');
+        if (mashupId || urlParams.get('mode') === 'musiktomusik') {
+          setAppMode('musiktomusik');
+          setTargetMashupId(mashupId);
+          setCurrentView('m2m_mashup_gallery');
+          return;
+        }
+
         // Deep link MovieToMusik (?m2m_story=ID ou ?mode=movietomusik)
         const m2mStoryId = urlParams.get('m2m_story') || urlParams.get('m2m');
         if (m2mStoryId || urlParams.get('mode') === 'movietomusik') {
@@ -120,6 +134,15 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       const urlParams = new URLSearchParams(window.location.search);
+
+      const mashupId = urlParams.get('mashup') || urlParams.get('remix');
+      if (mashupId || urlParams.get('mode') === 'musiktomusik') {
+        setAppMode('musiktomusik');
+        setTargetMashupId(mashupId);
+        setCurrentView('m2m_mashup_gallery');
+        return;
+      }
+
       const m2mStoryId = urlParams.get('m2m_story') || urlParams.get('m2m');
       if (m2mStoryId || urlParams.get('mode') === 'movietomusik') {
         setAppMode('movietomusik');
@@ -157,18 +180,26 @@ export default function App() {
     }
   };
 
-  // Basculer de mode (MusikToMovie <-> MovieToMusik)
+  // Basculer de mode (MusikToMovie <-> MovieToMusik <-> MusikToMusik)
   const handleSelectMode = (mode: AppMode) => {
     setAppMode(mode);
     setEditingProposal(null);
+
     if (mode === 'musiktomovie') {
       updateUrlParam('m2m_story', null);
+      updateUrlParam('mashup', null);
       updateUrlParam('mode', null);
       setCurrentView('concept');
-    } else {
+    } else if (mode === 'movietomusik') {
       updateUrlParam('story', null);
+      updateUrlParam('mashup', null);
       updateUrlParam('mode', 'movietomusik');
       setCurrentView('m2m_gallery');
+    } else {
+      updateUrlParam('story', null);
+      updateUrlParam('m2m_story', null);
+      updateUrlParam('mode', 'musiktomusik');
+      setCurrentView('m2m_mashup_gallery');
     }
   };
 
@@ -178,38 +209,38 @@ export default function App() {
   const handleCreateProposal = (track: Track) => {
     setSelectedTrack(track);
     setEditingProposal(null);
-    updateUrlParam('story', null);
-    setCurrentView('create');
-  };
-
-  const handleEditProposal = (proposal: Proposal) => {
-    const matchedTrack = tracks.find((t) => t.id === proposal.track_id) || selectedTrack;
-    setSelectedProposal(proposal);
-    setEditingProposal(proposal);
-    setSelectedTrack(matchedTrack);
-    updateUrlParam('story', proposal.id);
     setCurrentView('create');
   };
 
   const handleSelectProposal = (proposal: Proposal) => {
-    const matchedTrack = tracks.find((t) => t.id === proposal.track_id) || null;
+    const track = tracks.find((t) => t.id === proposal.track_id) || null;
     setSelectedProposal(proposal);
-    setSelectedTrack(matchedTrack);
+    setSelectedTrack(track);
     updateUrlParam('story', proposal.id);
     setCurrentView('view');
   };
 
-  const handleProposalSaved = (newProposal: Proposal) => {
+  const handleEditProposal = (proposal: Proposal) => {
+    const track = tracks.find((t) => t.id === proposal.track_id) || null;
+    setSelectedTrack(track);
+    setEditingProposal(proposal);
+    setCurrentView('create');
+  };
+
+  const handleProposalSaved = (savedProposal: Proposal) => {
     setProposals((prev) => {
-      const exists = prev.some((p) => p.id === newProposal.id);
-      if (exists) {
-        return prev.map((p) => (p.id === newProposal.id ? newProposal : p));
+      const index = prev.findIndex((p) => p.id === savedProposal.id);
+      if (index >= 0) {
+        const next = [...prev];
+        next[index] = savedProposal;
+        return next;
       }
-      return [newProposal, ...prev];
+      return [savedProposal, ...prev];
     });
-    setSelectedProposal(newProposal);
+
+    setSelectedProposal(savedProposal);
     setEditingProposal(null);
-    updateUrlParam('story', newProposal.id);
+    updateUrlParam('story', savedProposal.id);
     setCurrentView('view');
   };
 
@@ -217,64 +248,81 @@ export default function App() {
     setProposals((prev) =>
       prev.map((p) => (p.id === updatedProposal.id ? updatedProposal : p))
     );
-    setSelectedProposal(updatedProposal);
+    if (selectedProposal?.id === updatedProposal.id) {
+      setSelectedProposal(updatedProposal);
+    }
+  };
+
+  const handleDeleteProposal = async (proposalId: string) => {
+    if (!isAdmin) return;
+    const ok = await deleteProposal(proposalId);
+    if (ok) {
+      setProposals((prev) => prev.filter((p) => p.id !== proposalId));
+      if (selectedProposal?.id === proposalId) {
+        setSelectedProposal(null);
+        updateUrlParam('story', null);
+        setCurrentView('proposals');
+      }
+    }
+  };
+
+  const handleDeleteTrack = async (trackId: string) => {
+    if (!isAdmin) return;
+    const ok = await deleteTrack(trackId);
+    if (ok) {
+      setTracks((prev) => prev.filter((t) => t.id !== trackId));
+      if (selectedTrack?.id === trackId) {
+        setSelectedTrack(null);
+      }
+    }
+  };
+
+  const handleVoteUpdated = (proposalId: string, newVotesCount: number) => {
+    setProposals((prev) =>
+      prev.map((p) =>
+        p.id === proposalId ? { ...p, votes_count: newVotesCount } : p
+      )
+    );
   };
 
   const handleTrackCreated = (newTrack: Track) => {
     setTracks((prev) => [newTrack, ...prev]);
     setSelectedTrack(newTrack);
-    setEditingProposal(null);
-    updateUrlParam('story', null);
-    setCurrentView('create');
-  };
-
-  const handleDeleteTrack = async (trackId: string) => {
-    await deleteTrack(trackId);
-    setTracks((prev) => prev.filter((t) => t.id !== trackId));
-    if (selectedTrack?.id === trackId) {
-      setSelectedTrack(null);
-    }
-  };
-
-  const handleDeleteProposal = async (proposalId: string) => {
-    await deleteProposal(proposalId);
-    setProposals((prev) => prev.filter((p) => p.id !== proposalId));
-    if (selectedProposal?.id === proposalId) {
-      setSelectedProposal(null);
-      updateUrlParam('story', null);
-      setCurrentView('proposals');
-    }
-  };
-
-  const handleVoteUpdated = (proposalId: string, newCount: number) => {
-    setProposals((prev) =>
-      prev.map((p) => (p.id === proposalId ? { ...p, likes_count: newCount } : p))
-    );
+    setCurrentView('tracks');
   };
 
   // ------------------------------------
   // Handlers MovieToMusik
   // ------------------------------------
-  const handleM2mProjectSaved = (newProject: MovieToMusikProject) => {
-    setM2mProjects((prev) => [newProject, ...prev]);
-    updateUrlParam('m2m_story', newProject.id);
+  const handleM2mProjectSaved = (newProj: MovieToMusikProject) => {
+    setM2mProjects((prev) => [newProj, ...prev]);
     setCurrentView('m2m_gallery');
   };
 
   const handleDeleteM2mProject = async (projectId: string) => {
-    await deleteMovieToMusikProject(projectId);
-    setM2mProjects((prev) => prev.filter((p) => p.id !== projectId));
+    if (!isAdmin) return;
+    const ok = await deleteMovieToMusikProject(projectId);
+    if (ok) {
+      setM2mProjects((prev) => prev.filter((p) => p.id !== projectId));
+    }
+  };
+
+  // ------------------------------------
+  // Handlers MusikToMusik
+  // ------------------------------------
+  const handleMashupSaved = (_newMashup: MusikToMusikProject) => {
+    setCurrentView('m2m_mashup_gallery');
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gallery-canvas text-stone-900 transition-colors">
+    <div className="min-h-screen bg-stone-100 flex flex-col font-sans text-stone-900 selection:bg-stone-900 selection:text-white">
+      {/* 🧭 Barre de Navigation Globale */}
       <Navbar
         currentView={currentView}
         appMode={appMode}
         onSelectMode={handleSelectMode}
         onNavigate={(view) => {
-          if (view === 'tracks' || view === 'concept' || view === 'proposals') {
-            setEditingProposal(null);
+          if (view !== 'view' && view !== 'create') {
             updateUrlParam('story', null);
           }
           setCurrentView(view);
@@ -394,6 +442,27 @@ export default function App() {
               <MovieToMusikStudio
                 onBack={() => setCurrentView('m2m_gallery')}
                 onProjectSaved={handleM2mProjectSaved}
+              />
+            )}
+          </>
+        )}
+
+        {/* ========================================================= */}
+        {/* 🎛️ MODE 3 : MUSIK TO MUSIK (Stems Splitter & Mashup Lab)  */}
+        {/* ========================================================= */}
+        {appMode === 'musiktomusik' && (
+          <>
+            {currentView === 'm2m_mashup_gallery' && (
+              <MusikToMusikGallery
+                onOpenStudio={() => setCurrentView('m2m_mashup_studio')}
+                targetMashupId={targetMashupId}
+              />
+            )}
+
+            {currentView === 'm2m_mashup_studio' && (
+              <MusikToMusikStudio
+                onBack={() => setCurrentView('m2m_mashup_gallery')}
+                onProjectSaved={handleMashupSaved}
               />
             )}
           </>

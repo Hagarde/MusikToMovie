@@ -111,3 +111,38 @@ export interface MovieToMusikProject {
   likes_count?: number;
   created_at: string;
 }
+
+export type StemType = 'vocals' | 'drums' | 'bass' | 'melody';
+
+export type StemSourceChoice = 'A' | 'B' | 'both' | 'none';
+
+export interface StemMixConfig {
+  vocals: { source: StemSourceChoice; volumeA: number; volumeB: number; isMuted: boolean };
+  drums: { source: StemSourceChoice; volumeA: number; volumeB: number; isMuted: boolean };
+  bass: { source: StemSourceChoice; volumeA: number; volumeB: number; isMuted: boolean };
+  melody: { source: StemSourceChoice; volumeA: number; volumeB: number; isMuted: boolean };
+}
+
+export interface MashupTrackInfo {
+  title: string;
+  artist: string;
+  audio_url: string;
+  thumbnail_url?: string;
+}
+
+export interface MusikToMusikProject {
+  id: string;
+  title: string;
+  creator_name: string;
+  genre: string;
+  trackA: MashupTrackInfo;
+  trackB: MashupTrackInfo;
+  stem_config: StemMixConfig;
+  speed_ratio_B: number; // Ratio tempo (ex: 1.05)
+  offset_seconds_B: number; // Décalage (ex: 0.5s)
+  recorded_audio_data?: string; // Base64 du mashup mixé
+  duration: number;
+  description?: string;
+  likes_count?: number;
+  created_at: string;
+}
