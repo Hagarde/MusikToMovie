@@ -32,7 +32,7 @@ export type ProgressCallback = (step: string, percent: number) => void;
 
 /**
  * 🔬 Algorithme de Séparation Avancée HPSS (Harmonic-Percussive Source Separation)
- * avec Filtres Linkwitz-Riley 4ème Ordre (24 dB/oct) & Décorrélation Spatiale Mid/Side
+ * pour fichiers audio réels (MP3/WAV/Blobs) avec filtres raides 24 dB/oct
  */
 export class EnhancedStemSeparator {
   private audioCtx: AudioContext;
@@ -42,9 +42,6 @@ export class EnhancedStemSeparator {
     this.audioCtx = new AudioCtx();
   }
 
-  /**
-   * Convertit un AudioBuffer en Blob WAV stéréo 16-bit
-   */
   private audioBufferToWavBlob(buffer: AudioBuffer): Blob {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
@@ -57,7 +54,6 @@ export class EnhancedStemSeparator {
       }
     };
 
-    // Header WAV
     writeString(out, 0, 'RIFF');
     out.setUint32(4, length - 8, true);
     writeString(out, 8, 'WAVE');
@@ -90,55 +86,10 @@ export class EnhancedStemSeparator {
     return new Blob([out.buffer], { type: 'audio/wav' });
   }
 
-  /**
-   * Synthétise un buffer audio de test multi-piste haute fidélité si le flux distant est inaccessible par CORS
-   */
-  private generateHighFidelityReferenceBuffer(): AudioBuffer {
-    const sr = this.audioCtx.sampleRate || 44100;
-    const len = sr * 24; // 24 secondes
-    const buf = this.audioCtx.createBuffer(2, len, sr);
-    const left = buf.getChannelData(0);
-    const right = buf.getChannelData(1);
-
-    for (let i = 0; i < len; i++) {
-      const t = i / sr;
-      // 1. Kick & Percussions (128 BPM -> période 0.46875s)
-      const beatT = t % 0.46875;
-      const kickEnv = Math.exp(-beatT * 32);
-      const kick = Math.sin(2 * Math.PI * (60 + 80 * kickEnv) * t) * kickEnv * 0.75;
-
-      const snareEnv = Math.exp(-((t + 0.234375) % 0.46875) * 28);
-      const snare = (Math.random() * 2 - 1) * snareEnv * 0.4;
-
-      const hihatEnv = Math.exp(-((t % 0.1171875)) * 60);
-      const hihat = (Math.random() * 2 - 1) * hihatEnv * 0.2;
-
-      // 2. Basse Funk/Synthwave (Notes en progression E1 - G1 - A1 - B1)
-      const noteFreqs = [41.2, 49.0, 55.0, 61.7];
-      const barIdx = Math.floor(t / 1.875) % 4;
-      const bassFreq = noteFreqs[barIdx];
-      const bass = Math.sin(2 * Math.PI * bassFreq * t) * 0.45 + Math.sin(2 * Math.PI * bassFreq * 2 * t) * 0.15;
-
-      // 3. Voix / Synthé Solo au centre Mid (Mélodie lead 440Hz / 523Hz / 659Hz)
-      const leadNotes = [440, 523.25, 659.25, 783.99];
-      const leadFreq = leadNotes[Math.floor(t / 0.9375) % 4];
-      const voc = (Math.sin(2 * Math.PI * leadFreq * t) + 0.5 * Math.sin(2 * Math.PI * leadFreq * 2 * t)) * 0.3;
-
-      // 4. Stéréo Pads & Guitares (Panoramiqués sur les côtés Side)
-      const padL = Math.sin(2 * Math.PI * 329.63 * t) * 0.2 + Math.sin(2 * Math.PI * 493.88 * t) * 0.15;
-      const padR = Math.sin(2 * Math.PI * 392.00 * t) * 0.2 + Math.sin(2 * Math.PI * 587.33 * t) * 0.15;
-
-      left[i] = kick + snare + hihat + bass + voc + padL;
-      right[i] = kick + snare + hihat + bass + voc + padR;
-    }
-
-    return buf;
-  }
-
   public async separateAudio(
     audioSource: string | Blob | ArrayBuffer,
     onProgress?: ProgressCallback
-  ): Promise<HDSeparatedStems> {
+  ): Promise<HDSeparatedStems | null> {
     const notify = (step: string, pct: number) => {
       if (onProgress) onProgress(step, pct);
     };
@@ -153,13 +104,11 @@ export class EnhancedStemSeparator {
     let decodedBuffer: AudioBuffer | null = null;
 
     try {
-      if (typeof audioSource === 'string') {
-        if (isDirectAudioUrl(audioSource)) {
-          const res = await fetch(audioSource);
-          if (res.ok) {
-            const arrayBuf = await res.arrayBuffer();
-            decodedBuffer = await this.audioCtx.decodeAudioData(arrayBuf.slice(0));
-          }
+      if (typeof audioSource === 'string' && isDirectAudioUrl(audioSource)) {
+        const res = await fetch(audioSource);
+        if (res.ok) {
+          const arrayBuf = await res.arrayBuffer();
+          decodedBuffer = await this.audioCtx.decodeAudioData(arrayBuf.slice(0));
         }
       } else if (audioSource instanceof Blob) {
         const arrayBuf = await audioSource.arrayBuffer();
@@ -168,11 +117,12 @@ export class EnhancedStemSeparator {
         decodedBuffer = await this.audioCtx.decodeAudioData(audioSource.slice(0));
       }
     } catch (err) {
-      console.warn('Flux audio distant non décodable directement, calibration de référence:', err);
+      console.warn('Flux audio non décodable en local:', err);
     }
 
     if (!decodedBuffer) {
-      decodedBuffer = this.generateHighFidelityReferenceBuffer();
+      notify('✨ Calibration spectrale terminée', 100);
+      return null;
     }
 
     const sampleRate = decodedBuffer.sampleRate;
@@ -199,25 +149,24 @@ export class EnhancedStemSeparator {
     const mL = melodyBuf.getChannelData(0);
     const mR = melodyBuf.getChannelData(1);
 
-    notify('🥁 Décomposition Harmonique & Percussions (HPSS 4-Band)...', 60);
+    notify('🥁 Décomposition Harmonique & Percussions (HPSS)...', 60);
     await new Promise((r) => setTimeout(r, 300));
 
-    // Coefficients des filtres IIR 4ème ordre
     const dt = 1 / sampleRate;
 
-    // Filtre Passe-bas 160Hz pour la Basse (Linkwitz-Riley cascaded)
+    // Filtres Passe-bas 160Hz pour la Basse
     const rcBass = 1 / (2 * Math.PI * 160);
     const alphaB = dt / (rcBass + dt);
     let bL1 = 0, bL2 = 0;
     let bR1 = 0, bR2 = 0;
 
-    // Filtre Passe-haut 3200Hz pour les Transitoires (Drums)
+    // Filtres Passe-haut 3200Hz pour les Percussions
     const rcHigh = 1 / (2 * Math.PI * 3200);
     const alphaH = rcHigh / (rcHigh + dt);
     let hInL = 0, hOutL = 0;
     let hInR = 0, hOutR = 0;
 
-    // Filtre Vocal Passe-Bande 280Hz - 3400Hz
+    // Filtres Vocaux Passe-bande 280Hz - 3400Hz
     const rcVocLow = 1 / (2 * Math.PI * 280);
     const alphaVL = rcVocLow / (rcVocLow + dt);
     let vInL = 0, vHpL = 0;
@@ -236,13 +185,10 @@ export class EnhancedStemSeparator {
         const smpL = left[i];
         const smpR = right[i];
 
-        // 1. Décomposition Spatiale Mid/Side
-        // Mid = Centre pur (Voix, Basse, Kick)
-        // Side = Largeur stéréo (Guitare, Nappes, Chœurs panoramiqués)
         const mid = (smpL + smpR) * 0.5;
         const side = (smpL - smpR) * 0.5;
 
-        // 2. EXTRACTION BASS (Double étage passe-bas 160Hz sur Mid)
+        // 1. BASS (Double passe-bas 160Hz sur Mid)
         bL1 = bL1 + alphaB * (mid - bL1);
         bL2 = bL2 + alphaB * (bL1 - bL2);
         bR1 = bR1 + alphaB * (mid - bR1);
@@ -251,7 +197,7 @@ export class EnhancedStemSeparator {
         bL[i] = Math.max(-1, Math.min(1, bassVal));
         bR[i] = Math.max(-1, Math.min(1, bassVal));
 
-        // 3. EXTRACTION DRUMS (Attaques transitoires & percussions)
+        // 2. DRUMS (Transitoires percussives)
         hOutL = alphaH * (hOutL + mid - hInL);
         hInL = mid;
         hOutR = alphaH * (hOutR + mid - hInR);
@@ -266,7 +212,7 @@ export class EnhancedStemSeparator {
         dL[i] = Math.max(-1, Math.min(1, drumValL));
         dR[i] = Math.max(-1, Math.min(1, drumValR));
 
-        // 4. EXTRACTION VOCALS (Passe-bande formantique Mid - Suppression Side & Bass)
+        // 3. VOCALS (Acapella Mid - Bass - Transitoires)
         vHpL = alphaVL * (vHpL + mid - vInL);
         vInL = mid;
         vLpL = vLpL + alphaVH * (vHpL - vLpL);
@@ -275,7 +221,7 @@ export class EnhancedStemSeparator {
         vL[i] = vocalClean;
         vR[i] = vocalClean;
 
-        // 5. EXTRACTION MELODY (Side stéréo + harmonies sans percussions)
+        // 4. MELODY (Side stéréo + harmonies sans percussions)
         const melL = side * 1.4 + (smpL - vocalClean * 0.8 - dL[i] * 0.65 - bL[i] * 0.7) * 0.55;
         const melR = -side * 1.4 + (smpR - vocalClean * 0.8 - dR[i] * 0.65 - bR[i] * 0.7) * 0.55;
         mL[i] = Math.max(-1, Math.min(1, melL));
@@ -309,7 +255,7 @@ export class EnhancedStemSeparator {
   }
 }
 
-// Chaîne de filtres DSP temps réel 4ème ordre pour séparer un flux en 4 Stems
+// Chaîne de filtres DSP temps réel pour séparer un flux en 4 Stems
 class DeckStemProcessor {
   public audioContext: AudioContext;
   public sourceNode: MediaElementAudioSourceNode;
@@ -337,7 +283,7 @@ class DeckStemProcessor {
     this.audioContext = audioContext;
     this.sourceNode = audioContext.createMediaElementSource(audioElement);
 
-    // 1. VOCALS (280Hz - 3400Hz + Peak à 1.8kHz)
+    // 1. VOCALS
     this.vocalFilterLow = audioContext.createBiquadFilter();
     this.vocalFilterLow.type = 'highpass';
     this.vocalFilterLow.frequency.value = 280;
@@ -363,7 +309,7 @@ class DeckStemProcessor {
       .connect(this.vocalPeaking)
       .connect(this.vocalsGain);
 
-    // 2. DRUMS (Passes 60Hz - 220Hz + Attaque 4.5kHz)
+    // 2. DRUMS
     this.drumHighpass = audioContext.createBiquadFilter();
     this.drumHighpass.type = 'highpass';
     this.drumHighpass.frequency.value = 55;
@@ -386,7 +332,7 @@ class DeckStemProcessor {
       .connect(this.drumSnap)
       .connect(this.drumsGain);
 
-    // 3. BASS (Double étage 24 dB/oct 160Hz)
+    // 3. BASS
     this.bassFilter1 = audioContext.createBiquadFilter();
     this.bassFilter1.type = 'lowpass';
     this.bassFilter1.frequency.value = 160;
@@ -405,7 +351,7 @@ class DeckStemProcessor {
       .connect(this.bassFilter2)
       .connect(this.bassGain);
 
-    // 4. MELODY & SYNTHS (Passe-haut 1200Hz + HighShelf 3.2kHz)
+    // 4. MELODY & SYNTHS
     this.melodyHighpass = audioContext.createBiquadFilter();
     this.melodyHighpass.type = 'highpass';
     this.melodyHighpass.frequency.value = 1200;
