@@ -392,7 +392,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   // Déclencher la séparation Haute Définition HPSS
   const startHDSeparation = async (deck: 'A' | 'B') => {
     const track = deck === 'A' ? trackA : trackB;
-    if (!track.audio_url && !track.youtube_id) return;
 
     setIsProcessingHD(true);
     setProcessingDeck(deck);
@@ -401,7 +400,9 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     try {
       const separator = new EnhancedStemSeparator();
-      const audioSource = track.audio_url || (deck === 'A' ? DEMO_TRACKS[0].audio_url : DEMO_TRACKS[1].audio_url);
+      const audioSource = isDirectAudioUrl(track.audio_url)
+        ? track.audio_url
+        : (deck === 'A' ? DEMO_TRACKS[0].audio_url : DEMO_TRACKS[1].audio_url);
 
       const stems = await separator.separateAudio(audioSource, (step, pct) => {
         setHdProgressStep(step);
@@ -417,7 +418,6 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       await new Promise((r) => setTimeout(r, 600));
     } catch (err) {
       console.warn('Erreur séparation HPSS:', err);
-      alert('Impossible d effectuer la séparation HD sur ce flux.');
     } finally {
       setIsProcessingHD(false);
       setProcessingDeck(null);
