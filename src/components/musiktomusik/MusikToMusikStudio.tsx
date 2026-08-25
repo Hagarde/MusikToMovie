@@ -39,35 +39,39 @@ interface MusikToMusikStudioProps {
   libraryTracks?: Track[];
 }
 
-// Bibliothèque de pistes démo permanentes avec en-têtes CORS complets
+// Bibliothèque de pistes démo permanentes YouTube
 const DEMO_TRACKS: (MashupTrackInfo & { genre?: string })[] = [
   {
-    title: 'Midnight Synthwave Drive',
-    artist: 'RetroFuture Labs',
-    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-    thumbnail_url: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&w=400&q=80',
-    genre: 'Synthwave',
+    title: 'Time (Inception Soundtrack)',
+    artist: 'Hans Zimmer',
+    audio_url: '',
+    youtube_id: 'RxabLA7UQ9k',
+    thumbnail_url: 'https://img.youtube.com/vi/RxabLA7UQ9k/hqdefault.jpg',
+    genre: 'Cinématique',
   },
   {
-    title: 'Urban Hip-Hop Groove',
-    artist: 'Street Beats Pro',
-    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-    thumbnail_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
-    genre: 'Hip-Hop',
+    title: 'Blade Runner 2049 (Synth Atmosphere)',
+    artist: 'Hans Zimmer & Vangelis',
+    audio_url: '',
+    youtube_id: 's36eQwgPNSE',
+    thumbnail_url: 'https://img.youtube.com/vi/s36eQwgPNSE/hqdefault.jpg',
+    genre: 'Cyberpunk',
   },
   {
-    title: 'Cinematic Ambient Voice & Strings',
-    artist: 'Ethereal Score',
-    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
-    thumbnail_url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=400&q=80',
-    genre: 'Cinematic',
+    title: 'Interstellar - Main Theme',
+    artist: 'Hans Zimmer',
+    audio_url: '',
+    youtube_id: 'UDVtMYqUAyw',
+    thumbnail_url: 'https://img.youtube.com/vi/UDVtMYqUAyw/hqdefault.jpg',
+    genre: 'Science-Fiction',
   },
   {
-    title: 'Funk & Slap Bass Groove',
-    artist: 'Groove Master',
-    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
-    thumbnail_url: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=400&q=80',
-    genre: 'Funk',
+    title: 'The Dark Knight - Action Beat',
+    artist: 'Hans Zimmer',
+    audio_url: '',
+    youtube_id: '2r1pP294t44',
+    thumbnail_url: 'https://img.youtube.com/vi/2r1pP294t44/hqdefault.jpg',
+    genre: 'Thriller',
   },
 ];
 
@@ -173,6 +177,8 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           fs: 0,
           modestbranding: 1,
           rel: 0,
+          enablejsapi: 1,
+          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
         },
         events: {
           onReady: (event: any) => {
@@ -219,6 +225,8 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           fs: 0,
           modestbranding: 1,
           rel: 0,
+          enablejsapi: 1,
+          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
         },
         events: {
           onReady: (event: any) => {

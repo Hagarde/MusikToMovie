@@ -179,6 +179,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           fs: 0,
           modestbranding: 1,
           rel: 0,
+          enablejsapi: 1,
+          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
           start: Math.floor(track.default_start_time || 0),
         },
         events: {

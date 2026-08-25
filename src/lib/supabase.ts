@@ -174,18 +174,19 @@ export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' 
     if (trackId) {
       query = query.eq('track_id', trackId);
     }
-    if (sortBy === 'likes') {
-      query = query.order('likes_count', { ascending: false }).order('created_at', { ascending: false });
-    } else {
-      query = query.order('created_at', { ascending: false });
-    }
 
     const { data, error } = await query;
     if (!error && data && data.length > 0) {
-      return data;
+      const sorted = [...data];
+      if (sortBy === 'likes') {
+        sorted.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+      } else {
+        sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      }
+      return sorted;
     }
   } catch (e) {
-    console.warn('Erreur chargement proposals Supabase:', e);
+    // Fallback silencieux sur LocalStorage
   }
 
   let allProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
@@ -469,14 +470,15 @@ export async function getMusikToMusikProjects(): Promise<import('./types').Musik
   try {
     const { data, error } = await supabase
       .from('musiktomusik_projects')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*');
 
     if (!error && data && data.length > 0) {
-      return data;
+      const sorted = [...data];
+      sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return sorted;
     }
   } catch (e) {
-    console.warn('Erreur Supabase MusikToMusik, fallback local:', e);
+    // Fallback silencieux sur LocalStorage
   }
 
   return safeGetLocalStorage<import('./types').MusikToMusikProject[]>(LOCAL_STORAGE_MASHUP_KEY, []);
