@@ -133,14 +133,19 @@ export class NeuralStemSeparator {
    */
   public async separateAudio(
     audioSource: string | Blob | ArrayBuffer,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    abortSignal?: AbortSignal
   ): Promise<HDSeparatedStems | null> {
     const notify = (step: string, pct: number) => {
-      if (onProgress) onProgress(step, pct);
+      if (onProgress && !abortSignal?.aborted) onProgress(step, pct);
     };
 
+    if (abortSignal?.aborted) return null;
+
     notify('📥 1/6. Initialisation du moteur d inférence ONNX Runtime Web...', 5);
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 200));
+
+    if (abortSignal?.aborted) return null;
 
     if (this.audioCtx.state === 'suspended') {
       await this.audioCtx.resume();
@@ -149,22 +154,26 @@ export class NeuralStemSeparator {
     let decodedBuffer: AudioBuffer | null = null;
     try {
       if (typeof audioSource === 'string' && (audioSource.startsWith('blob:') || audioSource.startsWith('data:') || audioSource.startsWith('http'))) {
-        const res = await fetch(audioSource);
+        const res = await fetch(audioSource, { signal: abortSignal });
         if (res.ok) {
           const ab = await res.arrayBuffer();
+          if (abortSignal?.aborted) return null;
           decodedBuffer = await this.audioCtx.decodeAudioData(ab.slice(0));
         }
       } else if (audioSource instanceof Blob) {
         const ab = await audioSource.arrayBuffer();
+        if (abortSignal?.aborted) return null;
         decodedBuffer = await this.audioCtx.decodeAudioData(ab.slice(0));
       } else if (audioSource instanceof ArrayBuffer) {
+        if (abortSignal?.aborted) return null;
         decodedBuffer = await this.audioCtx.decodeAudioData(audioSource.slice(0));
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === 'AbortError' || abortSignal?.aborted) return null;
       console.warn('Erreur décodage audio ONNX:', e);
     }
 
-    if (!decodedBuffer) {
+    if (!decodedBuffer || abortSignal?.aborted) {
       notify('✨ Traitement terminé', 100);
       return null;
     }
@@ -174,8 +183,12 @@ export class NeuralStemSeparator {
     const left = decodedBuffer.getChannelData(0);
     const right = decodedBuffer.numberOfChannels > 1 ? decodedBuffer.getChannelData(1) : left;
 
+    if (abortSignal?.aborted) return null;
+
     notify('📊 2/6. Transformée STFT Tenseurs (FFT 2048 points, Pas 512, Recouvrement 75%)...', 15);
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 300));
+
+    if (abortSignal?.aborted) return null;
 
     const fftSize = 2048;
     const hopSize = 512;
@@ -228,6 +241,7 @@ export class NeuralStemSeparator {
 
     // 🔬 Inférence Réseau de Neurones Trame par Trame sur l'intégralité du fichier
     for (let f = 0; f < numFrames; f++) {
+      if (abortSignal?.aborted) return null;
       const offset = f * hopSize;
 
       // 1. Fenêtrage d'entrée

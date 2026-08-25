@@ -189,6 +189,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const recordIntervalRef = useRef<any>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Initialisation du moteur DSP
   useEffect(() => {
@@ -442,6 +443,16 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     };
   }, [isPlaying]);
 
+  // Annuler la séparation en cours
+  const handleCancelSeparation = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsProcessingHD(false);
+    setProcessingDeck(null);
+  };
+
   // Déclencher la séparation Haute Définition par Réseau de Neurones (IA U-Net / STFT)
   const startHDSeparation = async (deck: 'A' | 'B', customTrack?: MashupTrackInfo) => {
     const track = customTrack || (deck === 'A' ? trackA : trackB);
@@ -452,6 +463,11 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       return;
     }
 
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
     setIsProcessingHD(true);
     setProcessingDeck(deck);
     setHdProgressPercent(10);
@@ -459,26 +475,35 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     try {
       const separator = new NeuralStemSeparator();
-      const stems = await separator.separateAudio(track.audio_url, (step: string, pct: number) => {
-        setHdProgressStep(step);
-        setHdProgressPercent(pct);
-      });
-      if (deck === 'A') {
-        setHdStemsA(stems);
-        if (engineRef.current && stems) {
-          engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
-        }
-      } else {
-        setHdStemsB(stems);
-        if (engineRef.current && stems) {
-          engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+      const stems = await separator.separateAudio(
+        track.audio_url,
+        (step: string, pct: number) => {
+          setHdProgressStep(step);
+          setHdProgressPercent(pct);
+        },
+        abortControllerRef.current.signal
+      );
+      if (stems) {
+        if (deck === 'A') {
+          setHdStemsA(stems);
+          if (engineRef.current) {
+            engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
+          }
+        } else {
+          setHdStemsB(stems);
+          if (engineRef.current) {
+            engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+          }
         }
       }
-    } catch (err) {
-      console.warn('Erreur séparation IA:', err);
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.warn('Erreur séparation IA:', err);
+      }
     } finally {
       setIsProcessingHD(false);
       setProcessingDeck(null);
+      abortControllerRef.current = null;
     }
   };
 
@@ -1394,20 +1419,30 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         </button>
       </form>
 
-      {/* ⏳ MODALE DE PROGRESSION HPSS HAUTE DÉFINITION */}
+      {/* ⏳ MODALE DE PROGRESSION ONNX HAUTE DÉFINITION AVEC ANNULATION */}
       {isProcessingHD && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-stone-950 border-2 border-rose-500/50 rounded-3xl max-w-md w-full p-6 text-white shadow-2xl space-y-5 text-center">
+          <div className="bg-stone-950 border-2 border-rose-500/50 rounded-3xl max-w-md w-full p-6 text-white shadow-2xl space-y-5 text-center relative">
+            {/* Bouton Fermer / Annuler en haut à droite */}
+            <button
+              type="button"
+              onClick={handleCancelSeparation}
+              className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-stone-800 text-stone-400 hover:text-white transition-colors"
+              title="Annuler l'analyse"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-500 to-violet-600 flex items-center justify-center mx-auto shadow-lg shadow-rose-600/30 animate-pulse">
               <Sparkles className="w-7 h-7 text-white" />
             </div>
 
             <div className="space-y-1">
               <h3 className="text-base sm:text-lg font-black font-display text-white">
-                Séparation Haute Définition (HPSS)
+                Séparation Ultra-HD (Deep Learning ONNX)
               </h3>
               <p className="text-xs text-stone-400">
-                Traitement DSP Deck {processingDeck} • Isolation des 4 Pistes
+                Inférence neuronale Deck {processingDeck} • Isolation des 4 Pistes
               </p>
             </div>
 
@@ -1420,7 +1455,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 />
               </div>
               <div className="flex justify-between text-[11px] font-mono text-stone-400">
-                <span>Calcul spectral</span>
+                <span>Calcul spectral & tenseurs</span>
                 <span className="text-rose-400 font-bold">{hdProgressPercent}%</span>
               </div>
             </div>
@@ -1430,9 +1465,15 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               <p className="animate-pulse">{hdProgressStep}</p>
             </div>
 
-            <p className="text-[10px] text-stone-500">
-              Extraction des transitoires percussives, isolation harmonique et décorrélation spatiale Mid/Side.
-            </p>
+            {/* Bouton Annuler l'analyse */}
+            <button
+              type="button"
+              onClick={handleCancelSeparation}
+              className="w-full py-2.5 rounded-xl bg-stone-900 hover:bg-rose-950/50 text-stone-300 hover:text-rose-300 text-xs font-bold transition-all border border-stone-800 hover:border-rose-700/80 flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <X className="w-4 h-4 text-rose-400" />
+              <span>Annuler l'analyse en cours</span>
+            </button>
           </div>
         </div>
       )}
