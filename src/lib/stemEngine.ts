@@ -1,6 +1,24 @@
 import { StemMixConfig, StemType, StemSourceChoice } from './types';
 import { blobToBase64 } from './audioEngine';
 
+// Vérifier si une URL est un flux audio direct compatible avec <audio> et Web Audio
+export function isDirectAudioUrl(url: string | undefined): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim().toLowerCase();
+  if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) return false;
+  return (
+    trimmed.startsWith('data:audio') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.endsWith('.mp3') ||
+    trimmed.endsWith('.wav') ||
+    trimmed.endsWith('.ogg') ||
+    trimmed.endsWith('.webm') ||
+    trimmed.includes('freesound') ||
+    trimmed.includes('soundhelix') ||
+    trimmed.includes('wikimedia.org')
+  );
+}
+
 // Chaîne de filtres DSP pour séparer un flux en 4 Stems (Vocals, Drums, Bass, Melody)
 class DeckStemProcessor {
   public audioContext: AudioContext;
@@ -173,29 +191,37 @@ export class MashupAudioEngine {
     this.dispose();
     const ctx = this.initContext();
 
-    this.deckA = new Audio();
-    this.deckA.crossOrigin = 'anonymous';
-    this.deckA.src = urlA;
-    this.deckA.loop = true;
+    if (isDirectAudioUrl(urlA)) {
+      try {
+        this.deckA = new Audio();
+        this.deckA.crossOrigin = 'anonymous';
+        this.deckA.src = urlA;
+        this.deckA.loop = true;
+        this.processorA = new DeckStemProcessor(ctx, this.deckA);
+        this.processorA.connectToDestination(this.masterGain!);
+      } catch (e) {
+        console.warn('Erreur chargement Deck A:', e);
+      }
+    }
 
-    this.deckB = new Audio();
-    this.deckB.crossOrigin = 'anonymous';
-    this.deckB.src = urlB;
-    this.deckB.loop = true;
-
-    this.processorA = new DeckStemProcessor(ctx, this.deckA);
-    this.processorB = new DeckStemProcessor(ctx, this.deckB);
-
-    this.processorA.connectToDestination(this.masterGain!);
-    this.processorB.connectToDestination(this.masterGain!);
+    if (isDirectAudioUrl(urlB)) {
+      try {
+        this.deckB = new Audio();
+        this.deckB.crossOrigin = 'anonymous';
+        this.deckB.src = urlB;
+        this.deckB.loop = true;
+        this.processorB = new DeckStemProcessor(ctx, this.deckB);
+        this.processorB.connectToDestination(this.masterGain!);
+      } catch (e) {
+        console.warn('Erreur chargement Deck B:', e);
+      }
+    }
 
     this.applyStemConfig(config);
   }
 
   // Appliquer la matrice de mixage Stems
   public applyStemConfig(config: StemMixConfig): void {
-    if (!this.processorA || !this.processorB) return;
-
     const applyStem = (
       stem: StemType,
       source: StemSourceChoice,
@@ -204,20 +230,20 @@ export class MashupAudioEngine {
       isMuted: boolean
     ) => {
       if (isMuted || source === 'none') {
-        this.processorA!.setStemGain(stem, 0);
-        this.processorB!.setStemGain(stem, 0);
+        if (this.processorA) this.processorA.setStemGain(stem, 0);
+        if (this.processorB) this.processorB.setStemGain(stem, 0);
         return;
       }
 
       if (source === 'A') {
-        this.processorA!.setStemGain(stem, volA);
-        this.processorB!.setStemGain(stem, 0);
+        if (this.processorA) this.processorA.setStemGain(stem, volA);
+        if (this.processorB) this.processorB.setStemGain(stem, 0);
       } else if (source === 'B') {
-        this.processorA!.setStemGain(stem, 0);
-        this.processorB!.setStemGain(stem, volB);
+        if (this.processorA) this.processorA.setStemGain(stem, 0);
+        if (this.processorB) this.processorB.setStemGain(stem, volB);
       } else if (source === 'both') {
-        this.processorA!.setStemGain(stem, volA);
-        this.processorB!.setStemGain(stem, volB);
+        if (this.processorA) this.processorA.setStemGain(stem, volA);
+        if (this.processorB) this.processorB.setStemGain(stem, volB);
       }
     };
 

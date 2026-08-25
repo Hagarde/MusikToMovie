@@ -170,7 +170,7 @@ export async function deleteProposal(proposalId: string): Promise<boolean> {
 // Récupérer les propositions avec support de tri
 export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' = 'likes'): Promise<Proposal[]> {
   try {
-    let query = supabase.from('proposals').select('*, scenes(*)');
+    let query = supabase.from('proposals').select('*');
     if (trackId) {
       query = query.eq('track_id', trackId);
     }
@@ -207,7 +207,7 @@ export async function getProposalById(id: string): Promise<Proposal | null> {
   try {
     const { data, error } = await supabase
       .from('proposals')
-      .select('*, scenes(*)')
+      .select('*')
       .eq('id', id)
       .single();
     if (!error && data) {

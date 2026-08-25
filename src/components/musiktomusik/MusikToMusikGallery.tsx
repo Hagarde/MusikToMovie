@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { MusikToMusikProject, GENRES } from '../../lib/types';
 import { getMusikToMusikProjects, voteMusikToMusikProject, hasUserVotedMashup } from '../../lib/supabase';
-import { MashupAudioEngine } from '../../lib/stemEngine';
+import { MashupAudioEngine, isDirectAudioUrl } from '../../lib/stemEngine';
 
 interface MusikToMusikGalleryProps {
   onOpenStudio: () => void;
@@ -64,17 +64,34 @@ export const MusikToMusikGallery: React.FC<MusikToMusikGalleryProps> = ({
     }
   };
 
-  const handlePlayProject = async (project: MusikToMusikProject) => {
-    if (!engineRef.current) return;
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
+  const handlePlayProject = async (project: MusikToMusikProject) => {
     if (activeProjectId === project.id && isPlaying) {
-      engineRef.current.pause();
+      if (audioPlayerRef.current) audioPlayerRef.current.pause();
+      if (engineRef.current) engineRef.current.pause();
       setIsPlaying(false);
       return;
     }
 
     setActiveProjectId(project.id);
-    engineRef.current.loadDecks(project.trackA.audio_url, project.trackB.audio_url, project.stem_config);
+
+    // 1. Si une prise audio master a été enregistrée lors de la session
+    if (project.recorded_audio_data) {
+      if (engineRef.current) engineRef.current.pause();
+      if (audioPlayerRef.current) audioPlayerRef.current.pause();
+      audioPlayerRef.current = new Audio(project.recorded_audio_data);
+      audioPlayerRef.current.onended = () => setIsPlaying(false);
+      await audioPlayerRef.current.play().catch(() => {});
+      setIsPlaying(true);
+      return;
+    }
+
+    // 2. Sinon, reconstitution via le moteur DSP
+    if (!engineRef.current) return;
+    const urlA = isDirectAudioUrl(project.trackA.audio_url) ? project.trackA.audio_url : '';
+    const urlB = isDirectAudioUrl(project.trackB.audio_url) ? project.trackB.audio_url : '';
+    engineRef.current.loadDecks(urlA, urlB, project.stem_config);
     engineRef.current.setSpeedB(project.speed_ratio_B || 1.0);
     engineRef.current.setOffsetB(project.offset_seconds_B || 0.0);
     await engineRef.current.play();

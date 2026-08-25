@@ -27,9 +27,9 @@ import {
   Plus
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
-import { MashupAudioEngine } from '../../lib/stemEngine';
+import { MashupAudioEngine, isDirectAudioUrl } from '../../lib/stemEngine';
 import { createMusikToMusikProject } from '../../lib/supabase';
-import { resolveUniversalTrack, extractYouTubeId } from '../../lib/youtube';
+import { resolveUniversalTrack, extractYouTubeId, loadYouTubeAPI } from '../../lib/youtube';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
 
 interface MusikToMusikStudioProps {
@@ -38,33 +38,33 @@ interface MusikToMusikStudioProps {
   libraryTracks?: Track[];
 }
 
-// Bibliothèque de pistes démo pré-intégrées
+// Bibliothèque de pistes démo permanentes avec en-têtes CORS complets
 const DEMO_TRACKS: (MashupTrackInfo & { genre?: string })[] = [
   {
     title: 'Midnight Synthwave Drive',
     artist: 'RetroFuture Labs',
-    audio_url: 'https://cdn.freesound.org/previews/612/612627_5674468-lq.mp3',
+    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     thumbnail_url: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&w=400&q=80',
     genre: 'Synthwave',
   },
   {
     title: 'Urban Hip-Hop Groove',
     artist: 'Street Beats Pro',
-    audio_url: 'https://cdn.freesound.org/previews/558/558231_11861866-lq.mp3',
+    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
     thumbnail_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
     genre: 'Hip-Hop',
   },
   {
     title: 'Cinematic Ambient Voice & Strings',
     artist: 'Ethereal Score',
-    audio_url: 'https://cdn.freesound.org/previews/528/528863_11861866-lq.mp3',
+    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
     thumbnail_url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=400&q=80',
     genre: 'Cinematic',
   },
   {
     title: 'Funk & Slap Bass Groove',
     artist: 'Groove Master',
-    audio_url: 'https://cdn.freesound.org/previews/530/530415_11861866-lq.mp3',
+    audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
     thumbnail_url: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=400&q=80',
     genre: 'Funk',
   },
@@ -115,6 +115,12 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [description, setDescription] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
+  // YouTube IFrame Player refs
+  const ytContainerRefA = useRef<HTMLDivElement | null>(null);
+  const ytContainerRefB = useRef<HTMLDivElement | null>(null);
+  const ytPlayerRefA = useRef<any>(null);
+  const ytPlayerRefB = useRef<any>(null);
+
   const engineRef = useRef<MashupAudioEngine | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -131,10 +137,105 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     };
   }, []);
 
-  // Recharger les Decks dans le moteur quand l'audio change
+  // Initialisation du lecteur YouTube Deck A
   useEffect(() => {
-    if (engineRef.current && trackA.audio_url && trackB.audio_url) {
-      engineRef.current.loadDecks(trackA.audio_url, trackB.audio_url, stemConfig);
+    if (!trackA.youtube_id) {
+      if (ytPlayerRefA.current) {
+        try { ytPlayerRefA.current.destroy(); } catch (_) {}
+        ytPlayerRefA.current = null;
+      }
+      return;
+    }
+
+    let isCancelled = false;
+    loadYouTubeAPI().then((YT) => {
+      if (isCancelled || !ytContainerRefA.current) return;
+
+      if (ytPlayerRefA.current) {
+        try { ytPlayerRefA.current.destroy(); } catch (_) {}
+      }
+
+      ytPlayerRefA.current = new YT.Player(ytContainerRefA.current, {
+        videoId: trackA.youtube_id,
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          modestbranding: 1,
+          rel: 0,
+        },
+        events: {
+          onReady: (event: any) => {
+            event.target.setVolume(85);
+            if (isPlaying) event.target.playVideo();
+          },
+        },
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+      if (ytPlayerRefA.current) {
+        try { ytPlayerRefA.current.destroy(); } catch (_) {}
+        ytPlayerRefA.current = null;
+      }
+    };
+  }, [trackA.youtube_id]);
+
+  // Initialisation du lecteur YouTube Deck B
+  useEffect(() => {
+    if (!trackB.youtube_id) {
+      if (ytPlayerRefB.current) {
+        try { ytPlayerRefB.current.destroy(); } catch (_) {}
+        ytPlayerRefB.current = null;
+      }
+      return;
+    }
+
+    let isCancelled = false;
+    loadYouTubeAPI().then((YT) => {
+      if (isCancelled || !ytContainerRefB.current) return;
+
+      if (ytPlayerRefB.current) {
+        try { ytPlayerRefB.current.destroy(); } catch (_) {}
+      }
+
+      ytPlayerRefB.current = new YT.Player(ytContainerRefB.current, {
+        videoId: trackB.youtube_id,
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          modestbranding: 1,
+          rel: 0,
+        },
+        events: {
+          onReady: (event: any) => {
+            event.target.setVolume(85);
+            try { event.target.setPlaybackRate(speedRatioB); } catch (_) {}
+            if (isPlaying) event.target.playVideo();
+          },
+        },
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+      if (ytPlayerRefB.current) {
+        try { ytPlayerRefB.current.destroy(); } catch (_) {}
+        ytPlayerRefB.current = null;
+      }
+    };
+  }, [trackB.youtube_id]);
+
+  // Recharger les Decks dans le moteur quand l'audio direct change
+  useEffect(() => {
+    if (engineRef.current) {
+      const urlA = isDirectAudioUrl(trackA.audio_url) ? trackA.audio_url : '';
+      const urlB = isDirectAudioUrl(trackB.audio_url) ? trackB.audio_url : '';
+      engineRef.current.loadDecks(urlA, urlB, stemConfig);
       engineRef.current.setSpeedB(speedRatioB);
       engineRef.current.setOffsetB(offsetSecondsB);
       if (isPlaying) {
@@ -148,6 +249,30 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     if (engineRef.current) {
       engineRef.current.applyStemConfig(stemConfig);
     }
+
+    // Synchronisation du volume YouTube Deck A
+    if (ytPlayerRefA.current && typeof ytPlayerRefA.current.setVolume === 'function') {
+      const activeStemsA = (
+        (stemConfig.vocals.source === 'A' || stemConfig.vocals.source === 'both' ? stemConfig.vocals.volumeA : 0) +
+        (stemConfig.drums.source === 'A' || stemConfig.drums.source === 'both' ? stemConfig.drums.volumeA : 0) +
+        (stemConfig.bass.source === 'A' || stemConfig.bass.source === 'both' ? stemConfig.bass.volumeA : 0) +
+        (stemConfig.melody.source === 'A' || stemConfig.melody.source === 'both' ? stemConfig.melody.volumeA : 0)
+      );
+      const avgVolA = Math.min(100, Math.round((activeStemsA / 4) * 100));
+      ytPlayerRefA.current.setVolume(avgVolA);
+    }
+
+    // Synchronisation du volume YouTube Deck B
+    if (ytPlayerRefB.current && typeof ytPlayerRefB.current.setVolume === 'function') {
+      const activeStemsB = (
+        (stemConfig.vocals.source === 'B' || stemConfig.vocals.source === 'both' ? stemConfig.vocals.volumeB : 0) +
+        (stemConfig.drums.source === 'B' || stemConfig.drums.source === 'both' ? stemConfig.drums.volumeB : 0) +
+        (stemConfig.bass.source === 'B' || stemConfig.bass.source === 'both' ? stemConfig.bass.volumeB : 0) +
+        (stemConfig.melody.source === 'B' || stemConfig.melody.source === 'both' ? stemConfig.melody.volumeB : 0)
+      );
+      const avgVolB = Math.min(100, Math.round((activeStemsB / 4) * 100));
+      ytPlayerRefB.current.setVolume(avgVolB);
+    }
   }, [stemConfig]);
 
   // Mettre à jour vitesse Deck B
@@ -155,12 +280,22 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     if (engineRef.current) {
       engineRef.current.setSpeedB(speedRatioB);
     }
+    if (ytPlayerRefB.current && typeof ytPlayerRefB.current.setPlaybackRate === 'function') {
+      try {
+        ytPlayerRefB.current.setPlaybackRate(speedRatioB);
+      } catch (_) {}
+    }
   }, [speedRatioB]);
 
   // Mettre à jour offset Deck B
   useEffect(() => {
     if (engineRef.current) {
       engineRef.current.setOffsetB(offsetSecondsB);
+    }
+    if (ytPlayerRefB.current && typeof ytPlayerRefB.current.seekTo === 'function') {
+      try {
+        ytPlayerRefB.current.seekTo(offsetSecondsB, true);
+      } catch (_) {}
     }
   }, [offsetSecondsB]);
 
@@ -207,26 +342,37 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
   // Lecture / Pause Master
   const togglePlay = async () => {
-    if (!engineRef.current) return;
-    if (isPlaying) {
-      engineRef.current.pause();
-      setIsPlaying(false);
+    const nextPlaying = !isPlaying;
+    setIsPlaying(nextPlaying);
+
+    if (nextPlaying) {
+      if (engineRef.current) engineRef.current.play();
+      if (ytPlayerRefA.current && typeof ytPlayerRefA.current.playVideo === 'function') {
+        ytPlayerRefA.current.playVideo();
+      }
+      if (ytPlayerRefB.current && typeof ytPlayerRefB.current.playVideo === 'function') {
+        try { ytPlayerRefB.current.setPlaybackRate(speedRatioB); } catch (_) {}
+        ytPlayerRefB.current.playVideo();
+      }
     } else {
-      await engineRef.current.play();
-      setIsPlaying(true);
+      if (engineRef.current) engineRef.current.pause();
+      if (ytPlayerRefA.current && typeof ytPlayerRefA.current.pauseVideo === 'function') {
+        ytPlayerRefA.current.pauseVideo();
+      }
+      if (ytPlayerRefB.current && typeof ytPlayerRefB.current.pauseVideo === 'function') {
+        ytPlayerRefB.current.pauseVideo();
+      }
     }
   };
 
   // Enregistrement du Mashup Live
   const startRecording = () => {
-    if (!engineRef.current) return;
     if (!isPlaying) {
-      engineRef.current.play();
-      setIsPlaying(true);
+      togglePlay();
     }
     setRecordSeconds(0);
     setIsRecordingMashup(true);
-    engineRef.current.startRecording();
+    if (engineRef.current) engineRef.current.startRecording();
 
     recordIntervalRef.current = setInterval(() => {
       setRecordSeconds((prev) => prev + 1);
@@ -234,12 +380,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   };
 
   const stopRecording = async () => {
-    if (!engineRef.current || !isRecordingMashup) return;
     setIsRecordingMashup(false);
     if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
 
-    const base64 = await engineRef.current.stopRecording();
-    setRecordedAudioBase64(base64);
+    if (engineRef.current) {
+      const base64 = await engineRef.current.stopRecording();
+      setRecordedAudioBase64(base64);
+    }
   };
 
   // Presets de Mashup rapides
@@ -310,15 +457,10 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       const res = await resolveUniversalTrack(youtubeUrlInput.trim());
       const ytId = res.youtubeId || extractYouTubeId(youtubeUrlInput.trim());
 
-      // Pour la séparation DSP, on associe le flux audio ou un audio fallback si non directement strippable
-      const audioUrl = ytId
-        ? `https://cdn.freesound.org/previews/612/612627_5674468-lq.mp3` // Stream audio compatible Web Audio DSP
-        : '';
-
       const newTrackInfo: MashupTrackInfo & { genre?: string } = {
         title: res.title || 'Musique YouTube',
         artist: res.artist || 'Artiste YouTube',
-        audio_url: audioUrl,
+        audio_url: '',
         thumbnail_url: res.thumbnail_url || (ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : ''),
         youtube_id: ytId || undefined,
         genre: 'YouTube',
@@ -411,6 +553,12 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
+      {/* Conteneurs YouTube Iframe cachés mais actifs */}
+      <div className="sr-only pointer-events-none opacity-0 h-0 overflow-hidden">
+        <div ref={ytContainerRefA} />
+        <div ref={ytContainerRefB} />
+      </div>
+
       {/* Barre supérieure */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-stone-200">
         <button
@@ -1025,7 +1173,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                           selectTrackForDeck(selectorTargetDeck, {
                             title: t.title,
                             artist: t.artist,
-                            audio_url: t.audio_url || 'https://cdn.freesound.org/previews/612/612627_5674468-lq.mp3',
+                            audio_url: isDirectAudioUrl(t.audio_url) ? t.audio_url : '',
                             thumbnail_url: t.thumbnail_url || (t.youtube_id ? `https://img.youtube.com/vi/${t.youtube_id}/hqdefault.jpg` : ''),
                             youtube_id: t.youtube_id,
                             genre: t.genre,
