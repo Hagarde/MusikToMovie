@@ -141,29 +141,81 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [showYtExtractorModal, setShowYtExtractorModal] = useState<'A' | 'B' | null>(null);
   const [copiedYtLink, setCopiedYtLink] = useState<boolean>(false);
 
+  // Traitement universel des fichiers déposés ou sélectionnés (MP3 individuel ou Pack 4 Stems UVR5/Demucs)
+  const processImportedFiles = (deck: 'A' | 'B', fileList: FileList | File[]) => {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+
+    // Cas 1 : Dépôt simultané de plusieurs stems pré-séparés (ex: UVR5 / Demucs / Moises)
+    if (files.length > 1) {
+      let vocUrl = '', drmUrl = '', basUrl = '', melUrl = '';
+      for (const f of files) {
+        const name = f.name.toLowerCase();
+        const url = URL.createObjectURL(f);
+        if (name.includes('voc') || name.includes('chant') || name.includes('acapella') || name.includes('lead')) {
+          vocUrl = url;
+        } else if (name.includes('drum') || name.includes('beat') || name.includes('percu') || name.includes('batterie')) {
+          drmUrl = url;
+        } else if (name.includes('bass') || name.includes('basse') || name.includes('sub')) {
+          basUrl = url;
+        } else if (name.includes('melod') || name.includes('other') || name.includes('inst') || name.includes('guitar') || name.includes('synth')) {
+          melUrl = url;
+        }
+      }
+
+      if (vocUrl || drmUrl || basUrl || melUrl) {
+        const stems: HDSeparatedStems = {
+          vocalsUrl: vocUrl || drmUrl || basUrl || melUrl,
+          drumsUrl: drmUrl || vocUrl || basUrl || melUrl,
+          bassUrl: basUrl || vocUrl || drmUrl || melUrl,
+          melodyUrl: melUrl || vocUrl || drmUrl || basUrl,
+          duration: 180,
+        };
+
+        const customTrack: MashupTrackInfo & { genre?: string } = {
+          title: files[0].name.replace(/\.[^/.]+$/, '').replace(/[_-](vocals|drums|bass|other|melody)/i, ''),
+          artist: 'Pack 4 Stems Pro Studio',
+          audio_url: stems.vocalsUrl,
+          thumbnail_url: '',
+          genre: 'Stems Pro UVR5/Demucs',
+        };
+
+        if (deck === 'A') {
+          setTrackA(customTrack);
+          setHdStemsA(stems);
+          if (engineRef.current) engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
+        } else {
+          setTrackB(customTrack);
+          setHdStemsB(stems);
+          if (engineRef.current) engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+        }
+        if (showYtExtractorModal) setShowYtExtractorModal(null);
+        return;
+      }
+    }
+
+    // Cas 2 : Fichier MP3 / WAV unique
+    const file = files[0];
+    const objectUrl = URL.createObjectURL(file);
+    const customTrack: MashupTrackInfo & { genre?: string } = {
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      artist: 'Fichier Audio Local',
+      audio_url: objectUrl,
+      thumbnail_url: '',
+      genre: file.name.split('.').pop()?.toUpperCase() || 'Audio',
+    };
+    selectTrackForDeck(deck, customTrack);
+    if (showYtExtractorModal) setShowYtExtractorModal(null);
+  };
+
   const handleDropAudio = (deck: 'A' | 'B', e: React.DragEvent) => {
     e.preventDefault();
     if (deck === 'A') setIsDraggingA(false);
     else setIsDraggingB(false);
 
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        const customTrack: MashupTrackInfo & { genre?: string } = {
-          title: file.name.replace(/\.[^/.]+$/, ''),
-          artist: 'Fichier Audio Déposé',
-          audio_url: event.target.result as string,
-          thumbnail_url: '',
-          genre: 'MP3 / Audio Direct',
-        };
-        selectTrackForDeck(deck, customTrack);
-        if (showYtExtractorModal) setShowYtExtractorModal(null);
-      }
-    };
-    reader.readAsDataURL(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processImportedFiles(deck, e.dataTransfer.files);
+    }
   };
 
   const handleRunBenchmark = async () => {
@@ -661,25 +713,11 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     }, 150);
   };
 
-  // Upload d'un fichier audio personnalisé
+  // Upload d'un fichier audio ou pack multi-stems
   const handleUploadAudio = (deck: 'A' | 'B', e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        const customTrack: MashupTrackInfo & { genre?: string } = {
-          title: file.name.replace(/\.[^/.]+$/, ''),
-          artist: 'Fichier Audio Importé',
-          audio_url: event.target.result as string,
-          thumbnail_url: '',
-          genre: 'Fichier Local',
-        };
-        selectTrackForDeck(deck, customTrack);
-      }
-    };
-    reader.readAsDataURL(file);
+    if (e.target.files && e.target.files.length > 0) {
+      processImportedFiles(deck, e.target.files);
+    }
   };
 
   // Sauvegarder le Mashup
@@ -978,16 +1016,35 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               <span>📥 Extraire MP3 YouTube</span>
             </button>
 
-            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm border border-stone-200">
-              <span>📂 Glisser / Importer MP3</span>
+            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm border border-stone-200" title="Glissez un MP3 ou sélectionnez les 4 stems UVR5/Demucs">
+              <span>📂 Importer MP3 / Stems Pro</span>
               <input
                 type="file"
+                multiple
                 accept="audio/*"
                 onChange={(e) => handleUploadAudio('A', e)}
                 className="hidden"
               />
             </label>
           </div>
+
+          {/* Badges d'état des 4 Stems Deck A */}
+          {hdStemsA && (
+            <div className="grid grid-cols-4 gap-1.5 pt-1 text-[10px] font-bold text-center">
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.vocals.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                <span>🎤 Voix</span>
+              </div>
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.drums.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
+                <span>🥁 Drums</span>
+              </div>
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.bass.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                <span>🎸 Basse</span>
+              </div>
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.melody.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                <span>🎹 Mélodie</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* DECK B */}
@@ -1002,7 +1059,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           {isDraggingB && (
             <div className="absolute inset-0 bg-violet-600/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center text-white font-black text-sm p-4 text-center animate-in fade-in">
               <Sparkles className="w-10 h-10 mb-2 animate-bounce" />
-              <p>🎯 Déposez votre fichier MP3 / WAV ici pour le Deck B !</p>
+              <p>🎯 Déposez votre fichier MP3 ou vos 4 Stems Pro pour le Deck B !</p>
               <p className="text-xs font-normal text-violet-200 mt-1">Séparation Deep Learning ONNX automatique</p>
             </div>
           )}
@@ -1101,16 +1158,35 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               <span>📥 Extraire MP3 YouTube</span>
             </button>
 
-            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm">
-              <span>📂 Glisser / Importer MP3</span>
+            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm border border-stone-200" title="Glissez un MP3 ou sélectionnez les 4 stems UVR5/Demucs">
+              <span>📂 Importer MP3 / Stems Pro</span>
               <input
                 type="file"
+                multiple
                 accept="audio/*"
                 onChange={(e) => handleUploadAudio('B', e)}
                 className="hidden"
               />
             </label>
           </div>
+
+          {/* Badges d'état des 4 Stems Deck B */}
+          {hdStemsB && (
+            <div className="grid grid-cols-4 gap-1.5 pt-1 text-[10px] font-bold text-center">
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.vocals.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                <span>🎤 Voix</span>
+              </div>
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.drums.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>
+                <span>🥁 Drums</span>
+              </div>
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.bass.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                <span>🎸 Basse</span>
+              </div>
+              <div className={`py-1 px-1.5 rounded-lg border flex items-center justify-center gap-1 ${stemConfig.melody.isMuted ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                <span>🎹 Mélodie</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
