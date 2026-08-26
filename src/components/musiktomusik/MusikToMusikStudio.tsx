@@ -26,7 +26,8 @@ import {
   ExternalLink,
   Plus,
   Loader2,
-  Copy
+  Copy,
+  FolderArchive
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
 import { MashupAudioEngine, EnhancedStemSeparator, NeuralStemSeparator, HDSeparatedStems, isDirectAudioUrl } from '../../lib/stemEngine';
@@ -141,6 +142,87 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [showYtExtractorModal, setShowYtExtractorModal] = useState<'A' | 'B' | null>(null);
   const [copiedYtLink, setCopiedYtLink] = useState<boolean>(false);
 
+  // Modale dédiée d'import de Pack 4 Stems (Demucs / UVR5)
+  const [showStemsPackModal, setShowStemsPackModal] = useState<'A' | 'B' | null>(null);
+  const [stemsPackVocals, setStemsPackVocals] = useState<File | null>(null);
+  const [stemsPackDrums, setStemsPackDrums] = useState<File | null>(null);
+  const [stemsPackBass, setStemsPackBass] = useState<File | null>(null);
+  const [stemsPackMelody, setStemsPackMelody] = useState<File | null>(null);
+  const [stemsPackTitle, setStemsPackTitle] = useState<string>('');
+
+  const handleStemsPackFiles = (fileList: FileList | File[]) => {
+    const files = Array.from(fileList);
+    let titleGuess = '';
+    for (const f of files) {
+      const name = f.name.toLowerCase();
+      if (!titleGuess && f.name.length > 8 && !['vocals.wav', 'drums.wav', 'bass.wav', 'melody.wav', 'other.wav'].includes(name)) {
+        titleGuess = f.name.replace(/\.[^/.]+$/, '').replace(/[_-](vocals|drums|bass|other|melody)/i, '');
+      }
+      if (name.includes('voc') || name.includes('chant') || name.includes('acapella') || name.includes('lead')) {
+        setStemsPackVocals(f);
+      } else if (name.includes('drum') || name.includes('beat') || name.includes('percu') || name.includes('batterie')) {
+        setStemsPackDrums(f);
+      } else if (name.includes('bass') || name.includes('basse') || name.includes('sub')) {
+        setStemsPackBass(f);
+      } else if (name.includes('melod') || name.includes('other') || name.includes('inst') || name.includes('guitar') || name.includes('synth')) {
+        setStemsPackMelody(f);
+      }
+    }
+    if (titleGuess && !stemsPackTitle) {
+      setStemsPackTitle(titleGuess);
+    }
+  };
+
+  const handleApplyStemsPack = () => {
+    if (!showStemsPackModal) return;
+    const deck = showStemsPackModal;
+    const vocUrl = stemsPackVocals ? URL.createObjectURL(stemsPackVocals) : '';
+    const drmUrl = stemsPackDrums ? URL.createObjectURL(stemsPackDrums) : '';
+    const basUrl = stemsPackBass ? URL.createObjectURL(stemsPackBass) : '';
+    const melUrl = stemsPackMelody ? URL.createObjectURL(stemsPackMelody) : '';
+
+    const fallbackUrl = vocUrl || drmUrl || basUrl || melUrl;
+    if (!fallbackUrl) {
+      alert('Veuillez sélectionner au moins 1 fichier audio pour le pack de stems.');
+      return;
+    }
+
+    const stems: HDSeparatedStems = {
+      vocalsUrl: vocUrl || fallbackUrl,
+      drumsUrl: drmUrl || fallbackUrl,
+      bassUrl: basUrl || fallbackUrl,
+      melodyUrl: melUrl || fallbackUrl,
+      duration: 180,
+    };
+
+    const finalTitle = stemsPackTitle.trim() || 'Pack 4 Stems Demucs Pro';
+
+    const customTrack: MashupTrackInfo & { genre?: string } = {
+      title: finalTitle,
+      artist: 'Demucs v4 (Stems Pro)',
+      audio_url: stems.vocalsUrl,
+      thumbnail_url: '',
+      genre: 'Stems Pro',
+    };
+
+    if (deck === 'A') {
+      setTrackA(customTrack);
+      setHdStemsA(stems);
+      if (engineRef.current) engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
+    } else {
+      setTrackB(customTrack);
+      setHdStemsB(stems);
+      if (engineRef.current) engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+    }
+
+    setShowStemsPackModal(null);
+    setStemsPackVocals(null);
+    setStemsPackDrums(null);
+    setStemsPackBass(null);
+    setStemsPackMelody(null);
+    setStemsPackTitle('');
+  };
+
   // Traitement universel des fichiers déposés ou sélectionnés (MP3 individuel ou Pack 4 Stems UVR5/Demucs)
   const processImportedFiles = (deck: 'A' | 'B', fileList: FileList | File[]) => {
     const files = Array.from(fileList);
@@ -173,8 +255,8 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         };
 
         const customTrack: MashupTrackInfo & { genre?: string } = {
-          title: files[0].name.replace(/\.[^/.]+$/, '').replace(/[_-](vocals|drums|bass|other|melody)/i, ''),
-          artist: 'Pack 4 Stems Pro Studio',
+          title: files[0].name.replace(/\.[^/.]+$/, '').replace(/[_-](vocals|drums|bass|other|melody)/i, '') || 'Pack 4 Stems Demucs',
+          artist: 'Demucs v4 (Stems Pro)',
           audio_url: stems.vocalsUrl,
           thumbnail_url: '',
           genre: 'Stems Pro UVR5/Demucs',
@@ -1007,20 +1089,29 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           </div>
 
           {/* Zone de Glisser-Déposer & Assistant MP3 Deck A */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="grid grid-cols-3 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowStemsPackModal('A')}
+              className="text-[10px] sm:text-[11px] font-extrabold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
+              title="Importer les 4 fichiers WAV séparés avec Demucs v4 / UVR5 d'un coup"
+            >
+              <FolderArchive className="w-3.5 h-3.5 text-emerald-600" />
+              <span>📦 Pack 4 Stems</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowYtExtractorModal('A')}
-              className="flex-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+              className="text-[10px] sm:text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
             >
-              <span>📥 Extraire MP3 YouTube</span>
+              <span>📥 Extraire YT</span>
             </button>
 
-            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm border border-stone-200" title="Glissez un MP3 ou sélectionnez les 4 stems UVR5/Demucs">
-              <span>📂 Importer MP3 / Stems Pro</span>
+            <label className="text-[10px] sm:text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm border border-stone-200" title="Glissez ou choisissez un MP3">
+              <span>📂 MP3 Simple</span>
               <input
                 type="file"
-                multiple
                 accept="audio/*"
                 onChange={(e) => handleUploadAudio('A', e)}
                 className="hidden"
@@ -1149,20 +1240,29 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           </div>
 
           {/* Zone de Glisser-Déposer & Assistant MP3 Deck B */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="grid grid-cols-3 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowStemsPackModal('B')}
+              className="text-[10px] sm:text-[11px] font-extrabold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
+              title="Importer les 4 fichiers WAV séparés avec Demucs v4 / UVR5 d'un coup"
+            >
+              <FolderArchive className="w-3.5 h-3.5 text-emerald-600" />
+              <span>📦 Pack 4 Stems</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowYtExtractorModal('B')}
-              className="flex-1 text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+              className="text-[10px] sm:text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
             >
-              <span>📥 Extraire MP3 YouTube</span>
+              <span>📥 Extraire YT</span>
             </button>
 
-            <label className="flex-1 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm border border-stone-200" title="Glissez un MP3 ou sélectionnez les 4 stems UVR5/Demucs">
-              <span>📂 Importer MP3 / Stems Pro</span>
+            <label className="text-[10px] sm:text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 py-2 px-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm border border-stone-200" title="Glissez ou choisissez un MP3">
+              <span>📂 MP3 Simple</span>
               <input
                 type="file"
-                multiple
                 accept="audio/*"
                 onChange={(e) => handleUploadAudio('B', e)}
                 className="hidden"
@@ -2063,6 +2163,143 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 />
               </label>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📦 MODALE DÉDIÉE D'IMPORTATION DE PACK 4 STEMS DEMUCS / UVR5 */}
+      {showStemsPackModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-stone-950 border-2 border-emerald-500/50 rounded-3xl max-w-lg w-full p-6 text-white shadow-2xl space-y-5 relative">
+            {/* Bouton Fermer */}
+            <button
+              type="button"
+              onClick={() => setShowStemsPackModal(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-stone-800 text-stone-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <FolderArchive className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white font-display">
+                  Importer un Pack 4 Stems (Deck {showStemsPackModal})
+                </h3>
+                <p className="text-xs text-stone-400">
+                  Pistes séparées avec le script <code className="text-emerald-300 font-mono">extraire_pistes.bat</code> ou Demucs / UVR5
+                </p>
+              </div>
+            </div>
+
+            {/* Zone Principale de Dépôt Global des 4 Fichiers */}
+            <label
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  handleStemsPackFiles(e.dataTransfer.files);
+                }
+              }}
+              className="border-2 border-dashed border-emerald-500/50 hover:border-emerald-400 bg-emerald-950/20 hover:bg-emerald-950/30 rounded-2xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all gap-1.5"
+            >
+              <Sparkles className="w-6 h-6 text-emerald-400 animate-bounce" />
+              <p className="text-xs font-bold text-white">
+                📂 Déposez vos 4 fichiers WAV d'un coup ici (ou cliquez pour parcourir)
+              </p>
+              <p className="text-[10px] text-emerald-300/70">
+                Reconnaissance automatique : vocals.wav, drums.wav, bass.wav, melody.wav
+              </p>
+              <input
+                type="file"
+                multiple
+                accept="audio/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    handleStemsPackFiles(e.target.files);
+                  }
+                }}
+                className="hidden"
+              />
+            </label>
+
+            {/* Titre du Morceau */}
+            <div>
+              <label className="block text-[11px] font-bold text-stone-300 mb-1">
+                Titre du Morceau
+              </label>
+              <input
+                type="text"
+                value={stemsPackTitle}
+                onChange={(e) => setStemsPackTitle(e.target.value)}
+                placeholder="Ex: Jaymee - Princes de la Ville (Demucs)"
+                className="w-full bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* 4 Cartes de Statut des Stems */}
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* Voix */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${stemsPackVocals ? 'bg-rose-950/40 border-rose-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-extrabold text-rose-400">🎤 Voix (Vocals)</p>
+                  <p className="text-[10px] truncate">{stemsPackVocals ? stemsPackVocals.name : 'En attente...'}</p>
+                </div>
+                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-1 rounded-lg cursor-pointer shrink-0">
+                  <span>{stemsPackVocals ? 'Modifier' : 'Choisir'}</span>
+                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackVocals(e.target.files[0])} className="hidden" />
+                </label>
+              </div>
+
+              {/* Drums */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${stemsPackDrums ? 'bg-orange-950/40 border-orange-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-extrabold text-orange-400">🥁 Batterie (Drums)</p>
+                  <p className="text-[10px] truncate">{stemsPackDrums ? stemsPackDrums.name : 'En attente...'}</p>
+                </div>
+                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-1 rounded-lg cursor-pointer shrink-0">
+                  <span>{stemsPackDrums ? 'Modifier' : 'Choisir'}</span>
+                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackDrums(e.target.files[0])} className="hidden" />
+                </label>
+              </div>
+
+              {/* Basse */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${stemsPackBass ? 'bg-amber-950/40 border-amber-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-extrabold text-amber-400">🎸 Basse (Bass)</p>
+                  <p className="text-[10px] truncate">{stemsPackBass ? stemsPackBass.name : 'En attente...'}</p>
+                </div>
+                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-1 rounded-lg cursor-pointer shrink-0">
+                  <span>{stemsPackBass ? 'Modifier' : 'Choisir'}</span>
+                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackBass(e.target.files[0])} className="hidden" />
+                </label>
+              </div>
+
+              {/* Mélodie */}
+              <div className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${stemsPackMelody ? 'bg-emerald-950/40 border-emerald-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-extrabold text-emerald-400">🎹 Mélodie (Other)</p>
+                  <p className="text-[10px] truncate">{stemsPackMelody ? stemsPackMelody.name : 'En attente...'}</p>
+                </div>
+                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-1 rounded-lg cursor-pointer shrink-0">
+                  <span>{stemsPackMelody ? 'Modifier' : 'Choisir'}</span>
+                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackMelody(e.target.files[0])} className="hidden" />
+                </label>
+              </div>
+            </div>
+
+            {/* Bouton Valider */}
+            <button
+              type="button"
+              onClick={handleApplyStemsPack}
+              disabled={!stemsPackVocals && !stemsPackDrums && !stemsPackBass && !stemsPackMelody}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs sm:text-sm transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 cursor-pointer"
+            >
+              <Check className="w-4 h-4" />
+              <span>🚀 Valider & Charger sur le Deck {showStemsPackModal}</span>
+            </button>
           </div>
         </div>
       )}
