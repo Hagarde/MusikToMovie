@@ -15,6 +15,18 @@ import shutil
 import subprocess
 from pathlib import Path
 
+# Injection automatique de FFmpeg dans PATH
+try:
+    import imageio_ffmpeg
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+    target_ffmpeg = os.path.join(ffmpeg_dir, "ffmpeg.exe")
+    if not os.path.exists(target_ffmpeg):
+        shutil.copyfile(ffmpeg_exe, target_ffmpeg)
+    os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+except Exception:
+    pass
+
 OUTPUT_DIR = Path("stems_output")
 
 def check_dependencies():
@@ -30,6 +42,11 @@ def check_dependencies():
     except ImportError:
         missing.append("demucs")
 
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        missing.append("imageio-ffmpeg")
+
     if missing:
         print("\n⚠️  Dépendances manquantes détectées !")
         print(f"👉 Veuillez exécuter : pip install {' '.join(missing)} torch torchaudio")
@@ -42,13 +59,18 @@ def check_dependencies():
             sys.exit(1)
 
 def download_youtube_audio(url: str, output_path: Path):
-    """Télécharge l'audio YouTube en qualité maximale."""
+    """Télécharge l'audio YouTube et le convertit directement en WAV propre."""
     print(f"\n📥 1/3. Téléchargement YouTube ({url})...")
     import yt_dlp
 
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': str(output_path / '%(title)s.%(ext)s'),
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'wav',
+            'preferredquality': '0',
+        }],
         'quiet': False,
         'no_warnings': True,
     }
@@ -57,15 +79,17 @@ def download_youtube_audio(url: str, output_path: Path):
         info = ydl.extract_info(url, download=True)
         title = info.get('title', 'audio_track')
         safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-        files = list(output_path.glob("*.*"))
-        audio_file = files[0] if files else output_path
-        return audio_file, safe_title
+        wav_files = list(output_path.glob("*.wav"))
+        if wav_files:
+            return wav_files[0], safe_title
+        all_files = list(output_path.glob("*.*"))
+        return all_files[0] if all_files else output_path, safe_title
 
 def separate_with_demucs(audio_file: Path, target_dir: Path, title: str):
     """Lance la séparation Demucs v4 HTDemucs (Qualité Studio Pro)."""
     print(f"\n🧠 2/3. Inférence Réseau de Neurones Demucs v4 (HTDemucs)...")
     print(f"🎵 Fichier source : {audio_file.name}")
-    print("⏳ Ce calcul utilise votre GPU (CUDA) ou CPU multi-cœurs. Veuillez patienter...")
+    print("⏳ Ce calcul utilise votre processeur multi-coeurs / GPU. Veuillez patienter...")
 
     cmd = [
         sys.executable, "-m", "demucs.separate",
@@ -74,7 +98,7 @@ def separate_with_demucs(audio_file: Path, target_dir: Path, title: str):
         str(audio_file)
     ]
     
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd, env=os.environ)
 
     # Récupération et renommage des 4 fichiers générés par Demucs
     track_name = audio_file.stem
