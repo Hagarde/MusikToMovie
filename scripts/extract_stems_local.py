@@ -11,6 +11,7 @@ Sépare 100% hors-navigateur en 4 pistes chirurgicales pour MusikToMovie :
 
 import os
 import sys
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -58,14 +59,31 @@ def check_dependencies():
         else:
             sys.exit(1)
 
+def sanitize_url(raw_url: str) -> str:
+    """Corrige les éventuelles fautes de frappe dans l'URL (ex: hhttps://)."""
+    url = raw_url.strip().strip('"').strip("'")
+    if url.startswith("hhttps://"):
+        url = "https://" + url[9:]
+    elif url.startswith("hhttp://"):
+        url = "http://" + url[8:]
+    elif not url.startswith("http://") and not url.startswith("https://") and ("youtube.com" in url or "youtu.be" in url):
+        url = "https://" + url
+    return url
+
 def download_youtube_audio(url: str, output_path: Path):
     """Télécharge l'audio YouTube et le convertit directement en WAV propre."""
+    url = sanitize_url(url)
     print(f"\n📥 1/3. Téléchargement YouTube ({url})...")
     import yt_dlp
 
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': str(output_path / '%(title)s.%(ext)s'),
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'mweb', 'web_creator'],
+            }
+        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'wav',
@@ -75,15 +93,42 @@ def download_youtube_audio(url: str, output_path: Path):
         'no_warnings': True,
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        title = info.get('title', 'audio_track')
-        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-        wav_files = list(output_path.glob("*.wav"))
-        if wav_files:
-            return wav_files[0], safe_title
-        all_files = list(output_path.glob("*.*"))
-        return all_files[0] if all_files else output_path, safe_title
+    info = None
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except Exception as e:
+        print(f"\n⚠️  Tentative de contournement du blocage YouTube (avec cookies navigateur)...")
+        for browser in ['chrome', 'edge', 'firefox', 'brave', 'opera']:
+            try:
+                print(f"  👉 Test des cookies {browser.capitalize()}...")
+                opts_with_cookies = dict(ydl_opts)
+                opts_with_cookies['cookiesfrombrowser'] = (browser,)
+                with yt_dlp.YoutubeDL(opts_with_cookies) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    if info:
+                        break
+            except Exception:
+                continue
+
+    if not info:
+        print("\n❌ YouTube a bloqué le téléchargement automatique de cette vidéo spécifique.")
+        print("💡 Solution simple :")
+        print("1. Téléchargez le MP3 sur 10downloader.com ou y2mate.is")
+        print("2. Glissez simplement le fichier MP3 téléchargé dans cette fenêtre !")
+        mp3_path = input("\n👉 Glissez votre fichier MP3 ici (ou chemin complet) : ").strip('"').strip("'")
+        if mp3_path and Path(mp3_path).exists():
+            file = Path(mp3_path)
+            return file, file.stem
+        sys.exit(1)
+
+    title = info.get('title', 'audio_track')
+    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+    wav_files = list(output_path.glob("*.wav"))
+    if wav_files:
+        return wav_files[0], safe_title
+    all_files = list(output_path.glob("*.*"))
+    return all_files[0] if all_files else output_path, safe_title
 
 def separate_with_demucs(audio_file: Path, target_dir: Path, title: str):
     """Lance la séparation Demucs v4 HTDemucs (Qualité Studio Pro)."""
@@ -139,7 +184,7 @@ def main():
 
     source = sys.argv[1] if len(sys.argv) > 1 else ""
     if not source:
-        source = input("\n👉 Entrez une URL YouTube ou le chemin d'un fichier audio (MP3/WAV) : ").strip('"').strip()
+        source = input("\n👉 Entrez une URL YouTube ou le chemin d'un fichier audio (MP3/WAV) : ").strip('"').strip("'")
 
     if not source:
         print("❌ Aucune entrée fournie. Fin du programme.")
@@ -150,8 +195,9 @@ def main():
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        if source.startswith("http://") or source.startswith("https://"):
-            audio_file, title = download_youtube_audio(source, temp_dir)
+        cleaned_source = sanitize_url(source)
+        if cleaned_source.startswith("http://") or cleaned_source.startswith("https://"):
+            audio_file, title = download_youtube_audio(cleaned_source, temp_dir)
         else:
             audio_file = Path(source)
             if not audio_file.exists():
