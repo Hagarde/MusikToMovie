@@ -559,3 +559,93 @@ export function hasUserVotedMashup(projectId: string): boolean {
   const votes = safeGetLocalStorage<Record<string, boolean>>(LOCAL_STORAGE_MASHUP_VOTES_KEY, {});
   return !!votes[projectId];
 }
+
+// 🔄 Transvaser tout le LocalStorage vers Supabase (Tracks + Proposals)
+export async function syncLocalStorageToSupabase(): Promise<{
+  tracksCount: number;
+  proposalsCount: number;
+  errors: any[];
+}> {
+  const errors: any[] = [];
+  let tracksCount = 0;
+  let proposalsCount = 0;
+
+  // 1. Synchroniser Tracks
+  try {
+    const rawTracks = localStorage.getItem(LOCAL_STORAGE_TRACKS_KEY);
+    if (rawTracks) {
+      const tracks = JSON.parse(rawTracks);
+      if (Array.isArray(tracks) && tracks.length > 0) {
+        const cleanTracks = tracks.map((t: any) => ({
+          id: t.id || crypto.randomUUID(),
+          title: t.title || 'Sans titre',
+          artist: t.artist || '',
+          genre: t.genre || null,
+          audio_url: t.audio_url || '',
+          youtube_id: t.youtube_id || null,
+          thumbnail_url: t.thumbnail_url || null,
+          duration: t.duration || 180,
+          default_start_time: t.default_start_time || 0,
+          default_end_time: t.default_end_time || 60,
+          created_at: t.created_at || new Date().toISOString(),
+        }));
+
+        const { data, error } = await supabase.from('tracks').upsert(cleanTracks, { onConflict: 'id' }).select();
+        if (error) {
+          console.warn('Erreur upsert tracks Supabase:', error);
+          errors.push({ entity: 'tracks', error });
+        } else {
+          tracksCount = data?.length || cleanTracks.length;
+        }
+      }
+    }
+  } catch (err) {
+    errors.push({ entity: 'tracks', error: err });
+  }
+
+  // 2. Synchroniser Proposals
+  try {
+    const rawProposals = localStorage.getItem(LOCAL_STORAGE_PROPOSALS_KEY);
+    if (rawProposals) {
+      const proposals = JSON.parse(rawProposals);
+      if (Array.isArray(proposals) && proposals.length > 0) {
+        const cleanProposals = proposals.map((p: any) => ({
+          id: p.id || crypto.randomUUID(),
+          track_id: p.track_id,
+          author_name: p.author_name || 'Anonyme',
+          movie_title: p.movie_title || p.title || 'Scénario',
+          genre: p.genre || 'Cinéma',
+          logline: p.logline || '',
+          context_before: p.context_before || '',
+          context_after: p.context_after || '',
+          key_scene_title: p.key_scene_title || '',
+          key_scene_description: p.key_scene_description || '',
+          key_scene_start_time: p.key_scene_start_time || 0,
+          key_scene_end_time: p.key_scene_end_time || 60,
+          frames: p.frames || [],
+          animation_fps: p.animation_fps || 8,
+          likes_count: p.likes_count || 0,
+          created_at: p.created_at || new Date().toISOString(),
+        }));
+
+        const { data, error } = await supabase.from('proposals').upsert(cleanProposals, { onConflict: 'id' }).select();
+        if (error) {
+          console.warn('Erreur upsert proposals Supabase:', error);
+          errors.push({ entity: 'proposals', error });
+        } else {
+          proposalsCount = data?.length || cleanProposals.length;
+        }
+      }
+    }
+  } catch (err) {
+    errors.push({ entity: 'proposals', error: err });
+  }
+
+  return { tracksCount, proposalsCount, errors };
+}
+
+// Exposition sur l'objet window pour utilisation console immédiate en 1 seconde
+if (typeof window !== 'undefined') {
+  (window as any).syncLocalStorageToSupabase = syncLocalStorageToSupabase;
+}
+
