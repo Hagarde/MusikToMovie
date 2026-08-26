@@ -1,10 +1,9 @@
 @echo off
 setlocal
-chcp 65001 > nul
 title MusikToMovie - Synchronisation Supabase Stems
 
 echo =================================================================
-echo 🔄 SYNCHRONISATION SUPABASE - EXTRACTION BATCH DEMUCS V4
+echo  SYNCHRONISATION SUPABASE - EXTRACTION BATCH DEMUCS V4
 echo =================================================================
 echo.
 echo Ce script va :
@@ -15,15 +14,16 @@ echo.
 echo =================================================================
 echo.
 
-python scripts\sync_supabase_stems.py
+python "%~dp0scripts\sync_supabase_stems.py"
 
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo.
-    echo ⚠️ Une erreur est survenue lors de l'execution du script.
+    echo [ERREUR] Une erreur est survenue lors de l'execution du script.
+    echo.
     pause
     exit /b 1
 )
 
 echo.
-echo Appuyez sur une touche pour quitter...
+echo [SUCCES] Synchronisation terminee. Appuyez sur une touche pour quitter.
 pause > nul
