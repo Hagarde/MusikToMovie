@@ -41,19 +41,14 @@ def check_dependencies():
         else:
             sys.exit(1)
 
-def download_youtube_audio(url: str, output_path: Path) -> Path:
-    """Télécharge l'audio YouTube en WAV sans perte."""
-    print(f"\n📥 1/3. Téléchargement YouTube haute qualité ({url})...")
+def download_youtube_audio(url: str, output_path: Path):
+    """Télécharge l'audio YouTube en qualité maximale."""
+    print(f"\n📥 1/3. Téléchargement YouTube ({url})...")
     import yt_dlp
 
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': str(output_path / '%(title)s.%(ext)s'),
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'wav',
-            'preferredquality': '0',
-        }],
         'quiet': False,
         'no_warnings': True,
     }
@@ -61,10 +56,10 @@ def download_youtube_audio(url: str, output_path: Path) -> Path:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         title = info.get('title', 'audio_track')
-        # Nettoyage du titre
         safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-        wav_file = list(output_path.glob("*.wav"))[0]
-        return wav_file, safe_title
+        files = list(output_path.glob("*.*"))
+        audio_file = files[0] if files else output_path
+        return audio_file, safe_title
 
 def separate_with_demucs(audio_file: Path, target_dir: Path, title: str):
     """Lance la séparation Demucs v4 HTDemucs (Qualité Studio Pro)."""
