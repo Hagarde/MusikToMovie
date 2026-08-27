@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Track, Proposal, Scene } from './types';
 import { extractYouTubeId, getYouTubeThumbnail } from './youtube';
+import { RESTORED_PROPOSALS } from './restoredStoryboards';
 
 const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 'https://hbxejvpynymcxghdkbkh.supabase.co';
 const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_nii-4wn98Yh4ESEzF_DkBw_qAYVzoIK';
@@ -167,8 +168,35 @@ export async function deleteProposal(proposalId: string): Promise<boolean> {
   return true;
 }
 
-// Récupérer les propositions avec support de tri
+// Récupérer les propositions avec support de tri et préservation garantie des storyboards
 export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' = 'likes'): Promise<Proposal[]> {
+  // 1. Récupérer les propositions locales (initialisées avec les storyboards restaurés si besoin)
+  let localProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
+  if (!localProposals || localProposals.length === 0) {
+    localProposals = [...RESTORED_PROPOSALS];
+    safeSetLocalStorage(LOCAL_STORAGE_PROPOSALS_KEY, localProposals);
+  } else {
+    // S'assurer que les storyboards restaurés sont bien présents et complets
+    let changed = false;
+    for (const rp of RESTORED_PROPOSALS) {
+      const existing = localProposals.find(p => p.id === rp.id);
+      if (!existing) {
+        localProposals.push(rp);
+        changed = true;
+      } else if ((!existing.frames || existing.frames.length === 0) && rp.frames && rp.frames.length > 0) {
+        existing.frames = rp.frames;
+        existing.scenes = rp.scenes || existing.scenes;
+        changed = true;
+      }
+    }
+    if (changed) {
+      safeSetLocalStorage(LOCAL_STORAGE_PROPOSALS_KEY, localProposals);
+    }
+  }
+
+  let finalProposals: Proposal[] = [...localProposals];
+
+  // 2. Récupérer depuis Supabase et fusionner sans jamais perdre les frames/scenes
   try {
     let query = supabase.from('proposals').select('*');
     if (trackId) {
@@ -177,34 +205,49 @@ export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' 
 
     const { data, error } = await query;
     if (!error && data && data.length > 0) {
-      const sorted = [...data];
-      if (sortBy === 'likes') {
-        sorted.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
-      } else {
-        sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      for (const remote of data) {
+        const localMatch = localProposals.find(l => l.id === remote.id) || RESTORED_PROPOSALS.find(r => r.id === remote.id);
+        const idx = finalProposals.findIndex(f => f.id === remote.id);
+        
+        const merged: Proposal = {
+          ...remote,
+          frames: (localMatch?.frames && localMatch.frames.length > 0) ? localMatch.frames : remote.frames || [],
+          scenes: (localMatch?.scenes && localMatch.scenes.length > 0) ? localMatch.scenes : remote.scenes || [],
+          context_before: remote.context_before || localMatch?.context_before,
+          context_after: remote.context_after || localMatch?.context_after,
+          key_scene_title: remote.key_scene_title || localMatch?.key_scene_title,
+          key_scene_description: remote.key_scene_description || localMatch?.key_scene_description,
+        };
+
+        if (idx !== -1) {
+          finalProposals[idx] = merged;
+        } else {
+          finalProposals.push(merged);
+        }
       }
-      return sorted;
     }
   } catch (e) {
-    // Fallback silencieux sur LocalStorage
+    console.warn('Erreur lecture proposals Supabase, utilisation du cache local:', e);
   }
 
-  let allProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
   if (trackId) {
-    allProposals = allProposals.filter(p => p.track_id === trackId);
+    finalProposals = finalProposals.filter(p => p.track_id === trackId);
   }
 
   if (sortBy === 'likes') {
-    allProposals.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+    finalProposals.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
   } else {
-    allProposals.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    finalProposals.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
-  return allProposals;
+  return finalProposals;
 }
 
-// Récupérer une proposition par son ID
+// Récupérer une proposition par son ID avec ses frames et scènes garanties
 export async function getProposalById(id: string): Promise<Proposal | null> {
+  const localProps = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, RESTORED_PROPOSALS);
+  const localMatch = localProps.find(p => p.id === id) || RESTORED_PROPOSALS.find(p => p.id === id) || null;
+
   try {
     const { data, error } = await supabase
       .from('proposals')
@@ -212,14 +255,21 @@ export async function getProposalById(id: string): Promise<Proposal | null> {
       .eq('id', id)
       .single();
     if (!error && data) {
-      return data;
+      return {
+        ...data,
+        frames: (localMatch?.frames && localMatch.frames.length > 0) ? localMatch.frames : data.frames || [],
+        scenes: (localMatch?.scenes && localMatch.scenes.length > 0) ? localMatch.scenes : data.scenes || [],
+        context_before: data.context_before || localMatch?.context_before,
+        context_after: data.context_after || localMatch?.context_after,
+        key_scene_title: data.key_scene_title || localMatch?.key_scene_title,
+        key_scene_description: data.key_scene_description || localMatch?.key_scene_description,
+      };
     }
   } catch (e) {
     console.warn('Erreur getProposalById:', e);
   }
 
-  const allProposals = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
-  return allProposals.find(p => p.id === id) || null;
+  return localMatch;
 }
 
 // Voter pour une proposition (Like)
@@ -644,8 +694,41 @@ export async function syncLocalStorageToSupabase(): Promise<{
   return { tracksCount, proposalsCount, errors };
 }
 
-// Exposition sur l'objet window pour utilisation console immédiate en 1 seconde
+// Fonction de restauration intégrale des Storyboards originaux (Volver, R1bo des bois, etc.)
+export function restoreOriginalStoryboards(): { restoredCount: number; message: string } {
+  try {
+    const current = safeGetLocalStorage<Proposal[]>(LOCAL_STORAGE_PROPOSALS_KEY, []);
+    const merged = [...current];
+
+    for (const rp of RESTORED_PROPOSALS) {
+      const idx = merged.findIndex(p => p.id === rp.id);
+      if (idx !== -1) {
+        merged[idx] = {
+          ...merged[idx],
+          frames: (rp.frames && rp.frames.length > 0) ? rp.frames : merged[idx].frames,
+          scenes: (rp.scenes && rp.scenes.length > 0) ? rp.scenes : merged[idx].scenes,
+          context_before: rp.context_before || merged[idx].context_before,
+          context_after: rp.context_after || merged[idx].context_after,
+          key_scene_title: rp.key_scene_title || merged[idx].key_scene_title,
+          key_scene_description: rp.key_scene_description || merged[idx].key_scene_description,
+        };
+      } else {
+        merged.push(rp);
+      }
+    }
+
+    safeSetLocalStorage(LOCAL_STORAGE_PROPOSALS_KEY, merged);
+    console.log(`✅ ${RESTORED_PROPOSALS.length} storyboards originaux restaurés avec succès !`);
+    return { restoredCount: RESTORED_PROPOSALS.length, message: "Storyboards restaurés avec succès !" };
+  } catch (e: any) {
+    console.error("Erreur lors de la restauration des storyboards:", e);
+    return { restoredCount: 0, message: e.message };
+  }
+}
+
+// Exposition sur l'objet window pour utilisation console immédiate
 if (typeof window !== 'undefined') {
   (window as any).syncLocalStorageToSupabase = syncLocalStorageToSupabase;
+  (window as any).restoreOriginalStoryboards = restoreOriginalStoryboards;
 }
 
