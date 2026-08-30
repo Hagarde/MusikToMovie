@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ArrowLeft, 
   Play, 
@@ -12,19 +12,31 @@ import {
   VolumeX, 
   Clock, 
   Check, 
-  Share2,
-  Search,
-  X,
-  FolderArchive,
-  Terminal,
-  ChevronDown,
-  ChevronUp,
+  Share2, 
+  Search, 
+  X, 
+  FolderArchive, 
+  Terminal, 
+  ChevronDown, 
+  ChevronUp, 
   UploadCloud,
-  FileAudio
+  Zap,
+  Gauge,
+  Activity,
+  RefreshCw,
+  SlidersHorizontal,
+  Fingerprint
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
 import { MashupAudioEngine, HDSeparatedStems } from '../../lib/stemEngine';
 import { createMusikToMusikProject } from '../../lib/supabase';
+import { 
+  detectBpmFromAudio, 
+  calculateTempoSyncRatio, 
+  BPMDetectionResult, 
+  TempoSyncResult,
+  getTempoLabel 
+} from '../../lib/bpmDetector';
 
 interface MusikToMusikStudioProps {
   onBack: () => void;
@@ -88,6 +100,19 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [hdStemsA, setHdStemsA] = useState<HDSeparatedStems | null>(null);
   const [hdStemsB, setHdStemsB] = useState<HDSeparatedStems | null>(null);
 
+  // 🥁 Détection automatique de BPM & Synchronisation
+  const [bpmA, setBpmA] = useState<number | null>(null);
+  const [bpmB, setBpmB] = useState<number | null>(null);
+  const [bpmInfoA, setBpmInfoA] = useState<BPMDetectionResult | null>(null);
+  const [bpmInfoB, setBpmInfoB] = useState<BPMDetectionResult | null>(null);
+  const [isDetectingBpmA, setIsDetectingBpmA] = useState<boolean>(false);
+  const [isDetectingBpmB, setIsDetectingBpmB] = useState<boolean>(false);
+  const [syncSuggestion, setSyncSuggestion] = useState<TempoSyncResult | null>(null);
+
+  // Tap Tempo interactif
+  const tapTimesRef = useRef<number[]>([]);
+  const [tapBpm, setTapBpm] = useState<number | null>(null);
+
   // Guide déroulant des étapes
   const [showGuideDetails, setShowGuideDetails] = useState<boolean>(false);
 
@@ -143,6 +168,96 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
     };
   }, []);
+
+  // 🔬 Détection automatique du BPM pour le Deck A
+  const triggerBpmDetectionA = useCallback(async (audioSource: string | Blob | File) => {
+    if (!audioSource) return;
+    setIsDetectingBpmA(true);
+    try {
+      const res = await detectBpmFromAudio(audioSource);
+      setBpmA(res.bpm);
+      setBpmInfoA(res);
+    } catch (e) {
+      console.warn('Erreur détection BPM Deck A:', e);
+    } finally {
+      setIsDetectingBpmA(false);
+    }
+  }, []);
+
+  // 🔬 Détection automatique du BPM pour le Deck B
+  const triggerBpmDetectionB = useCallback(async (audioSource: string | Blob | File) => {
+    if (!audioSource) return;
+    setIsDetectingBpmB(true);
+    try {
+      const res = await detectBpmFromAudio(audioSource);
+      setBpmB(res.bpm);
+      setBpmInfoB(res);
+    } catch (e) {
+      console.warn('Erreur détection BPM Deck B:', e);
+    } finally {
+      setIsDetectingBpmB(false);
+    }
+  }, []);
+
+  // Déclencher la détection BPM quand les pistes ou stems changent sur Deck A
+  useEffect(() => {
+    const source = hdStemsA?.drumsUrl || hdStemsA?.bassUrl || hdStemsA?.vocalsUrl || trackA.audio_url;
+    if (source) {
+      triggerBpmDetectionA(source);
+    }
+  }, [hdStemsA, trackA.audio_url, triggerBpmDetectionA]);
+
+  // Déclencher la détection BPM quand les pistes ou stems changent sur Deck B
+  useEffect(() => {
+    const source = hdStemsB?.drumsUrl || hdStemsB?.bassUrl || hdStemsB?.vocalsUrl || trackB.audio_url;
+    if (source) {
+      triggerBpmDetectionB(source);
+    }
+  }, [hdStemsB, trackB.audio_url, triggerBpmDetectionB]);
+
+  // Calculer la proposition de synchronisation automatique dès que les deux BPMs sont connus
+  useEffect(() => {
+    if (bpmA && bpmB && bpmA > 0 && bpmB > 0) {
+      const suggestion = calculateTempoSyncRatio(bpmA, bpmB);
+      setSyncSuggestion(suggestion);
+    } else {
+      setSyncSuggestion(null);
+    }
+  }, [bpmA, bpmB]);
+
+  // Appliquer la proposition de synchro BPM 1-clic
+  const applyAutoTempoSync = () => {
+    if (!syncSuggestion) return;
+    setSpeedRatioB(syncSuggestion.ratio);
+  };
+
+  // Tap Tempo interactif manuel
+  const handleTapTempo = () => {
+    const now = performance.now();
+    const times = tapTimesRef.current;
+    
+    // Réinitialiser si plus de 2.5 secondes se sont écoulées
+    if (times.length > 0 && now - times[times.length - 1] > 2500) {
+      times.length = 0;
+    }
+
+    times.push(now);
+    if (times.length > 5) times.shift();
+
+    if (times.length >= 2) {
+      let intervalsSum = 0;
+      for (let i = 1; i < times.length; i++) {
+        intervalsSum += times[i] - times[i - 1];
+      }
+      const avgInterval = intervalsSum / (times.length - 1);
+      const measuredBpm = Math.round(60000 / avgInterval);
+      if (measuredBpm >= 40 && measuredBpm <= 220) {
+        setTapBpm(measuredBpm);
+        // Mettre à jour Deck B si souhaité
+        setBpmB(measuredBpm);
+      }
+    }
+  };
 
   // Détection automatique des 4 fichiers dans un pack
   const handleStemsPackFiles = (fileList: FileList | File[]) => {
@@ -205,10 +320,16 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       setTrackA(customTrack);
       setHdStemsA(stems);
       if (engineRef.current) engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
+      // Analyser le drum stem directement pour un BPM ultra-précis
+      if (stemsPackDrums) triggerBpmDetectionA(stemsPackDrums);
+      else if (stems.drumsUrl) triggerBpmDetectionA(stems.drumsUrl);
     } else {
       setTrackB(customTrack);
       setHdStemsB(stems);
       if (engineRef.current) engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+      // Analyser le drum stem directement
+      if (stemsPackDrums) triggerBpmDetectionB(stemsPackDrums);
+      else if (stems.drumsUrl) triggerBpmDetectionB(stems.drumsUrl);
     }
 
     setShowStemsPackModal(null);
@@ -226,6 +347,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     if (files.length > 1) {
       let vocUrl = '', drmUrl = '', basUrl = '', melUrl = '';
+      let drumFile: File | null = null;
       for (const f of files) {
         const name = f.name.toLowerCase();
         const url = URL.createObjectURL(f);
@@ -233,6 +355,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           vocUrl = url;
         } else if (name.includes('drum') || name.includes('beat') || name.includes('percu') || name.includes('batterie')) {
           drmUrl = url;
+          drumFile = f;
         } else if (name.includes('bass') || name.includes('basse') || name.includes('sub')) {
           basUrl = url;
         } else if (name.includes('melod') || name.includes('other') || name.includes('inst') || name.includes('guitar') || name.includes('synth')) {
@@ -261,10 +384,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           setTrackA(customTrack);
           setHdStemsA(stems);
           if (engineRef.current) engineRef.current.loadHDStems(stems, hdStemsB, stemConfig);
+          if (drumFile) triggerBpmDetectionA(drumFile);
+          else triggerBpmDetectionA(stems.drumsUrl);
         } else {
           setTrackB(customTrack);
           setHdStemsB(stems);
           if (engineRef.current) engineRef.current.loadHDStems(hdStemsA, stems, stemConfig);
+          if (drumFile) triggerBpmDetectionB(drumFile);
+          else triggerBpmDetectionB(stems.drumsUrl);
         }
         return;
       }
@@ -281,6 +408,8 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       genre: file.name.split('.').pop()?.toUpperCase() || 'Audio',
     };
     selectTrackForDeck(deck, customTrack);
+    if (deck === 'A') triggerBpmDetectionA(file);
+    else triggerBpmDetectionB(file);
   };
 
   const handleDropAudio = (deck: 'A' | 'B', e: React.DragEvent) => {
@@ -300,12 +429,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       setHdStemsA(null);
       if (track.audio_url && engineRef.current) {
         engineRef.current.loadDecks(track.audio_url, trackB.audio_url || '', stemConfig);
+        triggerBpmDetectionA(track.audio_url);
       }
     } else {
       setTrackB(track);
       setHdStemsB(null);
       if (track.audio_url && engineRef.current) {
         engineRef.current.loadDecks(trackA.audio_url || '', track.audio_url, stemConfig);
+        triggerBpmDetectionB(track.audio_url);
       }
     }
   };
@@ -489,6 +620,9 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     { id: 'melody', label: 'Mélodie & Synthés', icon: '🎹', desc: 'Guitares, pianos, pads' },
   ];
 
+  // Calcul du BPM effectif en temps réel sur le Deck B
+  const effectiveBpmB = bpmB ? Math.round(bpmB * speedRatioB * 10) / 10 : null;
+
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-20 animate-in fade-in duration-300">
       {/* 1. HEADER DU STUDIO ÉPURÉ */}
@@ -497,7 +631,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
           <button
             type="button"
             onClick={onBack}
-            className="p-2.5 rounded-2xl hover:bg-stone-100 text-stone-600 transition-colors"
+            className="p-2.5 rounded-2xl hover:bg-stone-100 text-stone-600 transition-colors cursor-pointer"
             title="Retour à la galerie"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -507,12 +641,16 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
               <span className="bg-gradient-to-r from-rose-500 to-violet-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
                 Demucs v4
               </span>
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Zap className="w-3 h-3 text-amber-600" />
+                Auto-BPM Sync
+              </span>
               <h1 className="text-lg sm:text-xl font-extrabold text-stone-900 font-display">
                 Studio de Mixage Stems
               </h1>
             </div>
             <p className="text-xs text-stone-500">
-              Contrôlez indépendamment les 4 pistes isolées (Voix, Batterie, Basse, Mélodie)
+              Détection automatique du BPM et synchronisation intelligente du tempo
             </p>
           </div>
         </div>
@@ -564,14 +702,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
             </div>
             <div>
               <h2 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-                Comment extraire et charger vos stems ?
+                Comment extraire et mixer vos musiques ?
               </h2>
               <p className="text-[11px] text-stone-400">
-                1 double-clic sur <code className="text-emerald-400 font-mono">extraire_pistes.bat</code> génère vos 4 fichiers WAV.
+                Double-cliquez sur <code className="text-emerald-400 font-mono">extraire_pistes.bat</code> pour générer vos 4 fichiers WAV.
               </p>
             </div>
           </div>
-          <button className="text-stone-400 hover:text-white p-1 rounded-lg">
+          <button className="text-stone-400 hover:text-white p-1 rounded-lg cursor-pointer">
             {showGuideDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
         </div>
@@ -584,7 +722,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 Extraire en Local
               </div>
               <p className="text-stone-300 text-[11px]">
-                Lancez <code className="text-emerald-300 font-mono">extraire_pistes.bat</code> et entrez un lien YouTube ou MP3.
+                Lancez <code className="text-emerald-300 font-mono">extraire_pistes.bat</code> et collez votre lien YouTube ou fichier audio.
               </p>
             </div>
 
@@ -594,17 +732,17 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 Charger les Stems
               </div>
               <p className="text-stone-300 text-[11px]">
-                Glissez les 4 fichiers WAV d'un coup sur le Deck A ou le Deck B.
+                Glissez les 4 fichiers WAV d'un coup sur le Deck A ou le Deck B. Le BPM est analysé instantanément.
               </p>
             </div>
 
             <div className="bg-stone-950/80 p-3 rounded-2xl border border-stone-800 space-y-1">
               <div className="text-violet-400 font-extrabold text-xs flex items-center gap-1.5">
                 <span className="w-4 h-4 rounded-full bg-violet-500/20 flex items-center justify-center text-[10px]">3</span>
-                Mixer & Exporter
+                Auto-Sync & Mix
               </div>
               <p className="text-stone-300 text-[11px]">
-                Ajustez les faders, callez le tempo et enregistrez le résultat final !
+                Cliquez sur <strong>Synchro BPM</strong> pour caler le tempo automatiquement, ajustez vos faders et enregistrez !
               </p>
             </div>
           </div>
@@ -635,13 +773,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 A
               </span>
               <h3 className="font-extrabold text-sm text-stone-900 font-display">
-                Deck A
+                Deck A (Piste de Référence)
               </h3>
             </div>
             <button
               type="button"
               onClick={() => setSelectorTargetDeck('A')}
-              className="text-[11px] font-bold text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 px-2.5 py-1 rounded-xl transition-colors flex items-center gap-1.5"
+              className="text-[11px] font-bold text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 px-2.5 py-1 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Music2 className="w-3.5 h-3.5 text-stone-500" />
               <span>Bibliothèque</span>
@@ -657,15 +795,31 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 <p className="text-[10px] text-stone-400 truncate">{trackA.artist}</p>
               </div>
             </div>
-            {hdStemsA ? (
-              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-2 py-0.5 rounded-full shrink-0">
-                4 Stems Actifs ✅
-              </span>
-            ) : (
-              <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full shrink-0">
-                Audio Standard
-              </span>
-            )}
+            
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              {/* Badge BPM Détecté */}
+              {isDetectingBpmA ? (
+                <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <Activity className="w-2.5 h-2.5 animate-spin" />
+                  Calcul BPM...
+                </span>
+              ) : bpmA ? (
+                <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-950/80 border border-rose-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoA?.confidence || 1) * 100)}% - ${bpmInfoA?.label || ''}`}>
+                  <Zap className="w-2.5 h-2.5 text-rose-400" />
+                  {bpmA} BPM
+                </span>
+              ) : (
+                <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
+                  BPM --
+                </span>
+              )}
+
+              {hdStemsA ? (
+                <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.2 rounded">
+                  4 Stems HD ✅
+                </span>
+              ) : null}
+            </div>
           </div>
 
           {/* Bouton Principal : Importer Pack 4 Stems */}
@@ -701,13 +855,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 B
               </span>
               <h3 className="font-extrabold text-sm text-stone-900 font-display">
-                Deck B
+                Deck B (Piste à Caler)
               </h3>
             </div>
             <button
               type="button"
               onClick={() => setSelectorTargetDeck('B')}
-              className="text-[11px] font-bold text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 px-2.5 py-1 rounded-xl transition-colors flex items-center gap-1.5"
+              className="text-[11px] font-bold text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 px-2.5 py-1 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Music2 className="w-3.5 h-3.5 text-stone-500" />
               <span>Bibliothèque</span>
@@ -723,15 +877,31 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 <p className="text-[10px] text-stone-400 truncate">{trackB.artist}</p>
               </div>
             </div>
-            {hdStemsB ? (
-              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-2 py-0.5 rounded-full shrink-0">
-                4 Stems Actifs ✅
-              </span>
-            ) : (
-              <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full shrink-0">
-                Audio Standard
-              </span>
-            )}
+
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              {/* Badge BPM Détecté */}
+              {isDetectingBpmB ? (
+                <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <Activity className="w-2.5 h-2.5 animate-spin" />
+                  Calcul BPM...
+                </span>
+              ) : bpmB ? (
+                <span className="text-[10px] font-mono font-bold text-violet-300 bg-violet-950/80 border border-violet-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoB?.confidence || 1) * 100)}% - ${bpmInfoB?.label || ''}`}>
+                  <Zap className="w-2.5 h-2.5 text-violet-400" />
+                  {bpmB} BPM
+                </span>
+              ) : (
+                <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
+                  BPM --
+                </span>
+              )}
+
+              {hdStemsB ? (
+                <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.2 rounded">
+                  4 Stems HD ✅
+                </span>
+              ) : null}
+            </div>
           </div>
 
           {/* Bouton Principal : Importer Pack 4 Stems */}
@@ -855,22 +1025,82 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         </div>
       </div>
 
-      {/* 5. CALAGE TEMPO & SPECTROGRAMME */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Calage Tempo Deck B */}
-        <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm space-y-3">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-violet-600" />
-            <h3 className="text-xs font-black uppercase tracking-wider text-stone-900">
-              Calage Tempo (Deck B)
-            </h3>
-          </div>
-          <div className="space-y-2.5">
+      {/* 5. ⚡ CONSOLE DE SYNCHRONISATION BPM & SPECTROGRAMME */}
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-stone-200 shadow-sm space-y-4">
+        {/* Header Console BPM */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 text-white flex items-center justify-center shadow-md">
+              <Gauge className="w-4 h-4" />
+            </div>
             <div>
-              <div className="flex justify-between text-xs font-mono text-stone-600 mb-1">
-                <span>Vitesse</span>
-                <span className="font-bold text-violet-700">{speedRatioB.toFixed(2)}x</span>
+              <h2 className="text-sm sm:text-base font-black text-stone-900 font-display flex items-center gap-2">
+                Moteur de Synchronisation Temporelle & BPM
+              </h2>
+              <p className="text-[11px] text-stone-500">
+                Détection automatique DSP et adaptation chirurgicale de la vitesse
+              </p>
+            </div>
+          </div>
+
+          {/* Bouton Tap Tempo interactif */}
+          <button
+            type="button"
+            onClick={handleTapTempo}
+            className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold font-mono flex items-center gap-1.5 transition-all active:scale-95 shadow-sm cursor-pointer self-start sm:self-auto"
+            title="Cliquez en rythme plusieurs fois pour mesurer le tempo au doigt"
+          >
+            <Fingerprint className="w-3.5 h-3.5 text-violet-600" />
+            <span>TAP TEMPO {tapBpm ? `(${tapBpm} BPM)` : ''}</span>
+          </button>
+        </div>
+
+        {/* 🌟 BANNIÈRE DE SUGGESTION DE SYNCHRO AUTOMATIQUE INTELLIGENTE */}
+        {syncSuggestion && (
+          <div className="bg-gradient-to-r from-violet-950 via-stone-900 to-stone-950 text-white p-4 rounded-2xl border border-violet-800/80 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3 animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-black flex items-center justify-center font-black shrink-0 shadow-lg shadow-amber-500/20">
+                <Zap className="w-5 h-5 fill-current" />
               </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-amber-300">
+                  <span>SYNCHRO BPM OPTIMALE DISPONIBLE</span>
+                  <span className="text-[10px] font-mono bg-violet-900/80 text-violet-200 px-2 py-0.2 rounded-full border border-violet-700">
+                    Deck A: {bpmA} BPM ⟷ Deck B: {bpmB} BPM
+                  </span>
+                </div>
+                <p className="text-xs text-stone-300">
+                  {syncSuggestion.description}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={applyAutoTempoSync}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs transition-all shadow-md shadow-amber-500/25 hover:scale-105 cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
+            >
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>⚡ Caler Automatiquement ({syncSuggestion.displayRatio})</span>
+            </button>
+          </div>
+        )}
+
+        {/* Grille Contrôles Vitesse + Spectrogramme */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-1">
+          {/* Calage Vitesse Deck B */}
+          <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
+                <Clock className="w-3.5 h-3.5 text-violet-600" />
+                <span>Pitch / Vitesse Deck B</span>
+              </div>
+              <span className="text-xs font-mono font-extrabold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-lg border border-violet-200">
+                {speedRatioB.toFixed(2)}x
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
               <input
                 type="range"
                 min="0.5"
@@ -878,31 +1108,81 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 step="0.01"
                 value={speedRatioB}
                 onChange={(e) => setSpeedRatioB(parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
+                className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
               />
-            </div>
-            <button
-              type="button"
-              onClick={() => setSpeedRatioB(1.0)}
-              className="w-full py-1 text-[10px] font-bold text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors cursor-pointer"
-            >
-              Reset Tempo (1.00x)
-            </button>
-          </div>
-        </div>
 
-        {/* Visualiseur Master */}
-        <div className="lg:col-span-2 bg-stone-950 rounded-3xl p-5 border border-stone-800 shadow-sm space-y-2.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-white text-xs font-black">
-              <Sparkles className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-              <span>SPECTROGRAMME MASTER DSP</span>
+              {/* Indicateur de BPM Effectif */}
+              <div className="flex justify-between text-[11px] font-mono text-stone-500 pt-0.5">
+                <span>0.50x (-50%)</span>
+                {effectiveBpmB ? (
+                  <span className="font-bold text-violet-900 bg-violet-50 px-1.5 py-0.5 rounded border border-violet-200">
+                    BPM Effectif: ~{effectiveBpmB}
+                  </span>
+                ) : (
+                  <span>1.00x (Normal)</span>
+                )}
+                <span>1.50x (+50%)</span>
+              </div>
             </div>
-            <span className="text-[10px] font-mono text-stone-400">44.1 kHz • Temps Réel</span>
+
+            {/* Boutons d'ajustement fin rapide (+/- 1%, +/- 5%, Reset) */}
+            <div className="grid grid-cols-5 gap-1 pt-1 text-[10px] font-bold font-mono text-center">
+              <button
+                type="button"
+                onClick={() => setSpeedRatioB((prev) => Math.max(0.5, Math.round((prev - 0.05) * 100) / 100))}
+                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                title="-5% de vitesse"
+              >
+                -5%
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpeedRatioB((prev) => Math.max(0.5, Math.round((prev - 0.01) * 100) / 100))}
+                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                title="-1% de vitesse"
+              >
+                -1%
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpeedRatioB(1.0)}
+                className="py-1 bg-stone-200 hover:bg-stone-300 text-stone-900 rounded-lg transition-colors cursor-pointer font-extrabold"
+                title="Vitesse normale 1.00x"
+              >
+                1.00x
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpeedRatioB((prev) => Math.min(1.5, Math.round((prev + 0.01) * 100) / 100))}
+                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                title="+1% de vitesse"
+              >
+                +1%
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpeedRatioB((prev) => Math.min(1.5, Math.round((prev + 0.05) * 100) / 100))}
+                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                title="+5% de vitesse"
+              >
+                +5%
+              </button>
+            </div>
           </div>
 
-          <div className="h-16 w-full bg-stone-900/60 rounded-2xl overflow-hidden border border-stone-800 flex items-center justify-center">
-            <canvas ref={canvasRef} width={600} height={64} className="w-full h-full" />
+          {/* Visualiseur Spectrogramme Master */}
+          <div className="lg:col-span-2 bg-stone-950 rounded-2xl p-4 border border-stone-800 shadow-sm space-y-2 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white text-xs font-black">
+                <Sparkles className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                <span>SPECTROGRAMME MASTER DSP</span>
+              </div>
+              <span className="text-[10px] font-mono text-stone-400">44.1 kHz • Temps Réel</span>
+            </div>
+
+            <div className="h-20 w-full bg-stone-900/70 rounded-xl overflow-hidden border border-stone-800 flex items-center justify-center">
+              <canvas ref={canvasRef} width={600} height={80} className="w-full h-full" />
+            </div>
           </div>
         </div>
       </div>
