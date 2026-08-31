@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, 
-  Film, 
   Clock, 
   User, 
   Heart, 
@@ -29,7 +28,6 @@ interface ProposalViewerProps {
   onBack: () => void;
   isAdmin?: boolean;
   onDeleteProposal?: (proposalId: string) => void;
-  onUpdateProposal?: (updated: Proposal) => void;
   onEditProposal?: (proposal: Proposal) => void;
 }
 
@@ -39,7 +37,6 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   onBack,
   isAdmin = false,
   onDeleteProposal,
-  onUpdateProposal,
   onEditProposal,
 }) => {
   const [currentProposal, setCurrentProposal] = useState<Proposal>(proposal);

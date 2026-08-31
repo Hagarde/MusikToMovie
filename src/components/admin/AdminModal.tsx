@@ -4,7 +4,7 @@ import { ShieldAlert, Key, X, Lock, CheckCircle2 } from 'lucide-react';
 interface AdminModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthenticate: (passcode: string) => boolean;
+  onAuthenticate: (passcode: string) => Promise<boolean>;
 }
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -17,14 +17,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passcode.trim()) {
       setError('Veuillez renseigner le mot de passe administrateur.');
       return;
     }
 
-    const success = onAuthenticate(passcode.trim());
+    const success = await onAuthenticate(passcode.trim());
     if (success) {
       setPasscode('');
       setError('');

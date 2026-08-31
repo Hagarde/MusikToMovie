@@ -182,13 +182,20 @@ export function loadYouTubeAPI(): Promise<any> {
   }
 
   if (!ytApiPromise) {
-    ytApiPromise = new Promise((resolve) => {
+    ytApiPromise = new Promise((resolve, reject) => {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
+      
+      tag.onerror = () => reject(new Error('Failed to load YouTube API'));
+      
+      const timeoutId = setTimeout(() => {
+        reject(new Error('YouTube API load timeout'));
+      }, 10000);
+
+      (document.head || document.body).appendChild(tag);
 
       win.onYouTubeIframeAPIReady = () => {
+        clearTimeout(timeoutId);
         resolve(win.YT);
       };
     });

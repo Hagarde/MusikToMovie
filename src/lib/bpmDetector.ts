@@ -113,11 +113,14 @@ async function getAudioBufferFromSource(
 
   try {
     const decoderCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const decoded = await decoderCtx.decodeAudioData(arrayBuffer.slice(0));
     try {
-      await decoderCtx.close();
-    } catch (_) {}
-    return decoded;
+      const decoded = await decoderCtx.decodeAudioData(arrayBuffer.slice(0));
+      return decoded;
+    } finally {
+      try {
+        await decoderCtx.close();
+      } catch (_) {}
+    }
   } catch (err) {
     return null;
   }

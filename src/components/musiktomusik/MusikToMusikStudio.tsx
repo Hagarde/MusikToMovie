@@ -16,15 +16,12 @@ import {
   Search, 
   X, 
   FolderArchive, 
-  Terminal, 
   ChevronDown, 
   ChevronUp, 
   UploadCloud,
   Zap,
   Gauge,
   Activity,
-  RefreshCw,
-  SlidersHorizontal,
   Fingerprint
 } from 'lucide-react';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
@@ -34,8 +31,7 @@ import {
   detectBpmFromAudio, 
   calculateTempoSyncRatio, 
   BPMDetectionResult, 
-  TempoSyncResult,
-  getTempoLabel 
+  TempoSyncResult
 } from '../../lib/bpmDetector';
 
 interface MusikToMusikStudioProps {
@@ -157,6 +153,13 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const recordIntervalRef = useRef<any>(null);
+  const blobUrlsRef = useRef<string[]>([]);
+
+  const createBlobUrl = useCallback((file: File | Blob) => {
+    const url = URL.createObjectURL(file);
+    blobUrlsRef.current.push(url);
+    return url;
+  }, []);
 
   // Initialisation du moteur DSP
   useEffect(() => {
@@ -166,6 +169,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       if (engineRef.current) engineRef.current.dispose();
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
+      blobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
     };
   }, []);
 
@@ -296,10 +300,10 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const handleApplyStemsPack = () => {
     if (!showStemsPackModal) return;
     const deck = showStemsPackModal;
-    const vocUrl = stemsPackVocals ? URL.createObjectURL(stemsPackVocals) : '';
-    const drmUrl = stemsPackDrums ? URL.createObjectURL(stemsPackDrums) : '';
-    const basUrl = stemsPackBass ? URL.createObjectURL(stemsPackBass) : '';
-    const melUrl = stemsPackMelody ? URL.createObjectURL(stemsPackMelody) : '';
+    const vocUrl = stemsPackVocals ? createBlobUrl(stemsPackVocals) : '';
+    const drmUrl = stemsPackDrums ? createBlobUrl(stemsPackDrums) : '';
+    const basUrl = stemsPackBass ? createBlobUrl(stemsPackBass) : '';
+    const melUrl = stemsPackMelody ? createBlobUrl(stemsPackMelody) : '';
 
     const fallbackUrl = vocUrl || drmUrl || basUrl || melUrl;
     if (!fallbackUrl) {
@@ -359,7 +363,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       let drumFile: File | null = null;
       for (const f of files) {
         const name = f.name.toLowerCase();
-        const url = URL.createObjectURL(f);
+        const url = createBlobUrl(f);
         if (name.includes('voc') || name.includes('chant') || name.includes('acapella') || name.includes('lead')) {
           vocUrl = url;
         } else if (name.includes('drum') || name.includes('beat') || name.includes('percu') || name.includes('batterie')) {
@@ -408,7 +412,7 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
     // Fichier unique glissé
     const file = files[0];
-    const objectUrl = URL.createObjectURL(file);
+    const objectUrl = createBlobUrl(file);
     const customTrack: MashupTrackInfo & { genre?: string } = {
       title: file.name.replace(/\.[^/.]+$/, ''),
       artist: 'Fichier Audio Local',

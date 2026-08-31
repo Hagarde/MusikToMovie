@@ -6,15 +6,9 @@ import {
   Heart, 
   Share2, 
   Search, 
-  Layers, 
-  Disc, 
   Radio, 
-  Sparkles, 
   Music2, 
-  Clock, 
-  Check, 
-  Volume2, 
-  VolumeX 
+  Check 
 } from 'lucide-react';
 import { MusikToMusikProject, GENRES } from '../../lib/types';
 import { getMusikToMusikProjects, voteMusikToMusikProject, hasUserVotedMashup } from '../../lib/supabase';

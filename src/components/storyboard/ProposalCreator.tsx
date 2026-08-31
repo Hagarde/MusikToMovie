@@ -3,7 +3,6 @@ import {
   Film, 
   ArrowLeft, 
   Save, 
-  Sparkles, 
   User, 
   FileText, 
   CheckCircle2, 

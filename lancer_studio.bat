@@ -6,9 +6,28 @@ echo =================================================================
 echo  MUSIKTOMOVIE - DEMARRAGE DU STUDIO DE MIXAGE
 echo =================================================================
 echo.
-echo Ouverture de votre navigateur sur http://localhost:5173...
+echo Verification de l'environnement...
+where node >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERREUR] Node.js n'est pas installe ou pas dans le PATH !
+    echo Telechargez et installez Node.js LTS ici : https://nodejs.org/
+    pause
+    exit /b 1
+)
+
+if not exist node_modules (
+    echo [INFO] Les dependances ne sont pas installees. Installation en cours...
+    call npm install
+    if errorlevel 1 (
+        echo [ERREUR] Erreur lors de npm install.
+        pause
+        exit /b 1
+    )
+)
+
+echo.
+echo Lancement du serveur Vite...
+echo Le navigateur s'ouvrira automatiquement des que le serveur sera pret.
 echo.
 
-start "" "http://localhost:5173"
-
-npm run dev
+npx vite --open

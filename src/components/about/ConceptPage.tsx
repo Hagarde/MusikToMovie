@@ -10,8 +10,6 @@ import {
   HelpCircle, 
   Eye, 
   Clock, 
-  CheckCircle2, 
-  ArrowRight,
   Lightbulb,
   Heart,
   Palette

@@ -27,7 +27,6 @@ interface ProposalsGalleryProps {
   onVoteUpdated?: (proposalId: string, newCount: number) => void;
   isAdmin?: boolean;
   onDeleteProposal?: (proposalId: string) => void;
-  onUpdateProposal?: (updated: Proposal) => void;
   onEditProposal?: (proposal: Proposal) => void;
 }
 
@@ -39,7 +38,6 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
   onVoteUpdated,
   isAdmin = false,
   onDeleteProposal,
-  onUpdateProposal,
   onEditProposal,
 }) => {
   const [proposalToDelete, setProposalToDelete] = useState<Proposal | null>(null);

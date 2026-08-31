@@ -6,24 +6,20 @@ import {
   Play, 
   Pause, 
   Sliders, 
-  Sparkles, 
   Upload, 
   Check, 
-  RotateCcw, 
   Film, 
   Volume2, 
   VolumeX, 
   Save, 
-  Clapperboard, 
-  Info,
-  Radio,
-  Plus,
-  Trash2,
-  Scissors,
-  Headphones,
-  Layers,
-  Music2,
-  Clock
+  Radio, 
+  Plus, 
+  Trash2, 
+  Scissors, 
+  Headphones, 
+  Layers, 
+  Music2, 
+  Clock 
 } from 'lucide-react';
 import { MovieToMusikProject, AudioTrack, EQSettings, GENRES } from '../../lib/types';
 import { MicrophoneRecorder, MultiTrackAudioEngine, blobToBase64, extractWaveformData } from '../../lib/audioEngine';

@@ -10,14 +10,11 @@ import {
   Music,
   ExternalLink,
   Info,
-  AlertTriangle,
-  CheckCircle2
+  AlertTriangle
 } from 'lucide-react';
 import { Track, GENRES } from '../../lib/types';
 import { createTrack } from '../../lib/supabase';
 import { 
-  extractYouTubeId, 
-  fetchYouTubeMetadata, 
   getYouTubeThumbnail, 
   loadYouTubeAPI,
   resolveUniversalTrack,

@@ -728,7 +728,6 @@ export function restoreOriginalStoryboards(): { restoredCount: number; message: 
 
 // Exposition sur l'objet window pour utilisation console immédiate
 if (typeof window !== 'undefined') {
-  (window as any).syncLocalStorageToSupabase = syncLocalStorageToSupabase;
-  (window as any).restoreOriginalStoryboards = restoreOriginalStoryboards;
+  // L'exposition sur window a été supprimée pour des raisons de sécurité
 }
 

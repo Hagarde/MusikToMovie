@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Track, Proposal, MovieToMusikProject, MusikToMusikProject } from './lib/types';
 import { 
   getTracks, 
@@ -11,16 +11,16 @@ import {
 import { Navbar, AppView, AppMode } from './components/Navbar';
 import { TrackList } from './components/tracks/TrackList';
 import { TrackUploadModal } from './components/tracks/TrackUploadModal';
-import { ProposalCreator } from './components/storyboard/ProposalCreator';
+const ProposalCreator = React.lazy(() => import('./components/storyboard/ProposalCreator').then(m => ({ default: m.ProposalCreator })));
 import { ProposalViewer } from './components/storyboard/ProposalViewer';
 import { ProposalsGallery } from './components/storyboard/ProposalsGallery';
 import { ConceptPage } from './components/about/ConceptPage';
 import { AdminModal } from './components/admin/AdminModal';
 import { AudioPlayer } from './components/audio/AudioPlayer';
 import { CineClippy } from './components/clippy/CineClippy';
-import { MovieToMusikStudio } from './components/movietomusik/MovieToMusikStudio';
+const MovieToMusikStudio = React.lazy(() => import('./components/movietomusik/MovieToMusikStudio').then(m => ({ default: m.MovieToMusikStudio })));
 import { MovieToMusikGallery } from './components/movietomusik/MovieToMusikGallery';
-import { MusikToMusikStudio } from './components/musiktomusik/MusikToMusikStudio';
+const MusikToMusikStudio = React.lazy(() => import('./components/musiktomusik/MusikToMusikStudio').then(m => ({ default: m.MusikToMusikStudio })));
 import { MusikToMusikGallery } from './components/musiktomusik/MusikToMusikGallery';
 
 export default function App() {
@@ -50,19 +50,48 @@ export default function App() {
   // Authentification Mode Admin (persistance en session)
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('admin') === 'cineaste' || urlParams.get('admin') === 'true' || urlParams.get('admin') === '1234') {
-        sessionStorage.setItem('m2m_admin_session', 'true');
-        return true;
-      }
       return sessionStorage.getItem('m2m_admin_session') === 'true';
     }
     return false;
   });
 
-  const handleAuthenticateAdmin = (passcode: string): boolean => {
-    const validCodes = ['cineaste', 'admin', 'admin2026', '1234'];
-    if (validCodes.includes(passcode.toLowerCase())) {
+  const hashString = async (str: string) => {
+    const data = new TextEncoder().encode(str);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  useEffect(() => {
+    const checkAdminUrl = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const adminParam = urlParams.get('admin');
+      if (adminParam) {
+        const hash = await hashString(adminParam.toLowerCase());
+        const validHashes = [
+          'dc9e13c28ba0b4445a61469f02185bbd02a7eec2ee2238d23a85e9ea74673a97',
+          '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+          '6051fc84a7a0d74c225fb18a496b09952da5642e60723ecae543298edd7d82d6',
+          '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4',
+          'b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b'
+        ];
+        if (validHashes.includes(hash)) {
+          setIsAdmin(true);
+          sessionStorage.setItem('m2m_admin_session', 'true');
+        }
+      }
+    };
+    checkAdminUrl();
+  }, []);
+
+  const handleAuthenticateAdmin = async (passcode: string): Promise<boolean> => {
+    const hash = await hashString(passcode.toLowerCase());
+    const validHashes = [
+      'dc9e13c28ba0b4445a61469f02185bbd02a7eec2ee2238d23a85e9ea74673a97',
+      '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+      '6051fc84a7a0d74c225fb18a496b09952da5642e60723ecae543298edd7d82d6',
+      '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'
+    ];
+    if (validHashes.includes(hash)) {
       setIsAdmin(true);
       sessionStorage.setItem('m2m_admin_session', 'true');
       return true;
@@ -245,15 +274,6 @@ export default function App() {
     setCurrentView('view');
   };
 
-  const handleProposalUpdated = (updatedProposal: Proposal) => {
-    setProposals((prev) =>
-      prev.map((p) => (p.id === updatedProposal.id ? updatedProposal : p))
-    );
-    if (selectedProposal?.id === updatedProposal.id) {
-      setSelectedProposal(updatedProposal);
-    }
-  };
-
   const handleDeleteProposal = async (proposalId: string) => {
     if (!isAdmin) return;
     const ok = await deleteProposal(proposalId);
@@ -311,7 +331,7 @@ export default function App() {
   // ------------------------------------
   // Handlers MusikToMusik
   // ------------------------------------
-  const handleMashupSaved = (_newMashup: MusikToMusikProject) => {
+  const handleMashupSaved = () => {
     setCurrentView('m2m_mashup_gallery');
   };
 
@@ -380,19 +400,21 @@ export default function App() {
 
             {/* Vue 3 : Studio de Création de Storyboard */}
             {currentView === 'create' && selectedTrack && (
-              <ProposalCreator
-                track={selectedTrack}
-                existingProposal={editingProposal}
-                onBack={() => {
-                  if (editingProposal) {
-                    setCurrentView('view');
-                  } else {
-                    updateUrlParam('story', null);
-                    setCurrentView('tracks');
-                  }
-                }}
-                onProposalSaved={handleProposalSaved}
-              />
+              <Suspense fallback={<div>Chargement...</div>}>
+                <ProposalCreator
+                  track={selectedTrack}
+                  existingProposal={editingProposal}
+                  onBack={() => {
+                    if (editingProposal) {
+                      setCurrentView('view');
+                    } else {
+                      updateUrlParam('story', null);
+                      setCurrentView('tracks');
+                    }
+                  }}
+                  onProposalSaved={handleProposalSaved}
+                />
+              </Suspense>
             )}
 
             {/* Vue 4 : Visionneuse immersive de film */}
@@ -406,7 +428,6 @@ export default function App() {
                 }}
                 isAdmin={isAdmin}
                 onDeleteProposal={handleDeleteProposal}
-                onUpdateProposal={handleProposalUpdated}
                 onEditProposal={handleEditProposal}
               />
             )}
@@ -421,7 +442,6 @@ export default function App() {
                 onVoteUpdated={handleVoteUpdated}
                 isAdmin={isAdmin}
                 onDeleteProposal={handleDeleteProposal}
-                onUpdateProposal={handleProposalUpdated}
                 onEditProposal={handleEditProposal}
               />
             )}
@@ -443,10 +463,12 @@ export default function App() {
             )}
 
             {currentView === 'm2m_studio' && (
-              <MovieToMusikStudio
-                onBack={() => setCurrentView('m2m_gallery')}
-                onProjectSaved={handleM2mProjectSaved}
-              />
+              <Suspense fallback={<div>Chargement...</div>}>
+                <MovieToMusikStudio
+                  onBack={() => setCurrentView('m2m_gallery')}
+                  onProjectSaved={handleM2mProjectSaved}
+                />
+              </Suspense>
             )}
           </>
         )}
@@ -464,11 +486,13 @@ export default function App() {
             )}
 
             {currentView === 'm2m_mashup_studio' && (
-              <MusikToMusikStudio
-                onBack={() => setCurrentView('m2m_mashup_gallery')}
-                onProjectSaved={handleMashupSaved}
-                libraryTracks={tracks}
-              />
+              <Suspense fallback={<div>Chargement...</div>}>
+                <MusikToMusikStudio
+                  onBack={() => setCurrentView('m2m_mashup_gallery')}
+                  onProjectSaved={handleMashupSaved}
+                  libraryTracks={tracks}
+                />
+              </Suspense>
             )}
           </>
         )}

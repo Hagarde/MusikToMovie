@@ -8,9 +8,7 @@ import {
   Clock, 
   Trash2, 
   ShieldAlert, 
-  Settings2, 
-  Search,
-  Clapperboard
+  Search
 } from 'lucide-react';
 import { Track } from '../../lib/types';
 import { YouTubeIcon } from '../icons/YouTubeIcon';

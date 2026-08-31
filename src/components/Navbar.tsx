@@ -1,5 +1,5 @@
 import React from 'react';
-import { Film, Music, Compass, Sparkles, Plus, Shield, ShieldCheck, LogOut, Radio, Mic, Layers, Disc } from 'lucide-react';
+import { Film, Music, Compass, Sparkles, Plus, Shield, ShieldCheck, LogOut, Radio, Mic, Disc } from 'lucide-react';
 
 export type AppView = 
   | 'concept' 

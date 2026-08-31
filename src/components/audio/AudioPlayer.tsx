@@ -62,7 +62,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isMuted, setIsMutedState] = useState<boolean>(getInitialMuted);
   const [isLoopingRange, setIsLoopingRange] = useState<boolean>(false);
   const [showVideo, setShowVideo] = useState<boolean>(false);
-  const [isYtReady, setIsYtReady] = useState<boolean>(false);
 
   const isYouTube = !!track?.youtube_id;
 
@@ -185,7 +184,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         },
         events: {
           onReady: (event: any) => {
-            setIsYtReady(true);
             const totalDur = event.target.getDuration() || track.duration || 0;
             setDuration(totalDur);
             event.target.setVolume(volume * 100);
@@ -220,7 +218,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         ytPlayerRef.current = null;
       }
       setIsPlaying(false);
-      setIsYtReady(false);
     };
   }, [track?.id, track?.youtube_id]);
 
@@ -335,7 +332,6 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const rangeEndPercent = highlightRange && duration > 0 ? (highlightRange.end / duration) * 100 : 0;
   const rangeWidthPercent = highlightRange && duration > 0 ? Math.max(0, rangeEndPercent - rangeStartPercent) : 0;
 
-  const playheadPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
   const isInLoop = highlightRange ? (currentTime >= highlightRange.start && currentTime <= highlightRange.end) : false;
   const loopDuration = highlightRange ? Math.max(1, highlightRange.end - highlightRange.start) : 0;
   const loopElapsed = highlightRange && isInLoop ? Math.max(0, currentTime - highlightRange.start) : 0;

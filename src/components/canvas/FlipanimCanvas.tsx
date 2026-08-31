@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { 
   Paintbrush, 
-  Highlighter, 
   PaintBucket, 
   Square, 
   Circle as CircleIcon, 
@@ -18,9 +17,6 @@ import {
   Play, 
   Pause, 
   Layers,
-  ChevronLeft,
-  ChevronRight,
-  ArrowLeftToLine,
   Image as ImageIcon,
   Type,
   FlipHorizontal,
@@ -28,8 +24,6 @@ import {
   Sparkles,
   Lasso,
   Move,
-  Maximize2,
-  Minimize2,
   Check,
   Film,
   ZoomIn,

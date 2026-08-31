@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Radio, 
-  Sparkles, 
   Plus, 
   Play, 
   Pause, 
@@ -10,12 +9,9 @@ import {
   Check, 
   Trash2, 
   ShieldAlert, 
-  Sliders, 
   Film, 
   User, 
   Search, 
-  Calendar,
-  Volume2,
   Layers
 } from 'lucide-react';
 import { MovieToMusikProject } from '../../lib/types';
