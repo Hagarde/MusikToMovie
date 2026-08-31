@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🔄 Synchronisateur Batch Supabase -> Stems Demucs v4
+🔄 Synchronisateur Batch Supabase -> Stems Demucs v4 + Détection IA de BPM
 Parcourt tous les morceaux et liens YouTube enregistrés dans Supabase,
-filtre automatiquement les morceaux de moins de 5 minutes (pour éviter les vidéos de 45 min),
-télécharge l'audio et génère automatiquement les 4 pistes Studio (Voix, Drums, Basse, Mélodie).
+filtre automatiquement les morceaux de moins de 5 minutes,
+télécharge l'audio, sépare les 4 pistes et intègre le tempo [XXX BPM] au dossier.
 """
 
 import os
 import sys
 import shutil
 import subprocess
+import struct
+import math
+import json
+import wave
 from pathlib import Path
 import requests
 
@@ -81,6 +85,96 @@ def format_duration(seconds: int) -> str:
     secs = int(seconds) % 60
     return f"{mins}m {secs:02d}s"
 
+def sanitize_title(title: str) -> str:
+    """Génère un nom de dossier propre pour Windows."""
+    clean = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+    return clean if clean else "morceau_stems"
+
+def detect_bpm_from_wav(wav_path: Path) -> int:
+    """
+    🔬 Détecte le BPM exact à partir du stem de batterie (drums.wav).
+    """
+    if not wav_path.exists():
+        return 120
+    try:
+        with wave.open(str(wav_path), 'rb') as wf:
+            n_channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            framerate = wf.getframerate()
+            n_frames = wf.getnframes()
+
+            if framerate <= 0 or n_frames <= 0 or sample_width != 2:
+                return 120
+
+            duration = n_frames / framerate
+            target_duration = min(45.0, duration)
+            start_time = 10.0 if duration > 30 else 0.0
+            start_frame = int(start_time * framerate)
+            read_frames = int(target_duration * framerate)
+
+            wf.setpos(min(start_frame, n_frames - 1))
+            raw_bytes = wf.readframes(read_frames)
+
+            fmt = f"<{len(raw_bytes) // 2}h"
+            samples = struct.unpack(fmt, raw_bytes)
+            
+            if n_channels > 1:
+                mono = [((samples[i] + samples[i+1]) * 0.5) / 32768.0 for i in range(0, len(samples) - 1, n_channels)]
+            else:
+                mono = [s / 32768.0 for s in samples]
+
+            hop_size = int(framerate * 0.01)
+            num_hops = len(mono) // hop_size
+            if num_hops < 100:
+                return 120
+
+            energies = []
+            for h in range(num_hops):
+                chunk = mono[h * hop_size : (h + 1) * hop_size]
+                rms = math.sqrt(sum(x * x for x in chunk) / max(1, len(chunk)))
+                energies.append(rms)
+
+            flux = [0.0]
+            for i in range(1, len(energies)):
+                diff = energies[i] - energies[i-1]
+                flux.append(diff if diff > 0 else 0.0)
+
+            avg_flux = sum(flux) / len(flux)
+            threshold = avg_flux * 1.5
+
+            min_dist = int(0.28 / 0.01)
+            peaks = []
+            last_peak = -min_dist
+
+            for i in range(2, len(flux) - 2):
+                if flux[i] > threshold and flux[i] > flux[i-1] and flux[i] > flux[i+1]:
+                    if i - last_peak >= min_dist:
+                        peaks.append(i * 0.01)
+                        last_peak = i
+
+            if len(peaks) < 6:
+                return 120
+
+            interval_counts = {}
+            for i in range(len(peaks)):
+                for j in range(1, 4):
+                    if i + j < len(peaks):
+                        delta = peaks[i + j] - peaks[i]
+                        if delta > 0:
+                            candidate = (60.0 * j) / delta
+                            while candidate < 65: candidate *= 2
+                            while candidate > 180: candidate /= 2
+                            rounded = round(candidate)
+                            if 65 <= rounded <= 180:
+                                interval_counts[rounded] = interval_counts.get(rounded, 0) + (4 - j)
+
+            if not interval_counts:
+                return 120
+
+            return int(max(interval_counts.items(), key=lambda x: x[1])[0])
+    except Exception:
+        return 120
+
 def fetch_supabase_youtube_tracks():
     """Récupère tous les morceaux avec liens YouTube depuis Supabase et filtre par durée."""
     print("[*] Connexion a la base de donnees Supabase...")
@@ -123,7 +217,7 @@ def fetch_supabase_youtube_tracks():
     except Exception as e:
         print(f"  [!] Erreur lecture table tracks : {e}")
 
-    # 2. Vérification table 'proposals' (soundtrack_url ou audio_url)
+    # 2. Vérification table 'proposals'
     try:
         r = requests.get(f"{SUPABASE_URL}/rest/v1/proposals?select=*", headers=headers, timeout=10)
         if r.status_code == 200:
@@ -163,7 +257,6 @@ def fetch_supabase_youtube_tracks():
 
     for t in all_tracks:
         dur = t.get("duration", 0)
-        # Si la durée est connue et dépasse 5 min (300 s)
         if dur > MAX_DURATION_SECONDS:
             skipped_tracks.append(t)
         else:
@@ -171,23 +264,19 @@ def fetch_supabase_youtube_tracks():
 
     return eligible_tracks, skipped_tracks
 
-def sanitize_title(title: str) -> str:
-    """Génère un nom de dossier propre pour Windows."""
-    clean = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-    return clean if clean else "morceau_stems"
-
 def download_and_extract_track(track_info: dict, output_dir: Path, temp_dir: Path):
-    """Télécharge et sépare un morceau spécifique en vérifiant la durée max."""
+    """Télécharge et sépare un morceau spécifique, calcule le BPM et l'intègre au dossier."""
     url = track_info["url"]
     raw_title = track_info["title"]
     safe_title = sanitize_title(raw_title)
-    final_dir = output_dir / safe_title
 
-    # Vérifie si les 4 stems existent déjà
+    # Vérifie si un dossier avec ou sans tag BPM existe déjà avec les 4 stems
     required_stems = ["vocals.wav", "drums.wav", "bass.wav", "melody.wav"]
-    if final_dir.exists() and all((final_dir / s).exists() for s in required_stems):
-        print(f"  [DEJA FAIT] {safe_title} (les 4 stems existent deja)")
-        return True, "already_done"
+    existing_dirs = list(output_dir.glob(f"{safe_title}*"))
+    for ed in existing_dirs:
+        if ed.is_dir() and all((ed / s).exists() for s in required_stems):
+            print(f"  [DEJA FAIT] {ed.name} (les 4 stems existent deja)")
+            return True, "already_done"
 
     print(f"\n" + "-" * 60)
     print(f"[>] Traitement : {raw_title} ({url})")
@@ -215,7 +304,6 @@ def download_and_extract_track(track_info: dict, output_dir: Path, temp_dir: Pat
     info = None
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Récupérer les métadonnées en premier
             meta = ydl.extract_info(url, download=False)
             if meta:
                 meta_duration = meta.get("duration", 0)
@@ -225,7 +313,6 @@ def download_and_extract_track(track_info: dict, output_dir: Path, temp_dir: Pat
             
             info = ydl.extract_info(url, download=True)
     except Exception as e:
-        print(f"  [!] Tentative avec cookies navigateur...")
         for browser in ['chrome', 'edge', 'firefox']:
             try:
                 opts = dict(ydl_opts)
@@ -260,9 +347,16 @@ def download_and_extract_track(track_info: dict, output_dir: Path, temp_dir: Pat
     ]
     subprocess.check_call(cmd, env=os.environ)
 
-    # Déplacement & Renommage vers stems_output/<Titre>/
+    # Détection BPM sur drums.wav
     track_stem = audio_file.stem
     demucs_out_dir = output_dir / "htdemucs" / track_stem
+    drums_wav = demucs_out_dir / "drums.wav"
+    
+    detected_bpm = detect_bpm_from_wav(drums_wav) if drums_wav.exists() else 120
+    print(f"  [🥁 BPM] Tempo detecte sur la batterie : {detected_bpm} BPM")
+
+    # Déplacement & Renommage vers stems_output/<Titre> [<BPM> BPM]/
+    final_dir = output_dir / f"{safe_title} [{detected_bpm} BPM]"
     final_dir.mkdir(parents=True, exist_ok=True)
 
     mapping = {
@@ -277,6 +371,16 @@ def download_and_extract_track(track_info: dict, output_dir: Path, temp_dir: Pat
         if src_file.exists():
             shutil.copy2(src_file, final_dir / dest_name)
 
+    # Métadonnées
+    metadata = {
+        "title": raw_title,
+        "bpm": detected_bpm,
+        "model": "Demucs v4 HTDemucs",
+        "stems": ["vocals.wav", "drums.wav", "bass.wav", "melody.wav"]
+    }
+    with open(final_dir / "metadata.json", "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+
     # Nettoyage intermédiaire
     try:
         shutil.rmtree(output_dir / "htdemucs", ignore_errors=True)
@@ -290,7 +394,7 @@ def download_and_extract_track(track_info: dict, output_dir: Path, temp_dir: Pat
 
 def main():
     print("=" * 65)
-    print("🔄 SYNCHRONISATEUR BATCH SUPABASE -> STEMS DEMUCS V4")
+    print("🔄 SYNCHRONISATEUR BATCH SUPABASE -> STEMS DEMUCS V4 + BPM")
     print(f"⏱️  Limite maximale de durée : {MAX_DURATION_SECONDS // 60} minutes par morceau")
     print("=" * 65)
     print()
@@ -313,7 +417,7 @@ def main():
         sys.exit(0)
 
     print("\n" + "=" * 65)
-    confirm = input("👉 Lancer la separation automatique de ces morceaux ? (O/n) : ").strip().lower()
+    confirm = input("👉 Lancer la separation automatique et detection BPM de ces morceaux ? (O/n) : ").strip().lower()
     if confirm not in ("", "o", "oui", "y", "yes"):
         print("Operation annulee.")
         sys.exit(0)
@@ -344,15 +448,14 @@ def main():
         print("\n" + "=" * 65)
         print("🎉 RAPPORT DE SYNCHRONISATION TERMINE !")
         print("=" * 65)
-        print(f"  [+] Morceaux nouvellement separes : {success_count}")
-        print(f"  [>] Morceaux deja prets          : {already_done_count}")
-        print(f"  [⏩] Morceaux ignores (> 5 min)   : {skipped_count}")
+        print(f"  [+] Morceaux nouvellement separes & analyses : {success_count}")
+        print(f"  [>] Morceaux deja prets                     : {already_done_count}")
+        print(f"  [⏩] Morceaux ignores (> 5 min)              : {skipped_count}")
         if failed_count > 0:
-            print(f"  [!] Erreurs de telechargement     : {failed_count}")
+            print(f"  [!] Erreurs de telechargement                : {failed_count}")
         print(f"\n📂 Dossier racine de vos Stems : {OUTPUT_DIR.resolve()}")
         print("=" * 65)
 
-        # Ouverture de l'explorateur Windows
         if sys.platform == "win32":
             os.startfile(str(OUTPUT_DIR.resolve()))
         elif sys.platform == "darwin":

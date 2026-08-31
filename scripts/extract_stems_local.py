@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🎵 Extracteur Local de Stems Studio (Demucs v4 HTDemucs + yt-dlp)
+🎵 Extracteur Local de Stems Studio (Demucs v4 HTDemucs + yt-dlp + Détection IA de BPM)
 Sépare 100% hors-navigateur en 4 pistes chirurgicales pour MusikToMovie :
   - vocals.wav (🎤 Voix)
   - drums.wav  (🥁 Batterie)
   - bass.wav   (🎸 Basse)
   - melody.wav (🎹 Mélodie / Instruments)
+Calcule automatiquement le BPM exact via l'analyse du stem drums.wav
+et l'inscrit directement dans le nom du dossier [XXX BPM] et dans metadata.json.
 """
 
 import os
 import sys
 import re
 import shutil
+import struct
+import math
+import json
 import subprocess
+import wave
 from pathlib import Path
 
 # Injection automatique de FFmpeg dans PATH
@@ -70,6 +76,99 @@ def sanitize_url(raw_url: str) -> str:
         url = "https://" + url
     return url
 
+def sanitize_filename(title: str) -> str:
+    """Nettoie le titre pour créer un nom de dossier Windows valide."""
+    clean = re.sub(r'[\\/*?:"<>|]', "", title).strip()
+    return clean if clean else "stems_track"
+
+def detect_bpm_from_wav(wav_path: Path) -> int:
+    """
+    🔬 Détecte le BPM exact à partir du stem de batterie (drums.wav).
+    Analyse l'enveloppe d'énergie et les attaques de percussions.
+    """
+    if not wav_path.exists():
+        return 120
+    try:
+        with wave.open(str(wav_path), 'rb') as wf:
+            n_channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            framerate = wf.getframerate()
+            n_frames = wf.getnframes()
+
+            if framerate <= 0 or n_frames <= 0 or sample_width != 2:
+                return 120
+
+            duration = n_frames / framerate
+            target_duration = min(45.0, duration)
+            start_time = 10.0 if duration > 30 else 0.0
+            start_frame = int(start_time * framerate)
+            read_frames = int(target_duration * framerate)
+
+            wf.setpos(min(start_frame, n_frames - 1))
+            raw_bytes = wf.readframes(read_frames)
+
+            fmt = f"<{len(raw_bytes) // 2}h"
+            samples = struct.unpack(fmt, raw_bytes)
+            
+            if n_channels > 1:
+                mono = [((samples[i] + samples[i+1]) * 0.5) / 32768.0 for i in range(0, len(samples) - 1, n_channels)]
+            else:
+                mono = [s / 32768.0 for s in samples]
+
+            hop_size = int(framerate * 0.01) # 10ms
+            num_hops = len(mono) // hop_size
+            if num_hops < 100:
+                return 120
+
+            energies = []
+            for h in range(num_hops):
+                chunk = mono[h * hop_size : (h + 1) * hop_size]
+                rms = math.sqrt(sum(x * x for x in chunk) / max(1, len(chunk)))
+                energies.append(rms)
+
+            flux = [0.0]
+            for i in range(1, len(energies)):
+                diff = energies[i] - energies[i-1]
+                flux.append(diff if diff > 0 else 0.0)
+
+            avg_flux = sum(flux) / len(flux)
+            threshold = avg_flux * 1.5
+
+            min_dist = int(0.28 / 0.01) # Min 280ms
+            peaks = []
+            last_peak = -min_dist
+
+            for i in range(2, len(flux) - 2):
+                if flux[i] > threshold and flux[i] > flux[i-1] and flux[i] > flux[i+1]:
+                    if i - last_peak >= min_dist:
+                        peaks.append(i * 0.01)
+                        last_peak = i
+
+            if len(peaks) < 6:
+                return 120
+
+            interval_counts = {}
+            for i in range(len(peaks)):
+                for j in range(1, 4):
+                    if i + j < len(peaks):
+                        delta = peaks[i + j] - peaks[i]
+                        if delta > 0:
+                            candidate = (60.0 * j) / delta
+                            while candidate < 65: candidate *= 2
+                            while candidate > 180: candidate /= 2
+                            rounded = round(candidate)
+                            if 65 <= rounded <= 180:
+                                interval_counts[rounded] = interval_counts.get(rounded, 0) + (4 - j)
+
+            if not interval_counts:
+                return 120
+
+            best_bpm = max(interval_counts.items(), key=lambda x: x[1])[0]
+            return int(best_bpm)
+    except Exception as e:
+        print(f"  [!] Note: Calcul BPM par défaut (120 BPM) : {e}")
+        return 120
+
 def download_youtube_audio(url: str, output_path: Path):
     """Télécharge l'audio YouTube et le convertit directement en WAV propre."""
     url = sanitize_url(url)
@@ -98,13 +197,12 @@ def download_youtube_audio(url: str, output_path: Path):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
     except Exception as e:
-        print(f"\n⚠️  Tentative de contournement du blocage YouTube (avec cookies navigateur)...")
-        for browser in ['chrome', 'edge', 'firefox', 'brave', 'opera']:
+        print(f"  [!] Tentative avec cookies navigateur...")
+        for browser in ['chrome', 'edge', 'firefox']:
             try:
-                print(f"  👉 Test des cookies {browser.capitalize()}...")
-                opts_with_cookies = dict(ydl_opts)
-                opts_with_cookies['cookiesfrombrowser'] = (browser,)
-                with yt_dlp.YoutubeDL(opts_with_cookies) as ydl:
+                opts = dict(ydl_opts)
+                opts['cookiesfrombrowser'] = (browser,)
+                with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                     if info:
                         break
@@ -112,29 +210,24 @@ def download_youtube_audio(url: str, output_path: Path):
                 continue
 
     if not info:
-        print("\n❌ YouTube a bloqué le téléchargement automatique de cette vidéo spécifique.")
-        print("💡 Solution simple :")
-        print("1. Téléchargez le MP3 sur 10downloader.com ou y2mate.is")
-        print("2. Glissez simplement le fichier MP3 téléchargé dans cette fenêtre !")
-        mp3_path = input("\n👉 Glissez votre fichier MP3 ici (ou chemin complet) : ").strip('"').strip("'")
-        if mp3_path and Path(mp3_path).exists():
-            file = Path(mp3_path)
-            return file, file.stem
+        print(f"\n❌ Échec du téléchargement pour l'URL : {url}")
         sys.exit(1)
 
-    title = info.get('title', 'audio_track')
-    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+    title = info.get('title', 'YouTube_Track')
+    clean_title = sanitize_filename(title)
+    
     wav_files = list(output_path.glob("*.wav"))
-    if wav_files:
-        return wav_files[0], safe_title
-    all_files = list(output_path.glob("*.*"))
-    return all_files[0] if all_files else output_path, safe_title
+    if not wav_files:
+        print("\n❌ Aucun fichier WAV généré après téléchargement.")
+        sys.exit(1)
+        
+    return wav_files[0], clean_title
 
 def separate_with_demucs(audio_file: Path, target_dir: Path, title: str):
-    """Lance la séparation Demucs v4 HTDemucs (Qualité Studio Pro)."""
-    print(f"\n🧠 2/3. Inférence Réseau de Neurones Demucs v4 (HTDemucs)...")
-    print(f"🎵 Fichier source : {audio_file.name}")
-    print("⏳ Ce calcul utilise votre processeur multi-coeurs / GPU. Veuillez patienter...")
+    """Exécute l'inférence neuronale Demucs v4 HTDemucs et calcule le BPM."""
+    print(f"\n🧠 2/3. Séparation IA Neuronale Demucs v4 HTDemucs...")
+    print(f"👉 Traitement de : {audio_file.name}")
+    print("⏳ Cela prend généralement entre 30 et 90 secondes selon votre machine...")
 
     cmd = [
         sys.executable, "-m", "demucs.separate",
@@ -145,27 +238,43 @@ def separate_with_demucs(audio_file: Path, target_dir: Path, title: str):
     
     subprocess.check_call(cmd, env=os.environ)
 
-    # Récupération et renommage des 4 fichiers générés par Demucs
+    # Récupération et calcul du BPM sur la piste drums
     track_name = audio_file.stem
     demucs_out_dir = target_dir / "htdemucs" / track_name
+    drums_wav = demucs_out_dir / "drums.wav"
     
-    final_dir = target_dir / title
+    detected_bpm = detect_bpm_from_wav(drums_wav) if drums_wav.exists() else 120
+    print(f"\n🥁 3/3. Analyse Rythmique & Détection du Tempo : {detected_bpm} BPM")
+
+    # Nom du dossier final intégrant le tag BPM
+    folder_name = f"{title} [{detected_bpm} BPM]"
+    final_dir = target_dir / folder_name
     final_dir.mkdir(parents=True, exist_ok=True)
 
     stem_mapping = {
         "vocals.wav": "vocals.wav",
         "drums.wav": "drums.wav",
         "bass.wav": "bass.wav",
-        "other.wav": "melody.wav",  # Renommé en melody pour MusikToMovie
+        "other.wav": "melody.wav",
     }
 
-    print(f"\n✨ 3/3. Normalisation des 4 Stems Studio...")
+    print(f"✨ Normalisation des 4 Stems Studio...")
     for src_stem, dest_stem in stem_mapping.items():
         src_path = demucs_out_dir / src_stem
         dest_path = final_dir / dest_stem
         if src_path.exists():
             shutil.copy2(src_path, dest_path)
-            print(f"  ✅ {dest_stem.upper()} -> {dest_path}")
+            print(f"  ✅ {dest_stem.upper()} -> {dest_path.name}")
+
+    # Enregistrement du fichier de métadonnées
+    metadata = {
+        "title": title,
+        "bpm": detected_bpm,
+        "model": "Demucs v4 HTDemucs",
+        "stems": ["vocals.wav", "drums.wav", "bass.wav", "melody.wav"]
+    }
+    with open(final_dir / "metadata.json", "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
 
     # Nettoyage dossier intermédiaire demucs
     try:
@@ -173,11 +282,11 @@ def separate_with_demucs(audio_file: Path, target_dir: Path, title: str):
     except Exception:
         pass
 
-    return final_dir
+    return final_dir, detected_bpm
 
 def main():
     print("=" * 65)
-    print("🎛️  EXTRACTEUR LOCAL DE STEMS STUDIO POUR MUSIKTOMOVIE")
+    print("🎛️  EXTRACTEUR LOCAL DE STEMS STUDIO + DÉTECTION BPM IA")
     print("=" * 65)
 
     check_dependencies()
@@ -203,22 +312,19 @@ def main():
             if not audio_file.exists():
                 print(f"❌ Fichier introuvable : {audio_file}")
                 sys.exit(1)
-            title = audio_file.stem
+            title = sanitize_filename(audio_file.stem)
 
-        final_stems_dir = separate_with_demucs(audio_file, OUTPUT_DIR, title)
+        final_stems_dir, detected_bpm = separate_with_demucs(audio_file, OUTPUT_DIR, title)
 
         print("\n" + "=" * 65)
-        print("🎉 SÉPARATION TERMINÉE AVEC SUCCÈS (QUALITÉ STUDIO 100% PURE) !")
+        print(f"🎉 SÉPARATION TERMINÉE : {detected_bpm} BPM DÉTECTÉ !")
         print("=" * 65)
-        print(f"\n📂 Dossier de vos 4 pistes : {final_stems_dir.resolve()}")
-        print("\n🚀 INSTRUCTIONS D'UTILISATION DANS MUSIKTOMOVIE :")
-        print("1. Ouvrez votre navigateur sur MusikToMovie Studio.")
-        print("2. Cliquez sur [📂 Importer MP3 / Stems Pro] sur le Deck A ou B.")
-        print("3. Sélectionnez les 4 fichiers d'un coup (ou glissez-les sur la platine) :")
-        print("   • vocals.wav  (🎤 Voix pure)")
-        print("   • drums.wav   (🥁 Batterie)")
-        print("   • bass.wav    (🎸 Basse)")
-        print("   • melody.wav  (🎹 Mélodie / Instruments)")
+        print(f"\n📂 Dossier généré : {final_stems_dir.resolve()}")
+        print(f"🏷️  Tag BPM intégré : [{detected_bpm} BPM]")
+        print("\n🚀 UTILISATION DANS MUSIKTOMOVIE :")
+        print("1. Ouvrez le Studio MusikToMusik sur votre navigateur.")
+        print("2. Glissez les 4 fichiers (ou le dossier) sur le Deck A ou B.")
+        print(f"3. Le BPM ({detected_bpm} BPM) et le calage seront automatiquement reconnus !")
         print("-" * 65)
 
         # Ouvre automatiquement le dossier dans l'explorateur Windows

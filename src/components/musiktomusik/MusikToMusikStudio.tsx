@@ -169,12 +169,12 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     };
   }, []);
 
-  // 🔬 Détection automatique du BPM pour le Deck A
-  const triggerBpmDetectionA = useCallback(async (audioSource: string | Blob | File) => {
+  // 🔬 Détection automatique du BPM pour le Deck A (Tag Demucs > WASM C++ > DSP)
+  const triggerBpmDetectionA = useCallback(async (audioSource: string | Blob | File, hintFilename?: string) => {
     if (!audioSource) return;
     setIsDetectingBpmA(true);
     try {
-      const res = await detectBpmFromAudio(audioSource);
+      const res = await detectBpmFromAudio(audioSource, hintFilename || trackA.title);
       setBpmA(res.bpm);
       setBpmInfoA(res);
     } catch (e) {
@@ -182,14 +182,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     } finally {
       setIsDetectingBpmA(false);
     }
-  }, []);
+  }, [trackA.title]);
 
-  // 🔬 Détection automatique du BPM pour le Deck B
-  const triggerBpmDetectionB = useCallback(async (audioSource: string | Blob | File) => {
+  // 🔬 Détection automatique du BPM pour le Deck B (Tag Demucs > WASM C++ > DSP)
+  const triggerBpmDetectionB = useCallback(async (audioSource: string | Blob | File, hintFilename?: string) => {
     if (!audioSource) return;
     setIsDetectingBpmB(true);
     try {
-      const res = await detectBpmFromAudio(audioSource);
+      const res = await detectBpmFromAudio(audioSource, hintFilename || trackB.title);
       setBpmB(res.bpm);
       setBpmInfoB(res);
     } catch (e) {
@@ -197,23 +197,23 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     } finally {
       setIsDetectingBpmB(false);
     }
-  }, []);
+  }, [trackB.title]);
 
   // Déclencher la détection BPM quand les pistes ou stems changent sur Deck A
   useEffect(() => {
     const source = hdStemsA?.drumsUrl || hdStemsA?.bassUrl || hdStemsA?.vocalsUrl || trackA.audio_url;
     if (source) {
-      triggerBpmDetectionA(source);
+      triggerBpmDetectionA(source, trackA.title);
     }
-  }, [hdStemsA, trackA.audio_url, triggerBpmDetectionA]);
+  }, [hdStemsA, trackA.audio_url, trackA.title, triggerBpmDetectionA]);
 
   // Déclencher la détection BPM quand les pistes ou stems changent sur Deck B
   useEffect(() => {
     const source = hdStemsB?.drumsUrl || hdStemsB?.bassUrl || hdStemsB?.vocalsUrl || trackB.audio_url;
     if (source) {
-      triggerBpmDetectionB(source);
+      triggerBpmDetectionB(source, trackB.title);
     }
-  }, [hdStemsB, trackB.audio_url, triggerBpmDetectionB]);
+  }, [hdStemsB, trackB.audio_url, trackB.title, triggerBpmDetectionB]);
 
   // Calculer la proposition de synchronisation automatique dès que les deux BPMs sont connus
   useEffect(() => {
@@ -259,15 +259,24 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     }
   };
 
-  // Détection automatique des 4 fichiers dans un pack
+  // Détection automatique des 4 fichiers dans un pack et extraction du tag BPM
   const handleStemsPackFiles = (fileList: FileList | File[]) => {
     const files = Array.from(fileList);
     let titleGuess = '';
     for (const f of files) {
       const name = f.name.toLowerCase();
+      const relativePath = (f as any).webkitRelativePath || '';
+
       if (!titleGuess && f.name.length > 8 && !['vocals.wav', 'drums.wav', 'bass.wav', 'melody.wav', 'other.wav'].includes(name)) {
         titleGuess = f.name.replace(/\.[^/.]+$/, '').replace(/[_-](vocals|drums|bass|other|melody)/i, '');
       }
+      if (!titleGuess && relativePath) {
+        const parts = relativePath.split('/');
+        if (parts.length > 1) {
+          titleGuess = parts[0];
+        }
+      }
+
       if (name.includes('voc') || name.includes('chant') || name.includes('acapella') || name.includes('lead')) {
         setStemsPackVocals(f);
       } else if (name.includes('drum') || name.includes('beat') || name.includes('percu') || name.includes('batterie')) {

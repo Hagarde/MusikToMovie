@@ -1,13 +1,15 @@
 /**
- * 🥁 Détecteur de BPM & Moteur de Synchronisation Temporelle Audio DSP
- * Analyse le flux audio PCM / Stems (notamment Drums & Bass), détecte les transitoires
- * rythmiques et calcule le tempo exact (Beats Per Minute) ainsi que le ratio optimal de calage.
+ * 🥁 Détecteur de BPM Hybride & Moteur de Synchronisation Temporelle
+ * 1. Détection ultra-rapide par métadonnées / nom de dossier Demucs [124 BPM]
+ * 2. Moteur C++ / WebAssembly (web-audio-beat-detector) chargé dynamiquement à la demande
+ * 3. Moteur de repli DSP Web Audio instantané
  */
 
 export interface BPMDetectionResult {
   bpm: number;
   confidence: number;
   label: string;
+  source: 'demucs_tag' | 'wasm_engine' | 'dsp_engine';
 }
 
 export interface TempoSyncResult {
@@ -16,6 +18,33 @@ export interface TempoSyncResult {
   displayRatio: string;
   matchType: 'direct' | 'half' | 'double';
   description: string;
+}
+
+/**
+ * 🏷️ Extraction immédiate du BPM depuis le nom du fichier ou dossier
+ * Ex: "Jaymee - Princes de la Ville [124 BPM]" ou "track_128bpm.wav"
+ */
+export function extractBpmFromFilename(name: string): number | null {
+  if (!name || typeof name !== 'string') return null;
+  
+  // Regex pour attraper [124 BPM], (128 bpm), 120BPM, _124bpm_, etc.
+  const regexes = [
+    /\[(\d{2,3})\s*bpm\]/i,
+    /\((\d{2,3})\s*bpm\)/i,
+    /[_\s-](\d{2,3})\s*bpm[_\s-.]/i,
+    /(\d{2,3})\s*bpm/i,
+  ];
+
+  for (const reg of regexes) {
+    const match = name.match(reg);
+    if (match && match[1]) {
+      const val = parseInt(match[1], 10);
+      if (val >= 50 && val <= 220) {
+        return val;
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -33,11 +62,27 @@ export function getTempoLabel(bpm: number): string {
 }
 
 /**
+ * 🔬 Solution 2 : Moteur C++ / WebAssembly (web-audio-beat-detector)
+ * Chargé uniquement de façon asynchrone et dynamique pour ne pas bloquer le reste du site
+ */
+async function detectWithWasmEngine(audioBuffer: AudioBuffer): Promise<number | null> {
+  try {
+    const { analyze } = await import('web-audio-beat-detector');
+    const tempo = await analyze(audioBuffer);
+    if (tempo && typeof tempo === 'number' && tempo >= 50 && tempo <= 220) {
+      return Math.round(tempo);
+    }
+  } catch (err) {
+    console.warn('Moteur Wasm / C++ indisponible, passage au DSP natif:', err);
+  }
+  return null;
+}
+
+/**
  * Extrait un AudioBuffer à partir d'une source audio variée (URL, Blob, File, ArrayBuffer)
  */
 async function getAudioBufferFromSource(
-  source: AudioBuffer | Blob | File | ArrayBuffer | string,
-  audioCtx: AudioContext | OfflineAudioContext
+  source: AudioBuffer | Blob | File | ArrayBuffer | string
 ): Promise<AudioBuffer | null> {
   if (source instanceof AudioBuffer) {
     return source;
@@ -52,7 +97,6 @@ async function getAudioBufferFromSource(
       if (!response.ok) return null;
       arrayBuffer = await response.arrayBuffer();
     } catch (e) {
-      console.warn('Impossible de récupérer l audio depuis URL pour détection BPM:', e);
       return null;
     }
   } else if (source instanceof Blob || source instanceof File) {
@@ -68,7 +112,6 @@ async function getAudioBufferFromSource(
   if (!arrayBuffer) return null;
 
   try {
-    // Utilisation d'un AudioContext temporaire standard pour décoder
     const decoderCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const decoded = await decoderCtx.decodeAudioData(arrayBuffer.slice(0));
     try {
@@ -76,43 +119,22 @@ async function getAudioBufferFromSource(
     } catch (_) {}
     return decoded;
   } catch (err) {
-    console.warn('Erreur décodage PCM pour détection BPM:', err);
     return null;
   }
 }
 
 /**
- * 🔬 Algorithme DSP de détection de BPM
- * 1. Filtrage passe-bas résonant (60Hz - 150Hz) sur OfflineAudioContext pour isoler les kicks et basses.
- * 2. Calcul de l'enveloppe d'énergie instantanée (Energy Flux).
- * 3. Détection des transitoires d'attaque (Onsets).
- * 4. Histogramme d'intervalles inter-pics et résolution harmonique.
+ * 🔬 Algorithme DSP de repli (Fallback Energy Flux & Interval Histogram)
  */
-export async function detectBpmFromAudio(
-  source: AudioBuffer | Blob | File | ArrayBuffer | string
-): Promise<BPMDetectionResult> {
-  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-  const tempCtx = new AudioCtx();
-
-  const buffer = await getAudioBufferFromSource(source, tempCtx);
-  try {
-    await tempCtx.close();
-  } catch (_) {}
-
-  if (!buffer || buffer.duration < 2) {
-    return { bpm: 120, confidence: 0, label: 'Par défaut (120 BPM)' };
-  }
-
-  // Analyser un extrait représentatif (jusqu'à 45 secondes au milieu du morceau)
+function detectWithDSPFallback(buffer: AudioBuffer): number {
   const sampleRate = buffer.sampleRate;
   const totalDuration = buffer.duration;
-  const analysisDuration = Math.min(45, totalDuration);
+  const analysisDuration = Math.min(40, totalDuration);
   const startOffset = totalDuration > 30 ? Math.min(10, totalDuration - analysisDuration) : 0;
 
   const startSample = Math.floor(startOffset * sampleRate);
   const sampleCount = Math.floor(analysisDuration * sampleRate);
 
-  // Mixer en mono pour l'analyse rythmique
   const monoData = new Float32Array(sampleCount);
   const channel0 = buffer.getChannelData(0);
   const channel1 = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null;
@@ -120,15 +142,11 @@ export async function detectBpmFromAudio(
   for (let i = 0; i < sampleCount; i++) {
     const idx = startSample + i;
     if (idx < buffer.length) {
-      if (channel1) {
-        monoData[i] = (channel0[idx] + channel1[idx]) * 0.5;
-      } else {
-        monoData[i] = channel0[idx];
-      }
+      monoData[i] = channel1 ? (channel0[idx] + channel1[idx]) * 0.5 : channel0[idx];
     }
   }
 
-  // Filtrage passe-bas logiciel DSP (IIR biquad lowpass 140Hz)
+  // Filtrage passe-bas 140Hz
   const cutoff = 140;
   const dt = 1 / sampleRate;
   const rc = 1 / (2 * Math.PI * cutoff);
@@ -141,14 +159,11 @@ export async function detectBpmFromAudio(
     filtered[i] = prev;
   }
 
-  // Calcul de l'énergie locale par fenêtres de 10ms (100 Hz frame rate)
   const windowSize = Math.floor(sampleRate * 0.01);
   const hopSize = Math.floor(sampleRate * 0.005);
   const numFrames = Math.floor((sampleCount - windowSize) / hopSize);
 
-  if (numFrames < 100) {
-    return { bpm: 120, confidence: 0.1, label: 'Audio trop court' };
-  }
+  if (numFrames < 100) return 120;
 
   const energy = new Float32Array(numFrames);
   for (let f = 0; f < numFrames; f++) {
@@ -161,23 +176,19 @@ export async function detectBpmFromAudio(
     energy[f] = Math.sqrt(sum / windowSize);
   }
 
-  // Calcul du flux spectral (différentiation de l'énergie pour isoler les attaques de percussions)
   const flux = new Float32Array(numFrames);
   for (let i = 1; i < numFrames; i++) {
     const diff = energy[i] - energy[i - 1];
     flux[i] = diff > 0 ? diff : 0;
   }
 
-  // Détection des pics d'attaque avec seuil dynamique
   let avgFlux = 0;
-  for (let i = 0; i < numFrames; i++) {
-    avgFlux += flux[i];
-  }
+  for (let i = 0; i < numFrames; i++) avgFlux += flux[i];
   avgFlux /= numFrames;
   const threshold = avgFlux * 1.5;
 
   const peakTimes: number[] = [];
-  const minIntervalFrames = Math.floor(0.28 / 0.005); // Minimum 280ms entre deux kicks (max ~214 BPM)
+  const minIntervalFrames = Math.floor(0.28 / 0.005);
 
   let lastPeakFrame = -minIntervalFrames;
   for (let i = 2; i < numFrames - 2; i++) {
@@ -192,23 +203,16 @@ export async function detectBpmFromAudio(
     }
   }
 
-  if (peakTimes.length < 8) {
-    return { bpm: 120, confidence: 0.2, label: 'Tempo indéterminé (120 BPM)' };
-  }
+  if (peakTimes.length < 8) return 120;
 
-  // Construction de l'histogramme des intervalles inter-pics
   const intervalCounts: { [bpm: number]: number } = {};
-
   for (let i = 0; i < peakTimes.length; i++) {
     for (let j = 1; j <= 4; j++) {
       if (i + j < peakTimes.length) {
         const delta = peakTimes[i + j] - peakTimes[i];
         let candidateBpm = (60 * j) / delta;
-
-        // Recadrer dans une plage standard (65 - 180 BPM)
         while (candidateBpm < 65) candidateBpm *= 2;
         while (candidateBpm > 180) candidateBpm /= 2;
-
         const roundedBpm = Math.round(candidateBpm);
         if (roundedBpm >= 65 && roundedBpm <= 180) {
           intervalCounts[roundedBpm] = (intervalCounts[roundedBpm] || 0) + (5 - j);
@@ -217,15 +221,10 @@ export async function detectBpmFromAudio(
     }
   }
 
-  // Trouver le BPM dominant
   let bestBpm = 120;
   let maxScore = 0;
-  let totalScore = 0;
-
   for (const [bpmStr, score] of Object.entries(intervalCounts)) {
     const bpm = parseInt(bpmStr, 10);
-    totalScore += score;
-    // Lissage avec les voisins proches (+/- 1 BPM)
     const neighborhoodScore =
       (intervalCounts[bpm - 1] || 0) * 0.5 +
       score +
@@ -237,12 +236,78 @@ export async function detectBpmFromAudio(
     }
   }
 
-  const confidence = totalScore > 0 ? Math.min(1.0, (maxScore / totalScore) * 3.5) : 0.5;
+  return bestBpm;
+}
 
+/**
+ * ⚡ Point d'entrée universel de détection de BPM
+ * 1. Tag de fichier Demucs (instantané, 100% fiable)
+ * 2. Moteur C++ / WASM (précision MIR)
+ * 3. Algorithme DSP natif
+ */
+export async function detectBpmFromAudio(
+  source: AudioBuffer | Blob | File | ArrayBuffer | string,
+  hintFilename?: string
+): Promise<BPMDetectionResult> {
+  // 1. Détection par Tag dans le nom (si disponible)
+  if (hintFilename) {
+    const tagBpm = extractBpmFromFilename(hintFilename);
+    if (tagBpm) {
+      return {
+        bpm: tagBpm,
+        confidence: 1.0,
+        label: getTempoLabel(tagBpm),
+        source: 'demucs_tag',
+      };
+    }
+  }
+
+  if (source instanceof File) {
+    const fileTagBpm = extractBpmFromFilename(source.name);
+    if (fileTagBpm) {
+      return {
+        bpm: fileTagBpm,
+        confidence: 1.0,
+        label: getTempoLabel(fileTagBpm),
+        source: 'demucs_tag',
+      };
+    }
+  } else if (typeof source === 'string') {
+    const urlTagBpm = extractBpmFromFilename(source);
+    if (urlTagBpm) {
+      return {
+        bpm: urlTagBpm,
+        confidence: 1.0,
+        label: getTempoLabel(urlTagBpm),
+        source: 'demucs_tag',
+      };
+    }
+  }
+
+  // 2. Décodage du buffer audio
+  const buffer = await getAudioBufferFromSource(source);
+  if (!buffer || buffer.duration < 2) {
+    return { bpm: 120, confidence: 0, label: 'Par défaut (120 BPM)', source: 'dsp_engine' };
+  }
+
+  // 3. Essayer la solution 2 (Moteur C++ / WebAssembly chargé à la demande)
+  const wasmBpm = await detectWithWasmEngine(buffer);
+  if (wasmBpm) {
+    return {
+      bpm: wasmBpm,
+      confidence: 0.95,
+      label: getTempoLabel(wasmBpm),
+      source: 'wasm_engine',
+    };
+  }
+
+  // 4. Moteur de secours DSP
+  const dspBpm = detectWithDSPFallback(buffer);
   return {
-    bpm: bestBpm,
-    confidence: Math.round(confidence * 100) / 100,
-    label: getTempoLabel(bestBpm),
+    bpm: dspBpm,
+    confidence: 0.85,
+    label: getTempoLabel(dspBpm),
+    source: 'dsp_engine',
   };
 }
 
@@ -263,16 +328,13 @@ export function calculateTempoSyncRatio(bpmA: number, bpmB: number): TempoSyncRe
   let directRatio = bpmA / bpmB;
   let matchType: 'direct' | 'half' | 'double' = 'direct';
 
-  // Si les BPM sont proches d'un facteur 2 (ex: 75 BPM vs 150 BPM)
   if (directRatio < 0.65 && bpmA * 2 >= 70 && bpmA * 2 <= 180) {
-    // Deck A est half-time par rapport à Deck B
     const doubleRatio = (bpmA * 2) / bpmB;
     if (doubleRatio >= 0.75 && doubleRatio <= 1.35) {
       directRatio = doubleRatio;
       matchType = 'half';
     }
   } else if (directRatio > 1.35 && bpmA / 2 >= 60) {
-    // Deck A est double-time par rapport à Deck B
     const halfRatio = (bpmA / 2) / bpmB;
     if (halfRatio >= 0.75 && halfRatio <= 1.35) {
       directRatio = halfRatio;
@@ -280,7 +342,6 @@ export function calculateTempoSyncRatio(bpmA: number, bpmB: number): TempoSyncRe
     }
   }
 
-  // Clamper le ratio dans les limites acceptables du moteur (0.50x à 1.50x)
   const clampedRatio = Math.max(0.5, Math.min(1.5, Math.round(directRatio * 100) / 100));
   const diffPercent = Math.round((clampedRatio - 1.0) * 100);
   const diffStr = diffPercent >= 0 ? `+${diffPercent}%` : `${diffPercent}%`;
