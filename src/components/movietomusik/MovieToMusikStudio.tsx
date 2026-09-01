@@ -348,6 +348,17 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   // Enregistrement Micro (Overdub)
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (tracks.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [tracks]);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   // Lecture Globale Master & Playhead Cursor

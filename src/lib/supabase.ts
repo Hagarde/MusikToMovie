@@ -85,13 +85,14 @@ export async function getTracks(): Promise<Track[]> {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
+    if (error) throw error;
+    if (!data || data.length === 0) {
       return safeGetLocalStorage<Track[]>(LOCAL_STORAGE_TRACKS_KEY, DEMO_TRACKS);
     }
     return data;
   } catch (err) {
     console.warn('Erreur Supabase, fallback local:', err);
-    return safeGetLocalStorage<Track[]>(LOCAL_STORAGE_TRACKS_KEY, DEMO_TRACKS);
+    throw err;
   }
 }
 
@@ -142,6 +143,26 @@ export async function deleteTrack(trackId: string): Promise<boolean> {
     const localTracks = safeGetLocalStorage<Track[]>(LOCAL_STORAGE_TRACKS_KEY, []);
     const filtered = localTracks.filter(t => t.id !== trackId);
     safeSetLocalStorage(LOCAL_STORAGE_TRACKS_KEY, filtered);
+  } catch (e) {}
+
+  return true;
+}
+
+// Mettre à jour le BPM d'un morceau
+export async function updateTrackBpm(trackId: string, bpm: number): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('tracks').update({ bpm }).eq('id', trackId);
+    if (error) {
+      console.warn('Erreur mise à jour BPM Supabase:', error);
+    }
+  } catch (e) {
+    console.warn('Erreur mise à jour BPM Supabase:', e);
+  }
+
+  try {
+    const localTracks = safeGetLocalStorage<Track[]>(LOCAL_STORAGE_TRACKS_KEY, []);
+    const updated = localTracks.map(t => t.id === trackId ? { ...t, bpm } : t);
+    safeSetLocalStorage(LOCAL_STORAGE_TRACKS_KEY, updated);
   } catch (e) {}
 
   return true;
@@ -204,7 +225,8 @@ export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' 
     }
 
     const { data, error } = await query;
-    if (!error && data && data.length > 0) {
+    if (error) throw error;
+    if (data && data.length > 0) {
       for (const remote of data) {
         const localMatch = localProposals.find(l => l.id === remote.id) || RESTORED_PROPOSALS.find(r => r.id === remote.id);
         const idx = finalProposals.findIndex(f => f.id === remote.id);
@@ -228,6 +250,7 @@ export async function getProposals(trackId?: string, sortBy: 'recent' | 'likes' 
     }
   } catch (e) {
     console.warn('Erreur lecture proposals Supabase, utilisation du cache local:', e);
+    throw e;
   }
 
   if (trackId) {

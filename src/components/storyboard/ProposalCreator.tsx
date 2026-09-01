@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Film, 
   ArrowLeft, 
@@ -72,6 +72,20 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
   const [currentAudioTime, setCurrentAudioTime] = useState(0);
   const [forcePlayTime, setForcePlayTime] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const isNewAndHasContent = !existingProposal && (movieTitle.trim() !== '' || logline.trim() !== '' || frames.some(f => !!f));
+      const isEditingAndChanged = existingProposal && (movieTitle !== existingProposal.movie_title || logline !== existingProposal.logline);
+      
+      if (isNewAndHasContent || isEditingAndChanged) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [movieTitle, logline, frames, existingProposal]);
 
   const formatSeconds = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -383,53 +397,93 @@ export const ProposalCreator: React.FC<ProposalCreatorProps> = ({
             </div>
 
             {/* Timecodes de synchronisation */}
-            <div className="flex items-center gap-2 text-xs font-mono bg-stone-50 px-3.5 py-2 rounded-2xl border border-stone-200 shadow-sm">
-              <Clock className="w-3.5 h-3.5 text-stone-600" />
-              <span className="text-stone-500">Timecode :</span>
-              <input
-                type="text"
-                value={formatSeconds(startTime)}
-                onChange={(e) => setStartTime(parseTime(e.target.value))}
-                className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
-                placeholder="01:20"
-                title="Début"
-              />
-              <span className="text-stone-400">→</span>
-              <input
-                type="text"
-                value={formatSeconds(endTime)}
-                onChange={(e) => setEndTime(parseTime(e.target.value))}
-                className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
-                placeholder="01:50"
-                title="Fin"
-              />
+            <div className="flex flex-col gap-3 text-xs font-mono bg-stone-50 p-3.5 rounded-2xl border border-stone-200 shadow-sm w-full sm:w-auto flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Clock className="w-3.5 h-3.5 text-stone-600" />
+                <span className="text-stone-500 font-sans">Timecode :</span>
+                <input
+                  type="text"
+                  value={formatSeconds(startTime)}
+                  onChange={(e) => setStartTime(parseTime(e.target.value))}
+                  className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
+                  placeholder="01:20"
+                  title="Début"
+                />
+                <span className="text-stone-400">→</span>
+                <input
+                  type="text"
+                  value={formatSeconds(endTime)}
+                  onChange={(e) => setEndTime(parseTime(e.target.value))}
+                  className="w-14 bg-white text-center rounded-lg text-stone-900 font-bold px-1.5 py-0.5 border border-stone-200 text-xs shadow-sm"
+                  placeholder="01:50"
+                  title="Fin"
+                />
 
-              <button
-                type="button"
-                onClick={() => {
-                  const newStart = Math.floor(currentAudioTime);
-                  const dur = track?.duration || 180;
-                  const newEnd = Math.min(dur, newStart + 25);
-                  setStartTime(newStart);
-                  setEndTime(newEnd);
-                }}
-                className="text-[10px] bg-stone-200 hover:bg-stone-900 hover:text-white text-stone-700 px-2.5 py-1 rounded-lg transition-colors font-bold ml-1 font-sans"
-                title="Caler le timecode sur la position actuelle du lecteur audio"
-              >
-                Prendre ({formatSeconds(currentAudioTime)})
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newStart = Math.floor(currentAudioTime);
+                    const dur = track?.duration || 180;
+                    const newEnd = Math.min(dur, newStart + 25);
+                    setStartTime(newStart);
+                    setEndTime(newEnd);
+                  }}
+                  className="text-[10px] bg-stone-200 hover:bg-stone-900 hover:text-white text-stone-700 px-2.5 py-1 rounded-lg transition-colors font-bold ml-1 font-sans"
+                  title="Caler le timecode sur la position actuelle du lecteur audio"
+                >
+                  Prendre ({formatSeconds(currentAudioTime)})
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setForcePlayTime(startTime);
-                }}
-                className="text-[10px] bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 border border-rose-200 hover:border-rose-600 px-2.5 py-1 rounded-lg transition-colors font-bold flex items-center gap-1 font-sans"
-                title="Écouter cet extrait dans le lecteur"
-              >
-                <span>▶ Écouter</span>
-                <span>({Math.max(1, endTime - startTime)}s)</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForcePlayTime(startTime);
+                  }}
+                  className="text-[10px] bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 border border-rose-200 hover:border-rose-600 px-2.5 py-1 rounded-lg transition-colors font-bold flex items-center gap-1 font-sans ml-auto"
+                  title="Écouter cet extrait dans le lecteur"
+                >
+                  <span>▶ Écouter</span>
+                  <span>({Math.max(1, endTime - startTime)}s)</span>
+                </button>
+              </div>
+
+              {/* Slider double poignée */}
+              <div className="relative h-6 w-full flex items-center px-1">
+                <div className="absolute left-0 right-0 h-1.5 bg-stone-200 rounded-full mx-1" />
+                <div 
+                  className="absolute h-1.5 bg-rose-500 rounded-full mx-1 flex items-center justify-center" 
+                  style={{ 
+                    left: `${(startTime / (track.duration || 1)) * 100}%`, 
+                    width: `${((endTime - startTime) / (track.duration || 1)) * 100}%` 
+                  }} 
+                >
+                  <span className="absolute -top-5 text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 shadow-sm whitespace-nowrap z-0">
+                    {Math.max(1, endTime - startTime)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.floor(track.duration || 0)}
+                  value={startTime}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val < endTime) setStartTime(val);
+                  }}
+                  className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-rose-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer z-10"
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.floor(track.duration || 0)}
+                  value={endTime}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val > startTime) setEndTime(val);
+                  }}
+                  className="absolute w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-rose-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer z-20"
+                />
+              </div>
             </div>
           </div>
         </div>

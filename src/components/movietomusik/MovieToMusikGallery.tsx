@@ -1,19 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Radio, 
-  Plus, 
-  Play, 
-  Pause, 
-  Heart, 
-  Share2, 
-  Check, 
-  Trash2, 
-  ShieldAlert, 
-  Film, 
-  User, 
-  Search, 
-  Layers
-} from 'lucide-react';
+import { Play, Pause, Plus, Search, Heart, Share2, Check, Film, Layers, Trash2, ShieldAlert, Radio, User } from 'lucide-react';
+import { Modal } from '../ui/Modal';
 import { MovieToMusikProject } from '../../lib/types';
 import { MultiTrackAudioEngine } from '../../lib/audioEngine';
 import { voteMovieToMusikProject, hasUserVotedM2M } from '../../lib/supabase';
@@ -366,49 +353,46 @@ export const MovieToMusikGallery: React.FC<MovieToMusikGalleryProps> = ({
       )}
 
       {/* Modale de Confirmation de Suppression Admin */}
-      {projectToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl border border-stone-200 w-full max-w-md shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-stone-900 text-sm">Supprimer la création sonore ?</h4>
-                <p className="text-xs text-stone-500">Action irréversible (Mode Admin)</p>
-              </div>
+      <Modal isOpen={!!projectToDelete} onClose={() => setProjectToDelete(null)} title="Supprimer la création sonore ?" size="sm">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 text-rose-600">
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
+              <ShieldAlert className="w-5 h-5" />
             </div>
-
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Êtes-vous sûr de vouloir supprimer définitivement{' '}
-              <strong className="text-stone-900">"{projectToDelete.title}"</strong> de{' '}
-              <strong className="text-stone-900">{projectToDelete.creator_name}</strong> ?
-            </p>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setProjectToDelete(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (onDeleteProject && projectToDelete) {
-                    onDeleteProject(projectToDelete.id);
-                    setProjectToDelete(null);
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
-              >
-                Supprimer
-              </button>
+            <div>
+              <p className="text-xs text-stone-300">Action irréversible (Mode Admin)</p>
             </div>
           </div>
+
+          <p className="text-xs text-stone-300 leading-relaxed">
+            Êtes-vous sûr de vouloir supprimer définitivement{' '}
+            <strong className="text-stone-100">"{projectToDelete?.title}"</strong> de{' '}
+            <strong className="text-stone-100">{projectToDelete?.creator_name}</strong> ?
+          </p>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setProjectToDelete(null)}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onDeleteProject && projectToDelete) {
+                  onDeleteProject(projectToDelete.id);
+                  setProjectToDelete(null);
+                }
+              }}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+            >
+              Supprimer
+            </button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

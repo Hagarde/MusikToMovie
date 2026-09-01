@@ -11,6 +11,7 @@ import {
 import { Navbar, AppView, AppMode } from './components/Navbar';
 import { TrackList } from './components/tracks/TrackList';
 import { TrackUploadModal } from './components/tracks/TrackUploadModal';
+import { ToastProvider, useToast } from './components/ui/Toast';
 const ProposalCreator = React.lazy(() => import('./components/storyboard/ProposalCreator').then(m => ({ default: m.ProposalCreator })));
 import { ProposalViewer } from './components/storyboard/ProposalViewer';
 import { ProposalsGallery } from './components/storyboard/ProposalsGallery';
@@ -23,7 +24,8 @@ import { MovieToMusikGallery } from './components/movietomusik/MovieToMusikGalle
 const MusikToMusikStudio = React.lazy(() => import('./components/musiktomusik/MusikToMusikStudio').then(m => ({ default: m.MusikToMusikStudio })));
 import { MusikToMusikGallery } from './components/musiktomusik/MusikToMusikGallery';
 
-export default function App() {
+function AppContent() {
+  const toast = useToast();
   // Mode actif : MusikToMovie (Classique), MovieToMusik (Studio Inversé) ou MusikToMusik (Mashup & Stems)
   const [appMode, setAppMode] = useState<AppMode>('musiktomovie');
   const [currentView, setCurrentView] = useState<AppView>('concept');
@@ -151,6 +153,7 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
+      toast.error('Erreur de chargement des données');
     } finally {
       setIsLoading(false);
     }
@@ -515,5 +518,13 @@ export default function App() {
       {/* 🎬 Mascotte Ciné-Clippy (Anecdotes & Hot Takes) */}
       <CineClippy />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 }

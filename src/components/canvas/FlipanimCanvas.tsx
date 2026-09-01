@@ -29,7 +29,8 @@ import {
   ZoomIn,
   ZoomOut,
   Stamp,
-  Moon
+  Moon,
+  Download
 } from 'lucide-react';
 
 interface FlipanimCanvasProps {
@@ -150,6 +151,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   const MAX_HISTORY_STEPS = 25;
   const [history, setHistory] = useState<ImageData[]>([]);
   const [historyStep, setHistoryStep] = useState<number>(-1);
+
+  // Export State
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportProgress, setExportProgress] = useState<number>(0);
 
   // Sauvegarder l'état dans l'historique
   const saveHistoryState = useCallback(() => {
@@ -670,6 +675,73 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
       ...floatingObject,
       scaleY: floatingObject.scaleY * -1,
     });
+  };
+
+  const exportWebM = async () => {
+    if (frames.length === 0 || isExporting) return;
+    setIsExporting(true);
+    setExportProgress(0);
+    
+    try {
+      const exportCanvas = document.createElement('canvas');
+      const realCanvas = canvasRef.current;
+      if (!realCanvas) throw new Error("No canvas");
+      
+      exportCanvas.width = realCanvas.width;
+      exportCanvas.height = realCanvas.height;
+      const ctx = exportCanvas.getContext('2d');
+      if (!ctx) throw new Error("No ctx");
+      
+      const stream = exportCanvas.captureStream(animFps);
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      const chunks: Blob[] = [];
+      
+      recorder.ondataavailable = e => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      
+      const recordingPromise = new Promise<void>(resolve => {
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'flipanim_export.webm';
+          a.click();
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+      });
+      
+      recorder.start();
+      
+      // Draw frames one by one
+      for (let i = 0; i < frames.length; i++) {
+        setExportProgress(Math.round(((i + 1) / frames.length) * 100));
+        ctx.fillStyle = '#1c1917';
+        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        
+        if (frames[i]) {
+          const img = new Image();
+          await new Promise<void>((resolve) => {
+            img.onload = () => {
+              ctx.drawImage(img, 0, 0, exportCanvas.width, exportCanvas.height);
+              resolve();
+            };
+            img.src = frames[i];
+          });
+        }
+        await new Promise(r => setTimeout(r, 1000 / animFps));
+      }
+      
+      recorder.stop();
+      await recordingPromise;
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsExporting(false);
+      setExportProgress(0);
+    }
   };
 
   // =========================================================================
@@ -2162,6 +2234,18 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 </button>
               ))}
             </div>
+
+            {/* Export WebM */}
+            <button
+              type="button"
+              onClick={exportWebM}
+              disabled={isExporting}
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+              title="Exporter l'animation en WebM"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isExporting ? `Export... ${exportProgress}%` : "📥 Exporter"}</span>
+            </button>
           </div>
 
           {!readOnly && (

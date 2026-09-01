@@ -88,6 +88,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
     currentProposal.animation_fps ? Number(currentProposal.animation_fps) : 0.5
   );
   const [forcePlayTime, setForcePlayTime] = useState<number | null>(null);
+  const [isAudioSyncEnabled, setIsAudioSyncEnabled] = useState<boolean>(true);
 
   // Timecodes de la scène clé
   const startTime = currentProposal.key_scene_start_time || currentProposal.scenes?.find(s => s.section_type === 'main')?.start_time || 0;
@@ -118,7 +119,12 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
   // Boucle d'animation flipbook avec réactivité instantanée à la vitesse
   useEffect(() => {
     if (!isPlayingFlipbook || frames.length <= 1) return;
-    const speed = viewerFps > 0 ? viewerFps : 0.5;
+    
+    let speed = viewerFps > 0 ? viewerFps : 0.5;
+    if (isAudioSyncEnabled && isTheatreMode && (endTime - startTime > 0)) {
+      speed = frames.length / (endTime - startTime);
+    }
+    
     const intervalMs = Math.max(50, Math.round(1000 / speed));
 
     const interval = setInterval(() => {
@@ -126,7 +132,7 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
     }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [isPlayingFlipbook, frames.length, viewerFps]);
+  }, [isPlayingFlipbook, frames.length, viewerFps, isAudioSyncEnabled, isTheatreMode, startTime, endTime]);
 
   // Écoute de la touche Échap et Espace
   useEffect(() => {
@@ -570,12 +576,24 @@ export const ProposalViewer: React.FC<ProposalViewerProps> = ({
                 </span>
 
                 <div className="hidden md:flex items-center gap-1 border-l border-white/15 pl-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsAudioSyncEnabled(!isAudioSyncEnabled)}
+                    className={`px-2 py-1 rounded text-[10px] font-bold transition-colors flex items-center gap-1 mr-1 ${
+                      isAudioSyncEnabled ? 'bg-rose-600 text-white shadow-sm' : 'bg-white/10 text-stone-300 hover:bg-white/20 hover:text-white'
+                    }`}
+                    title="Synchroniser la durée d'animation sur la durée de l'extrait audio"
+                  >
+                    <span>🎵 Sync audio</span>
+                  </button>
                   {[0.25, 0.5, 1, 2, 4].map((s) => (
                     <button
                       key={s}
                       type="button"
+                      disabled={isAudioSyncEnabled}
                       onClick={() => changeViewerFps(s)}
                       className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                        isAudioSyncEnabled ? 'opacity-50 cursor-not-allowed' :
                         viewerFps === s ? 'bg-white text-stone-900 font-bold' : 'text-stone-400 hover:text-white hover:bg-white/10'
                       }`}
                     >

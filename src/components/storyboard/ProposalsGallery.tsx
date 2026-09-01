@@ -1,21 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  Film, 
-  User, 
-  Sparkles, 
-  Play, 
-  Music, 
-  Heart, 
-  Flame, 
-  Calendar, 
-  Clapperboard,
-  Search,
-  Trash2,
-  ShieldAlert,
-  Edit3,
-  Share2,
-  Check
-} from 'lucide-react';
+import { Play, Flame, Calendar, Film, User, Music, Search, Heart, Share2, Check, Edit3, Trash2, ShieldAlert, Sparkles, Clapperboard } from 'lucide-react';
+import { Modal } from '../ui/Modal';
 import { Proposal, Track } from '../../lib/types';
 import { voteProposal, hasUserVoted } from '../../lib/supabase';
 
@@ -426,50 +411,47 @@ export const ProposalsGallery: React.FC<ProposalsGalleryProps> = ({
       )}
 
       {/* Modale de Confirmation de Suppression de Storyboard (Admin) */}
-      {proposalToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl border border-stone-200 max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-bold text-stone-900 text-base font-display">Supprimer ce storyboard ?</h4>
-                <p className="text-xs text-stone-500">Action irréversible (Mode Administrateur)</p>
-              </div>
+      <Modal isOpen={!!proposalToDelete} onClose={() => setProposalToDelete(null)} title="Supprimer ce storyboard ?" size="sm">
+        <div className="space-y-5">
+          <div className="flex items-center gap-3 text-rose-600">
+            <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center">
+              <ShieldAlert className="w-5 h-5" />
             </div>
-
-            <p className="text-xs sm:text-sm text-stone-600 leading-relaxed">
-              Êtes-vous sûr de vouloir supprimer définitivement le storyboard{' '}
-              <strong className="text-stone-900 font-bold">"{proposalToDelete.movie_title}"</strong> par{' '}
-              <strong className="text-stone-900">{proposalToDelete.author_name}</strong> ?
-            </p>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setProposalToDelete(null)}
-                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 transition-colors"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (onDeleteProposal && proposalToDelete) {
-                    onDeleteProposal(proposalToDelete.id);
-                    setProposalToDelete(null);
-                  }
-                }}
-                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all hover:scale-105 shadow-sm flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Supprimer définitivement</span>
-              </button>
+            <div>
+              <p className="text-xs text-stone-300">Action irréversible (Mode Administrateur)</p>
             </div>
           </div>
+
+          <p className="text-xs sm:text-sm text-stone-300 leading-relaxed">
+            Êtes-vous sûr de vouloir supprimer définitivement le storyboard{' '}
+            <strong className="text-stone-100 font-bold">"{proposalToDelete?.movie_title}"</strong> par{' '}
+            <strong className="text-stone-100">{proposalToDelete?.author_name}</strong> ?
+          </p>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setProposalToDelete(null)}
+              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onDeleteProposal && proposalToDelete) {
+                  onDeleteProposal(proposalToDelete.id);
+                  setProposalToDelete(null);
+                }
+              }}
+              className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all hover:scale-105 shadow-sm flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Supprimer définitivement</span>
+            </button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

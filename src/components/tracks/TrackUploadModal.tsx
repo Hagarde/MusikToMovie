@@ -16,11 +16,12 @@ import { Track, GENRES } from '../../lib/types';
 import { createTrack } from '../../lib/supabase';
 import { 
   getYouTubeThumbnail, 
-  loadYouTubeAPI,
   resolveUniversalTrack,
-  buildYouTubeSearchUrl,
-  UniversalTrackInfo
+  UniversalTrackInfo,
+  loadYouTubeAPI,
+  buildYouTubeSearchUrl
 } from '../../lib/youtube';
+import { Modal } from '../ui/Modal';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
 
 interface TrackUploadModalProps {
@@ -377,38 +378,18 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const playheadPercentOnGlobal = duration > 0 ? (clampedPlayTime / duration) * 100 : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+    <Modal isOpen={isOpen} onClose={() => {
+      if (ytPlayerRef.current) {
+        try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
+      }
+      onClose();
+    }} title="Ajouter une Musique" size="md">
       <div className="hidden pointer-events-none opacity-0">
         <div ref={ytContainerRef} />
       </div>
 
-      <div className="bg-white rounded-3xl border border-stone-200 w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-4 sm:my-8">
-        {/* En-tête de la modale */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 bg-stone-50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-stone-900 text-white flex items-center justify-center border border-stone-800 shrink-0">
-              <Music className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-stone-900 text-sm sm:text-base font-display">Ajouter une Musique</h3>
-              <p className="text-[10px] sm:text-[11px] text-stone-500">YouTube (recommandé), Spotify, Deezer, SoundCloud</p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              if (ytPlayerRef.current) {
-                try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
-              }
-              onClose();
-            }}
-            className="text-stone-400 hover:text-stone-900 p-1.5 rounded-lg hover:bg-stone-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-          {/* Champ d'import du lien musical (YouTube recommandé, Spotify, Deezer, SoundCloud) */}
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+        {/* Champ d'import du lien musical (YouTube recommandé, Spotify, Deezer, SoundCloud) */}
           <div>
             <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
               <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
@@ -859,7 +840,6 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };

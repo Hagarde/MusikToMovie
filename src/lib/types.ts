@@ -35,6 +35,7 @@ export interface Track {
   duration: number; // in seconds
   default_start_time?: number; // Moment précis de début (en secondes)
   default_end_time?: number; // Moment précis de fin du segment (en secondes)
+  bpm?: number; // BPM détecté
   created_at: string;
   proposal_count?: number;
 }
@@ -124,12 +125,14 @@ export interface StemMixConfig {
 }
 
 export interface MashupTrackInfo {
+  id?: string;
   title: string;
   artist: string;
   audio_url: string;
   thumbnail_url?: string;
   youtube_id?: string;
   genre?: string;
+  bpm?: number;
 }
 
 export interface MusikToMusikProject {

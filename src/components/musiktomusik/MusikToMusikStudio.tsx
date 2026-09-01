@@ -24,9 +24,10 @@ import {
   Activity,
   Fingerprint
 } from 'lucide-react';
+import { Modal } from '../ui/Modal';
 import { Track, MusikToMusikProject, StemMixConfig, StemSourceChoice, StemType, MashupTrackInfo, GENRES } from '../../lib/types';
 import { MashupAudioEngine, HDSeparatedStems } from '../../lib/stemEngine';
-import { createMusikToMusikProject } from '../../lib/supabase';
+import { createMusikToMusikProject, updateTrackBpm } from '../../lib/supabase';
 import { 
   detectBpmFromAudio, 
   calculateTempoSyncRatio, 
@@ -155,6 +156,17 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const recordIntervalRef = useRef<any>(null);
   const blobUrlsRef = useRef<string[]>([]);
 
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hdStemsA || hdStemsB) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hdStemsA, hdStemsB]);
+
   const createBlobUrl = useCallback((file: File | Blob) => {
     const url = URL.createObjectURL(file);
     blobUrlsRef.current.push(url);
@@ -174,13 +186,21 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   }, []);
 
   // 🔬 Détection automatique du BPM pour le Deck A (Tag Demucs > WASM C++ > DSP)
-  const triggerBpmDetectionA = useCallback(async (audioSource: string | Blob | File, hintFilename?: string) => {
+  const triggerBpmDetectionA = useCallback(async (audioSource: string | Blob | File, hintFilename?: string, knownBpm?: number, trackId?: string) => {
     if (!audioSource) return;
+    if (knownBpm) {
+      setBpmA(knownBpm);
+      setBpmInfoA({ bpm: knownBpm, confidence: 1, label: 'Base de données', source: 'demucs_tag' });
+      return;
+    }
     setIsDetectingBpmA(true);
     try {
       const res = await detectBpmFromAudio(audioSource, hintFilename || trackA.title);
       setBpmA(res.bpm);
       setBpmInfoA(res);
+      if (trackId && res.bpm) {
+        updateTrackBpm(trackId, res.bpm);
+      }
     } catch (e) {
       console.warn('Erreur détection BPM Deck A:', e);
     } finally {
@@ -189,13 +209,21 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   }, [trackA.title]);
 
   // 🔬 Détection automatique du BPM pour le Deck B (Tag Demucs > WASM C++ > DSP)
-  const triggerBpmDetectionB = useCallback(async (audioSource: string | Blob | File, hintFilename?: string) => {
+  const triggerBpmDetectionB = useCallback(async (audioSource: string | Blob | File, hintFilename?: string, knownBpm?: number, trackId?: string) => {
     if (!audioSource) return;
+    if (knownBpm) {
+      setBpmB(knownBpm);
+      setBpmInfoB({ bpm: knownBpm, confidence: 1, label: 'Base de données', source: 'demucs_tag' });
+      return;
+    }
     setIsDetectingBpmB(true);
     try {
       const res = await detectBpmFromAudio(audioSource, hintFilename || trackB.title);
       setBpmB(res.bpm);
       setBpmInfoB(res);
+      if (trackId && res.bpm) {
+        updateTrackBpm(trackId, res.bpm);
+      }
     } catch (e) {
       console.warn('Erreur détection BPM Deck B:', e);
     } finally {
@@ -442,14 +470,14 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       setHdStemsA(null);
       if (track.audio_url && engineRef.current) {
         engineRef.current.loadDecks(track.audio_url, trackB.audio_url || '', stemConfig);
-        triggerBpmDetectionA(track.audio_url);
+        triggerBpmDetectionA(track.audio_url, track.title, track.bpm, track.id);
       }
     } else {
       setTrackB(track);
       setHdStemsB(null);
       if (track.audio_url && engineRef.current) {
         engineRef.current.loadDecks(trackA.audio_url || '', track.audio_url, stemConfig);
-        triggerBpmDetectionB(track.audio_url);
+        triggerBpmDetectionB(track.audio_url, track.title, track.bpm, track.id);
       }
     }
   };
@@ -817,10 +845,17 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                   Calcul BPM...
                 </span>
               ) : bpmA ? (
-                <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-950/80 border border-rose-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoA?.confidence || 1) * 100)}% - ${bpmInfoA?.label || ''}`}>
-                  <Zap className="w-2.5 h-2.5 text-rose-400" />
-                  {bpmA} BPM
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-950/80 border border-rose-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoA?.confidence || 1) * 100)}% - ${bpmInfoA?.label || ''}`}>
+                    <Zap className="w-2.5 h-2.5 text-rose-400" />
+                    {bpmA} BPM
+                  </span>
+                  {bpmInfoA && (
+                    <span className="text-xs text-stone-400 mt-0.5">
+                      via {bpmInfoA.label || 'WASM'} • {Math.round((bpmInfoA.confidence || 1) * 100)}%
+                    </span>
+                  )}
+                </div>
               ) : (
                 <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
                   BPM --
@@ -899,10 +934,17 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                   Calcul BPM...
                 </span>
               ) : bpmB ? (
-                <span className="text-[10px] font-mono font-bold text-violet-300 bg-violet-950/80 border border-violet-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoB?.confidence || 1) * 100)}% - ${bpmInfoB?.label || ''}`}>
-                  <Zap className="w-2.5 h-2.5 text-violet-400" />
-                  {bpmB} BPM
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="text-[10px] font-mono font-bold text-violet-300 bg-violet-950/80 border border-violet-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoB?.confidence || 1) * 100)}% - ${bpmInfoB?.label || ''}`}>
+                    <Zap className="w-2.5 h-2.5 text-violet-400" />
+                    {bpmB} BPM
+                  </span>
+                  {bpmInfoB && (
+                    <span className="text-xs text-stone-400 mt-0.5">
+                      via {bpmInfoB.label || 'WASM'} • {Math.round((bpmInfoB.confidence || 1) * 100)}%
+                    </span>
+                  )}
+                </div>
               ) : (
                 <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
                   BPM --
@@ -1101,85 +1143,160 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
         {/* Grille Contrôles Vitesse + Spectrogramme */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-1">
-          {/* Calage Vitesse Deck B */}
-          <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
-                <Clock className="w-3.5 h-3.5 text-violet-600" />
-                <span>Pitch / Vitesse Deck B</span>
+          <div className="flex flex-col gap-3">
+            {/* Calage Vitesse Deck B */}
+            <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
+                  <Clock className="w-3.5 h-3.5 text-violet-600" />
+                  <span>Pitch / Vitesse Deck B</span>
+                </div>
+                <span className="text-xs font-mono font-extrabold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-lg border border-violet-200">
+                  {speedRatioB.toFixed(2)}x
+                </span>
               </div>
-              <span className="text-xs font-mono font-extrabold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-lg border border-violet-200">
-                {speedRatioB.toFixed(2)}x
-              </span>
+
+              <div className="space-y-1.5">
+                <input
+                  type="range"
+                  min="0.5"
+                  max="1.5"
+                  step="0.01"
+                  value={speedRatioB}
+                  onChange={(e) => setSpeedRatioB(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
+                />
+
+                {/* Indicateur de BPM Effectif */}
+                <div className="flex justify-between text-[11px] font-mono text-stone-500 pt-0.5">
+                  <span>0.50x (-50%)</span>
+                  {effectiveBpmB ? (
+                    <span className="font-bold text-violet-900 bg-violet-50 px-1.5 py-0.5 rounded border border-violet-200">
+                      BPM Effectif: ~{effectiveBpmB}
+                    </span>
+                  ) : (
+                    <span>1.00x (Normal)</span>
+                  )}
+                  <span>1.50x (+50%)</span>
+                </div>
+              </div>
+
+              {/* Boutons d'ajustement fin rapide (+/- 1%, +/- 5%, Reset) */}
+              <div className="grid grid-cols-5 gap-1 pt-1 text-[10px] font-bold font-mono text-center">
+                <button
+                  type="button"
+                  onClick={() => setSpeedRatioB((prev) => Math.max(0.5, Math.round((prev - 0.05) * 100) / 100))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="-5% de vitesse"
+                >
+                  -5%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSpeedRatioB((prev) => Math.max(0.5, Math.round((prev - 0.01) * 100) / 100))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="-1% de vitesse"
+                >
+                  -1%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSpeedRatioB(1.0)}
+                  className="py-1 bg-stone-200 hover:bg-stone-300 text-stone-900 rounded-lg transition-colors cursor-pointer font-extrabold"
+                  title="Vitesse normale 1.00x"
+                >
+                  1.00x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSpeedRatioB((prev) => Math.min(1.5, Math.round((prev + 0.01) * 100) / 100))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="+1% de vitesse"
+                >
+                  +1%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSpeedRatioB((prev) => Math.min(1.5, Math.round((prev + 0.05) * 100) / 100))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="+5% de vitesse"
+                >
+                  +5%
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <input
-                type="range"
-                min="0.5"
-                max="1.5"
-                step="0.01"
-                value={speedRatioB}
-                onChange={(e) => setSpeedRatioB(parseFloat(e.target.value))}
-                className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
-              />
-
-              {/* Indicateur de BPM Effectif */}
-              <div className="flex justify-between text-[11px] font-mono text-stone-500 pt-0.5">
-                <span>0.50x (-50%)</span>
-                {effectiveBpmB ? (
-                  <span className="font-bold text-violet-900 bg-violet-50 px-1.5 py-0.5 rounded border border-violet-200">
-                    BPM Effectif: ~{effectiveBpmB}
-                  </span>
-                ) : (
-                  <span>1.00x (Normal)</span>
-                )}
-                <span>1.50x (+50%)</span>
+            {/* Calage Phase / Offset Deck B */}
+            <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
+                  <Sliders className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Phase / Offset Deck B</span>
+                </div>
+                <span className="text-xs font-mono font-extrabold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200">
+                  {offsetSecondsB > 0 ? '+' : ''}{offsetSecondsB.toFixed(3)}s
+                </span>
               </div>
-            </div>
 
-            {/* Boutons d'ajustement fin rapide (+/- 1%, +/- 5%, Reset) */}
-            <div className="grid grid-cols-5 gap-1 pt-1 text-[10px] font-bold font-mono text-center">
-              <button
-                type="button"
-                onClick={() => setSpeedRatioB((prev) => Math.max(0.5, Math.round((prev - 0.05) * 100) / 100))}
-                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                title="-5% de vitesse"
-              >
-                -5%
-              </button>
-              <button
-                type="button"
-                onClick={() => setSpeedRatioB((prev) => Math.max(0.5, Math.round((prev - 0.01) * 100) / 100))}
-                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                title="-1% de vitesse"
-              >
-                -1%
-              </button>
-              <button
-                type="button"
-                onClick={() => setSpeedRatioB(1.0)}
-                className="py-1 bg-stone-200 hover:bg-stone-300 text-stone-900 rounded-lg transition-colors cursor-pointer font-extrabold"
-                title="Vitesse normale 1.00x"
-              >
-                1.00x
-              </button>
-              <button
-                type="button"
-                onClick={() => setSpeedRatioB((prev) => Math.min(1.5, Math.round((prev + 0.01) * 100) / 100))}
-                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                title="+1% de vitesse"
-              >
-                +1%
-              </button>
-              <button
-                type="button"
-                onClick={() => setSpeedRatioB((prev) => Math.min(1.5, Math.round((prev + 0.05) * 100) / 100))}
-                className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
-                title="+5% de vitesse"
-              >
-                +5%
-              </button>
+              <div className="space-y-1.5">
+                <input
+                  type="range"
+                  min="-2.0"
+                  max="2.0"
+                  step="0.001"
+                  value={offsetSecondsB}
+                  onChange={(e) => setOffsetSecondsB(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                />
+                <div className="flex justify-between text-[11px] font-mono text-stone-500 pt-0.5">
+                  <span>-2.0s</span>
+                  <span>0.0s</span>
+                  <span>+2.0s</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-5 gap-1 pt-1 text-[10px] font-bold font-mono text-center">
+                <button
+                  type="button"
+                  onClick={() => setOffsetSecondsB((prev) => Math.max(-2.0, Math.round((prev - 0.05) * 1000) / 1000))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="-50ms"
+                >
+                  ⬅ -50ms
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOffsetSecondsB((prev) => Math.max(-2.0, Math.round((prev - 0.01) * 1000) / 1000))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="-10ms"
+                >
+                  ⬅ -10ms
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOffsetSecondsB(0)}
+                  className="py-1 bg-stone-200 hover:bg-stone-300 text-stone-900 rounded-lg transition-colors cursor-pointer font-extrabold"
+                  title="Reset 0ms"
+                >
+                  0ms
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOffsetSecondsB((prev) => Math.min(2.0, Math.round((prev + 0.01) * 1000) / 1000))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="+10ms"
+                >
+                  ➡ +10ms
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOffsetSecondsB((prev) => Math.min(2.0, Math.round((prev + 0.05) * 1000) / 1000))}
+                  className="py-1 bg-white hover:bg-stone-200 border border-stone-200 rounded-lg transition-colors cursor-pointer"
+                  title="+50ms"
+                >
+                  ➡ +50ms
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1285,159 +1402,119 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
       </form>
 
       {/* 📦 MODALE D'IMPORTATION PACK 4 STEMS DEMUCS V4 */}
-      {showStemsPackModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-stone-950 border-2 border-emerald-500/50 rounded-3xl max-w-lg w-full p-5 text-white shadow-2xl space-y-4 relative">
-            <button
-              type="button"
-              onClick={() => setShowStemsPackModal(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-600/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                <FolderArchive className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-white font-display">
-                  Importer un Pack 4 Stems (Deck {showStemsPackModal})
-                </h3>
-                <p className="text-[11px] text-stone-400">
-                  Issu du script <code className="text-emerald-300 font-mono">extraire_pistes.bat</code>
-                </p>
-              </div>
-            </div>
-
-            {/* Zone de Dépôt Global */}
-            <label
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  handleStemsPackFiles(e.dataTransfer.files);
-                }
-              }}
-              className="border-2 border-dashed border-emerald-500/50 hover:border-emerald-400 bg-emerald-950/20 hover:bg-emerald-950/30 rounded-2xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all gap-1"
-            >
-              <UploadCloud className="w-6 h-6 text-emerald-400 animate-bounce" />
-              <p className="text-xs font-bold text-white">
-                📂 Déposez vos 4 fichiers WAV d'un coup ici (ou cliquez)
+      <Modal isOpen={!!showStemsPackModal} onClose={() => setShowStemsPackModal(null)} title={`Importer un Pack 4 Stems (Deck ${showStemsPackModal})`}>
+        <div className="space-y-4">
+          <p className="text-[11px] text-stone-400">
+                Issu du script <code className="text-emerald-300 font-mono">extraire_pistes.bat</code>
               </p>
-              <p className="text-[10px] text-emerald-300/70">
-                Auto-détection : vocals.wav, drums.wav, bass.wav, melody.wav
-              </p>
-              <input
-                type="file"
-                multiple
-                accept="audio/*"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files.length > 0) {
-                    handleStemsPackFiles(e.target.files);
+
+              {/* Zone de Dépôt Global */}
+              <label
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleStemsPackFiles(e.dataTransfer.files);
                   }
                 }}
-                className="hidden"
-              />
-            </label>
-
-            {/* Titre */}
-            <div>
-              <label className="block text-[11px] font-bold text-stone-300 mb-1">
-                Titre du Morceau
+                className="border-2 border-dashed border-emerald-500/50 hover:border-emerald-400 bg-emerald-950/20 hover:bg-emerald-950/30 rounded-2xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all gap-1"
+              >
+                <UploadCloud className="w-6 h-6 text-emerald-400 animate-bounce" />
+                <p className="text-xs font-bold text-white">
+                  📂 Déposez vos 4 fichiers WAV d'un coup ici (ou cliquez)
+                </p>
+                <p className="text-[10px] text-emerald-300/70">
+                  Auto-détection : vocals.wav, drums.wav, bass.wav, melody.wav
+                </p>
+                <input
+                  type="file"
+                  multiple
+                  accept="audio/*"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      handleStemsPackFiles(e.target.files);
+                    }
+                  }}
+                  className="hidden"
+                />
               </label>
-              <input
-                type="text"
-                value={stemsPackTitle}
-                onChange={(e) => setStemsPackTitle(e.target.value)}
-                placeholder="Ex: Titre du son (Demucs)"
-                className="w-full bg-stone-900 border border-stone-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
-              />
-            </div>
 
-            {/* 4 Cartes de Statut des Stems */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackVocals ? 'bg-rose-950/40 border-rose-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-extrabold text-rose-400">🎤 Voix</p>
-                  <p className="text-[10px] truncate">{stemsPackVocals ? stemsPackVocals.name : 'En attente...'}</p>
-                </div>
-                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
-                  <span>{stemsPackVocals ? 'OK' : 'Choisir'}</span>
-                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackVocals(e.target.files[0])} className="hidden" />
+              {/* Titre */}
+              <div>
+                <label className="block text-[11px] font-bold text-stone-300 mb-1">
+                  Titre du Morceau
                 </label>
+                <input
+                  type="text"
+                  value={stemsPackTitle}
+                  onChange={(e) => setStemsPackTitle(e.target.value)}
+                  placeholder="Ex: Titre du son (Demucs)"
+                  className="w-full bg-stone-900 border border-stone-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
-              <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackDrums ? 'bg-orange-950/40 border-orange-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-extrabold text-orange-400">🥁 Drums</p>
-                  <p className="text-[10px] truncate">{stemsPackDrums ? stemsPackDrums.name : 'En attente...'}</p>
+              {/* 4 Cartes de Statut des Stems */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackVocals ? 'bg-rose-950/40 border-rose-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold text-rose-400">🎤 Voix</p>
+                    <p className="text-[10px] truncate">{stemsPackVocals ? stemsPackVocals.name : 'En attente...'}</p>
+                  </div>
+                  <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
+                    <span>{stemsPackVocals ? 'OK' : 'Choisir'}</span>
+                    <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackVocals(e.target.files[0])} className="hidden" />
+                  </label>
                 </div>
-                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
-                  <span>{stemsPackDrums ? 'OK' : 'Choisir'}</span>
-                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackDrums(e.target.files[0])} className="hidden" />
-                </label>
-              </div>
 
-              <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackBass ? 'bg-amber-950/40 border-amber-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-extrabold text-amber-400">🎸 Basse</p>
-                  <p className="text-[10px] truncate">{stemsPackBass ? stemsPackBass.name : 'En attente...'}</p>
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackDrums ? 'bg-orange-950/40 border-orange-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold text-orange-400">🥁 Drums</p>
+                    <p className="text-[10px] truncate">{stemsPackDrums ? stemsPackDrums.name : 'En attente...'}</p>
+                  </div>
+                  <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
+                    <span>{stemsPackDrums ? 'OK' : 'Choisir'}</span>
+                    <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackDrums(e.target.files[0])} className="hidden" />
+                  </label>
                 </div>
-                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
-                  <span>{stemsPackBass ? 'OK' : 'Choisir'}</span>
-                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackBass(e.target.files[0])} className="hidden" />
-                </label>
-              </div>
 
-              <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackMelody ? 'bg-emerald-950/40 border-emerald-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-extrabold text-emerald-400">🎹 Mélodie</p>
-                  <p className="text-[10px] truncate">{stemsPackMelody ? stemsPackMelody.name : 'En attente...'}</p>
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackBass ? 'bg-amber-950/40 border-amber-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold text-amber-400">🎸 Basse</p>
+                    <p className="text-[10px] truncate">{stemsPackBass ? stemsPackBass.name : 'En attente...'}</p>
+                  </div>
+                  <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
+                    <span>{stemsPackBass ? 'OK' : 'Choisir'}</span>
+                    <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackBass(e.target.files[0])} className="hidden" />
+                  </label>
                 </div>
-                <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
-                  <span>{stemsPackMelody ? 'OK' : 'Choisir'}</span>
-                  <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackMelody(e.target.files[0])} className="hidden" />
-                </label>
-              </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={handleApplyStemsPack}
-              disabled={!stemsPackVocals && !stemsPackDrums && !stemsPackBass && !stemsPackMelody}
-              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs sm:text-sm transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md cursor-pointer"
-            >
-              <Check className="w-4 h-4" />
-              <span>Valider & Charger sur le Deck {showStemsPackModal}</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 7. MODALE DE SÉLECTION DANS LA BIBLIOTHÈQUE */}
-      {selectorTargetDeck && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-stone-200 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
-              <div className="flex items-center gap-2">
-                <span className={`w-6 h-6 rounded-full text-white font-black text-xs flex items-center justify-center ${
-                  selectorTargetDeck === 'A' ? 'bg-rose-600' : 'bg-violet-600'
-                }`}>
-                  {selectorTargetDeck}
-                </span>
-                <h3 className="font-extrabold text-sm text-stone-900 font-display">
-                  Sélectionner un Morceau (Deck {selectorTargetDeck})
-                </h3>
+                <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${stemsPackMelody ? 'bg-emerald-950/40 border-emerald-600/60 text-white' : 'bg-stone-900 border-stone-800 text-stone-400'}`}>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold text-emerald-400">🎹 Mélodie</p>
+                    <p className="text-[10px] truncate">{stemsPackMelody ? stemsPackMelody.name : 'En attente...'}</p>
+                  </div>
+                  <label className="text-[10px] font-bold bg-stone-800 hover:bg-stone-700 text-stone-200 px-2 py-0.5 rounded cursor-pointer shrink-0">
+                    <span>{stemsPackMelody ? 'OK' : 'Choisir'}</span>
+                    <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && setStemsPackMelody(e.target.files[0])} className="hidden" />
+                  </label>
+                </div>
               </div>
+
               <button
                 type="button"
-                onClick={() => setSelectorTargetDeck(null)}
-                className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-400 hover:text-stone-900 transition-colors cursor-pointer"
+                onClick={handleApplyStemsPack}
+                disabled={!stemsPackVocals && !stemsPackDrums && !stemsPackBass && !stemsPackMelody}
+                className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs sm:text-sm transition-all disabled:opacity-40 flex items-center justify-center gap-2 shadow-md cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <Check className="w-4 h-4" />
+                <span>Valider & Charger sur le Deck {showStemsPackModal}</span>
               </button>
             </div>
+      </Modal>
+
+      {/* 7. MODALE DE SÉLECTION DANS LA BIBLIOTHÈQUE */}
+      <Modal isOpen={!!selectorTargetDeck} onClose={() => setSelectorTargetDeck(null)} title={`Sélectionner un Morceau (Deck ${selectorTargetDeck})`}>
+        <div className="flex flex-col h-full">
 
             {/* Recherche */}
             <div className="relative">
@@ -1453,36 +1530,77 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
 
             {/* Liste des Morceaux */}
             <div className="space-y-1.5 overflow-y-auto max-h-[50vh] pr-1">
-              {(libraryTracks.length > 0 ? libraryTracks : DEFAULT_DEMO_TRACKS)
-                .filter((t) => t.title.toLowerCase().includes(librarySearch.toLowerCase()) || (t.artist || '').toLowerCase().includes(librarySearch.toLowerCase()))
-                .map((t) => (
-                  <button
-                    key={(t as any).id || t.title}
-                    type="button"
-                    onClick={() => {
-                      selectTrackForDeck(selectorTargetDeck, {
-                        title: t.title,
-                        artist: t.artist || 'Artiste',
-                        audio_url: t.audio_url,
-                        genre: t.genre || 'Audio',
-                      });
-                      setSelectorTargetDeck(null);
-                    }}
-                    className="w-full text-left p-2.5 rounded-xl hover:bg-stone-50 border border-transparent hover:border-stone-200 flex items-center justify-between transition-colors group cursor-pointer"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-stone-900 truncate group-hover:text-rose-600">{t.title}</p>
-                      <p className="text-[10px] text-stone-400 truncate">{t.artist || 'Artiste'}</p>
-                    </div>
-                    <span className="text-[10px] font-bold text-stone-700 bg-stone-100 px-2 py-1 rounded-lg shrink-0">
-                      Charger
-                    </span>
-                  </button>
-                ))}
+              {(() => {
+                let filtered = (libraryTracks.length > 0 ? libraryTracks : DEFAULT_DEMO_TRACKS)
+                  .filter((t) => t.title.toLowerCase().includes(librarySearch.toLowerCase()) || (t.artist || '').toLowerCase().includes(librarySearch.toLowerCase()));
+
+                if (selectorTargetDeck === 'B' && bpmA) {
+                  filtered.sort((a, b) => {
+                    const bpm1 = (a as any).bpm;
+                    const bpm2 = (b as any).bpm;
+                    if (bpm1 && !bpm2) return -1;
+                    if (!bpm1 && bpm2) return 1;
+                    if (!bpm1 && !bpm2) return 0;
+                    const diff1 = Math.min(Math.abs(bpm1 - bpmA), Math.abs(bpm1 * 2 - bpmA), Math.abs(bpm1 - bpmA * 2));
+                    const diff2 = Math.min(Math.abs(bpm2 - bpmA), Math.abs(bpm2 * 2 - bpmA), Math.abs(bpm2 - bpmA * 2));
+                    return diff1 - diff2;
+                  });
+                }
+
+                return filtered.map((t) => {
+                  const trackBpm = (t as any).bpm;
+                  let badge = null;
+
+                  if (selectorTargetDeck === 'B' && bpmA) {
+                    if (trackBpm) {
+                      const ratio = trackBpm / bpmA;
+                      const isCompatible = (ratio >= 0.95 && ratio <= 1.05) || (ratio >= 1.90 && ratio <= 2.10) || (ratio >= 0.475 && ratio <= 0.525);
+                      if (isCompatible) {
+                        badge = <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">✓ Tempo compatible</span>;
+                      } else {
+                        badge = <span className="text-[10px] text-stone-500 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-full shrink-0">{Math.round(trackBpm)} BPM</span>;
+                      }
+                    } else {
+                      badge = <span className="text-[10px] text-stone-400 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-full shrink-0">BPM inconnu</span>;
+                    }
+                  } else if (trackBpm) {
+                    badge = <span className="text-[10px] text-stone-500 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-full shrink-0">{Math.round(trackBpm)} BPM</span>;
+                  }
+
+                  return (
+                    <button
+                      key={(t as any).id || t.title}
+                      type="button"
+                      onClick={() => {
+                        selectTrackForDeck(selectorTargetDeck as 'A' | 'B', {
+                          id: (t as any).id,
+                          title: t.title,
+                          artist: t.artist || 'Artiste',
+                          audio_url: t.audio_url,
+                          genre: t.genre || 'Audio',
+                          bpm: trackBpm,
+                        });
+                        setSelectorTargetDeck(null);
+                      }}
+                      className="w-full text-left p-2.5 rounded-xl hover:bg-stone-50 border border-transparent hover:border-stone-200 flex items-center justify-between transition-colors group cursor-pointer gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-bold text-stone-900 truncate group-hover:text-rose-600">{t.title}</p>
+                          {badge}
+                        </div>
+                        <p className="text-[10px] text-stone-400 truncate">{t.artist || 'Artiste'}</p>
+                      </div>
+                      <span className="text-[10px] font-bold text-stone-700 bg-stone-100 px-2 py-1 rounded-lg shrink-0">
+                        Charger
+                      </span>
+                    </button>
+                  );
+                });
+              })()}
             </div>
-          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };
