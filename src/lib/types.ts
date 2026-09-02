@@ -91,6 +91,7 @@ export interface AudioTrack {
   duration: number;   // Durée brute en secondes
   trim_start: number; // Rognage début (s) pour éliminer le clic
   trim_end: number;   // Rognage fin (s)
+  start_offset?: number; // Décalage horizontal (s) pour la lecture
   is_muted: boolean;
   is_solo?: boolean;
   eq_settings: EQSettings;

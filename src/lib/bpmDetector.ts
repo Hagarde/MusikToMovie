@@ -81,7 +81,7 @@ async function detectWithWasmEngine(audioBuffer: AudioBuffer): Promise<number | 
 /**
  * Extrait un AudioBuffer à partir d'une source audio variée (URL, Blob, File, ArrayBuffer)
  */
-async function getAudioBufferFromSource(
+export async function getAudioBufferFromSource(
   source: AudioBuffer | Blob | File | ArrayBuffer | string
 ): Promise<AudioBuffer | null> {
   if (source instanceof AudioBuffer) {
@@ -368,3 +368,81 @@ export function calculateTempoSyncRatio(bpmA: number, bpmB: number): TempoSyncRe
     description,
   };
 }
+
+/**
+ * 🎵 Détecte la tonalité musicale avec profil Krumhansl-Schmuckler
+ */
+export function detectMusicalKey(audioBuffer: AudioBuffer): { key: string; camelot: string; mode: 'major' | 'minor' } {
+  const sampleRate = audioBuffer.sampleRate;
+  const channelData = audioBuffer.getChannelData(0);
+  const duration = Math.min(15, audioBuffer.duration);
+  const numSamples = Math.floor(duration * sampleRate);
+
+  const chroma = new Float32Array(12);
+  const stride = 10;
+  
+  for (let octave = 3; octave <= 5; octave++) {
+    for (let note = 0; note < 12; note++) {
+      const midiNote = octave * 12 + note + 12;
+      const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+      let sinSum = 0;
+      let cosSum = 0;
+      for (let i = 0; i < numSamples; i += stride) {
+        const t = i / sampleRate;
+        const val = channelData[i];
+        const angle = 2 * Math.PI * freq * t;
+        sinSum += val * Math.sin(angle);
+        cosSum += val * Math.cos(angle);
+      }
+      chroma[note] += Math.sqrt(sinSum * sinSum + cosSum * cosSum);
+    }
+  }
+
+  const majorProfile = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+  const minorProfile = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+  const keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const camelotMajor = ['8B', '3B', '10B', '5B', '12B', '7B', '2B', '9B', '4B', '11B', '6B', '1B'];
+  const camelotMinor = ['5A', '12A', '7A', '2A', '9A', '4A', '11A', '6A', '1A', '8A', '3A', '10A'];
+
+  let bestScore = -Infinity;
+  let bestKey = '';
+  let bestCamelot = '';
+  let bestMode: 'major' | 'minor' = 'major';
+
+  const computeCorrelation = (profile: number[], shift: number) => {
+    let sumXY = 0, sumX = 0, sumY = 0, sumX2 = 0, sumY2 = 0;
+    for (let i = 0; i < 12; i++) {
+      const x = chroma[i];
+      const y = profile[(i - shift + 12) % 12];
+      sumXY += x * y;
+      sumX += x;
+      sumY += y;
+      sumX2 += x * x;
+      sumY2 += y * y;
+    }
+    const n = 12;
+    const denom = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+    return denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
+  };
+
+  for (let i = 0; i < 12; i++) {
+    const majScore = computeCorrelation(majorProfile, i);
+    if (majScore > bestScore) {
+      bestScore = majScore;
+      bestKey = keys[i];
+      bestCamelot = camelotMajor[i];
+      bestMode = 'major';
+    }
+    const minScore = computeCorrelation(minorProfile, i);
+    if (minScore > bestScore) {
+      bestScore = minScore;
+      bestKey = keys[i];
+      bestCamelot = camelotMinor[i];
+      bestMode = 'minor';
+    }
+  }
+
+  return { key: bestKey, camelot: bestCamelot, mode: bestMode };
+}
+

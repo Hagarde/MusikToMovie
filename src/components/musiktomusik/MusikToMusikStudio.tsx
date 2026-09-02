@@ -32,7 +32,9 @@ import {
   detectBpmFromAudio, 
   calculateTempoSyncRatio, 
   BPMDetectionResult, 
-  TempoSyncResult
+  TempoSyncResult,
+  detectMusicalKey,
+  getAudioBufferFromSource
 } from '../../lib/bpmDetector';
 
 interface MusikToMusikStudioProps {
@@ -84,6 +86,95 @@ const DEFAULT_STEM_CONFIG: StemMixConfig = {
   melody: { source: 'both', volumeA: 0.8, volumeB: 0.8, isMuted: false },
 };
 
+const BeatGridOverlay: React.FC<{
+  bpmA: number | null;
+  bpmB: number | null;
+  speedRatioB: number;
+  offsetSecondsB: number;
+  isPlaying: boolean;
+}> = ({ bpmA, bpmB, speedRatioB, offsetSecondsB, isPlaying }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const timeRef = useRef<{ startTime: number; accumulatedTime: number }>({ startTime: performance.now(), accumulatedTime: 0 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationId: number;
+
+    const draw = (time: number) => {
+      if (!isPlaying) {
+        timeRef.current.startTime = time;
+      } else {
+        timeRef.current.accumulatedTime += (time - timeRef.current.startTime) / 1000;
+        timeRef.current.startTime = time;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const drawGrid = (bpm: number, color: string, yOffset: number, timeOffset: number, speedMultiplier: number) => {
+        if (!bpm || bpm <= 0) return;
+        const beatInterval = 60 / (bpm * speedMultiplier);
+        const pixelsPerSecond = 100;
+
+        const effectiveTime = timeRef.current.accumulatedTime - timeOffset;
+
+        const firstBeat = Math.ceil((effectiveTime - (canvas.width / 2) / pixelsPerSecond) / beatInterval) * beatInterval;
+        
+        for (let i = 0; i < 20; i++) {
+          const beatTime = firstBeat + i * beatInterval;
+          const x = canvas.width / 2 + (beatTime - effectiveTime) * pixelsPerSecond;
+
+          if (x > 0 && x < canvas.width) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, yOffset, 2, 30);
+          }
+        }
+      };
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fillRect(canvas.width / 2, 0, 1, canvas.height);
+
+      drawGrid(bpmA || 120, '#f43f5e', 10, 0, 1.0);
+      drawGrid(bpmB || 120, '#06b6d4', 40, offsetSecondsB, speedRatioB);
+
+      animationId = requestAnimationFrame(draw);
+    };
+
+    animationId = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(animationId);
+  }, [bpmA, bpmB, offsetSecondsB, speedRatioB, isPlaying]);
+
+  return (
+    <div className="bg-stone-950 rounded-3xl p-5 sm:p-6 border border-stone-800 shadow-sm space-y-4">
+      <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-stone-900 border border-stone-700 text-white flex items-center justify-center shadow-md">
+            <Activity className="w-4 h-4 text-sky-400" />
+          </div>
+          <div>
+            <h2 className="text-sm sm:text-base font-black text-white font-display">
+              Beat Grid Visuel
+            </h2>
+            <p className="text-[11px] text-stone-400">
+              Alignement des crêtes rythmiques
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-4 text-xs font-bold bg-stone-900 px-3 py-1.5 rounded-xl border border-stone-800">
+          <span className="text-rose-400 flex items-center gap-1.5"><div className="w-2 h-2 bg-rose-500 rounded-sm"></div> Deck A</span>
+          <span className="text-cyan-400 flex items-center gap-1.5"><div className="w-2 h-2 bg-cyan-500 rounded-sm"></div> Deck B</span>
+        </div>
+      </div>
+      <div className="h-24 w-full bg-stone-900 rounded-2xl overflow-hidden border border-stone-700/50 flex items-center justify-center relative shadow-inner">
+        <canvas ref={canvasRef} width={800} height={80} className="w-full h-full opacity-90" />
+      </div>
+    </div>
+  );
+};
+
 export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   onBack,
   onProjectSaved,
@@ -105,6 +196,12 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
   const [isDetectingBpmA, setIsDetectingBpmA] = useState<boolean>(false);
   const [isDetectingBpmB, setIsDetectingBpmB] = useState<boolean>(false);
   const [syncSuggestion, setSyncSuggestion] = useState<TempoSyncResult | null>(null);
+
+  // 🎵 Détection automatique de tonalité (Key)
+  const [keyInfoA, setKeyInfoA] = useState<{ key: string; camelot: string; mode: string } | null>(null);
+  const [keyInfoB, setKeyInfoB] = useState<{ key: string; camelot: string; mode: string } | null>(null);
+  const [isDetectingKeyA, setIsDetectingKeyA] = useState<boolean>(false);
+  const [isDetectingKeyB, setIsDetectingKeyB] = useState<boolean>(false);
 
   // Tap Tempo interactif
   const tapTimesRef = useRef<number[]>([]);
@@ -185,49 +282,77 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
     };
   }, []);
 
-  // 🔬 Détection automatique du BPM pour le Deck A (Tag Demucs > WASM C++ > DSP)
+  // 🔬 Détection automatique du BPM et Tonalité pour le Deck A
   const triggerBpmDetectionA = useCallback(async (audioSource: string | Blob | File, hintFilename?: string, knownBpm?: number, trackId?: string) => {
     if (!audioSource) return;
     if (knownBpm) {
       setBpmA(knownBpm);
       setBpmInfoA({ bpm: knownBpm, confidence: 1, label: 'Base de données', source: 'demucs_tag' });
-      return;
+    } else {
+      setIsDetectingBpmA(true);
+      try {
+        const res = await detectBpmFromAudio(audioSource, hintFilename || trackA.title);
+        setBpmA(res.bpm);
+        setBpmInfoA(res);
+        if (trackId && res.bpm) {
+          updateTrackBpm(trackId, res.bpm);
+        }
+      } catch (e) {
+        console.warn('Erreur détection BPM Deck A:', e);
+      } finally {
+        setIsDetectingBpmA(false);
+      }
     }
-    setIsDetectingBpmA(true);
+    
+    // Détection de Tonalité
+    setIsDetectingKeyA(true);
     try {
-      const res = await detectBpmFromAudio(audioSource, hintFilename || trackA.title);
-      setBpmA(res.bpm);
-      setBpmInfoA(res);
-      if (trackId && res.bpm) {
-        updateTrackBpm(trackId, res.bpm);
+      const buffer = await getAudioBufferFromSource(audioSource);
+      if (buffer) {
+        const keyData = detectMusicalKey(buffer);
+        setKeyInfoA(keyData);
       }
     } catch (e) {
-      console.warn('Erreur détection BPM Deck A:', e);
+      console.warn('Erreur détection Key Deck A:', e);
     } finally {
-      setIsDetectingBpmA(false);
+      setIsDetectingKeyA(false);
     }
   }, [trackA.title]);
 
-  // 🔬 Détection automatique du BPM pour le Deck B (Tag Demucs > WASM C++ > DSP)
+  // 🔬 Détection automatique du BPM et Tonalité pour le Deck B
   const triggerBpmDetectionB = useCallback(async (audioSource: string | Blob | File, hintFilename?: string, knownBpm?: number, trackId?: string) => {
     if (!audioSource) return;
     if (knownBpm) {
       setBpmB(knownBpm);
       setBpmInfoB({ bpm: knownBpm, confidence: 1, label: 'Base de données', source: 'demucs_tag' });
-      return;
+    } else {
+      setIsDetectingBpmB(true);
+      try {
+        const res = await detectBpmFromAudio(audioSource, hintFilename || trackB.title);
+        setBpmB(res.bpm);
+        setBpmInfoB(res);
+        if (trackId && res.bpm) {
+          updateTrackBpm(trackId, res.bpm);
+        }
+      } catch (e) {
+        console.warn('Erreur détection BPM Deck B:', e);
+      } finally {
+        setIsDetectingBpmB(false);
+      }
     }
-    setIsDetectingBpmB(true);
+
+    // Détection de Tonalité
+    setIsDetectingKeyB(true);
     try {
-      const res = await detectBpmFromAudio(audioSource, hintFilename || trackB.title);
-      setBpmB(res.bpm);
-      setBpmInfoB(res);
-      if (trackId && res.bpm) {
-        updateTrackBpm(trackId, res.bpm);
+      const buffer = await getAudioBufferFromSource(audioSource);
+      if (buffer) {
+        const keyData = detectMusicalKey(buffer);
+        setKeyInfoB(keyData);
       }
     } catch (e) {
-      console.warn('Erreur détection BPM Deck B:', e);
+      console.warn('Erreur détection Key Deck B:', e);
     } finally {
-      setIsDetectingBpmB(false);
+      setIsDetectingKeyB(false);
     }
   }, [trackB.title]);
 
@@ -838,29 +963,34 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
             </div>
             
             <div className="flex flex-col items-end gap-1 shrink-0">
-              {/* Badge BPM Détecté */}
-              {isDetectingBpmA ? (
-                <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                  <Activity className="w-2.5 h-2.5 animate-spin" />
-                  Calcul BPM...
-                </span>
-              ) : bpmA ? (
-                <div className="flex flex-col items-end">
+              {/* Badge BPM et Tonalité Détectés */}
+              <div className="flex items-center gap-1.5">
+                {isDetectingBpmA ? (
+                  <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    <Activity className="w-2.5 h-2.5 animate-spin" />
+                    BPM...
+                  </span>
+                ) : bpmA ? (
                   <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-950/80 border border-rose-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoA?.confidence || 1) * 100)}% - ${bpmInfoA?.label || ''}`}>
                     <Zap className="w-2.5 h-2.5 text-rose-400" />
                     {bpmA} BPM
                   </span>
-                  {bpmInfoA && (
-                    <span className="text-xs text-stone-400 mt-0.5">
-                      via {bpmInfoA.label || 'WASM'} • {Math.round((bpmInfoA.confidence || 1) * 100)}%
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
-                  BPM --
-                </span>
-              )}
+                ) : (
+                  <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
+                    BPM --
+                  </span>
+                )}
+
+                {isDetectingKeyA ? (
+                  <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    Key...
+                  </span>
+                ) : keyInfoA ? (
+                  <span className="text-[10px] font-mono font-bold text-sky-300 bg-sky-950/80 border border-sky-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                    🎵 {keyInfoA.camelot} / {keyInfoA.key} {keyInfoA.mode === 'major' ? 'Maj' : 'Min'}
+                  </span>
+                ) : null}
+              </div>
 
               {hdStemsA ? (
                 <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.2 rounded">
@@ -927,29 +1057,34 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
             </div>
 
             <div className="flex flex-col items-end gap-1 shrink-0">
-              {/* Badge BPM Détecté */}
-              {isDetectingBpmB ? (
-                <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
-                  <Activity className="w-2.5 h-2.5 animate-spin" />
-                  Calcul BPM...
-                </span>
-              ) : bpmB ? (
-                <div className="flex flex-col items-end">
+              {/* Badge BPM et Tonalité Détectés */}
+              <div className="flex items-center gap-1.5">
+                {isDetectingBpmB ? (
+                  <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    <Activity className="w-2.5 h-2.5 animate-spin" />
+                    BPM...
+                  </span>
+                ) : bpmB ? (
                   <span className="text-[10px] font-mono font-bold text-violet-300 bg-violet-950/80 border border-violet-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title={`Confiance: ${Math.round((bpmInfoB?.confidence || 1) * 100)}% - ${bpmInfoB?.label || ''}`}>
                     <Zap className="w-2.5 h-2.5 text-violet-400" />
                     {bpmB} BPM
                   </span>
-                  {bpmInfoB && (
-                    <span className="text-xs text-stone-400 mt-0.5">
-                      via {bpmInfoB.label || 'WASM'} • {Math.round((bpmInfoB.confidence || 1) * 100)}%
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
-                  BPM --
-                </span>
-              )}
+                ) : (
+                  <span className="text-[10px] text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">
+                    BPM --
+                  </span>
+                )}
+
+                {isDetectingKeyB ? (
+                  <span className="text-[10px] font-mono text-amber-300 bg-amber-950/80 border border-amber-700/60 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    Key...
+                  </span>
+                ) : keyInfoB ? (
+                  <span className="text-[10px] font-mono font-bold text-sky-300 bg-sky-950/80 border border-sky-800/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                    🎵 {keyInfoB.camelot} / {keyInfoB.key} {keyInfoB.mode === 'major' ? 'Maj' : 'Min'}
+                  </span>
+                ) : null}
+              </div>
 
               {hdStemsB ? (
                 <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.2 rounded">
@@ -1080,6 +1215,15 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
         </div>
       </div>
 
+      {/* 4.5. BEAT GRID VISUEL */}
+      <BeatGridOverlay 
+        bpmA={bpmA} 
+        bpmB={bpmB} 
+        speedRatioB={speedRatioB} 
+        offsetSecondsB={offsetSecondsB} 
+        isPlaying={isPlaying} 
+      />
+
       {/* 5. ⚡ CONSOLE DE SYNCHRONISATION BPM & SPECTROGRAMME */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-stone-200 shadow-sm space-y-4">
         {/* Header Console BPM */}
@@ -1118,11 +1262,30 @@ export const MusikToMusikStudio: React.FC<MusikToMusikStudioProps> = ({
                 <Zap className="w-5 h-5 fill-current" />
               </div>
               <div className="space-y-0.5">
-                <div className="flex items-center gap-2 text-xs font-extrabold text-amber-300">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-amber-300 flex-wrap">
                   <span>SYNCHRO BPM OPTIMALE DISPONIBLE</span>
                   <span className="text-[10px] font-mono bg-violet-900/80 text-violet-200 px-2 py-0.2 rounded-full border border-violet-700">
                     Deck A: {bpmA} BPM ⟷ Deck B: {bpmB} BPM
                   </span>
+                  {(() => {
+                    if (!keyInfoA || !keyInfoB) return null;
+                    const camA = keyInfoA.camelot;
+                    const camB = keyInfoB.camelot;
+                    let msg = `⚠️ Clashes possibles (${camA} ↔ ${camB})`;
+                    if (camA === camB) msg = `✨ Harmonie parfaite (${camA} ↔ ${camB})`;
+                    else {
+                      const numA = parseInt(camA), numB = parseInt(camB);
+                      const letA = camA.slice(-1), letB = camB.slice(-1);
+                      if (numA === numB && letA !== letB) msg = `✓ Compatible (${camA} ↔ ${camB})`;
+                      else if (letA === letB && (Math.abs(numA - numB) === 1 || Math.abs(numA - numB) === 11)) msg = `✓ Compatible (${camA} ↔ ${camB})`;
+                      else if (letA !== letB && (Math.abs(numA - numB) === 1 || Math.abs(numA - numB) === 11)) msg = `⚠️ Mix énergétique (+1 demi-ton)`;
+                    }
+                    return (
+                      <span className="text-[10px] font-mono bg-sky-900/80 text-sky-200 px-2 py-0.2 rounded-full border border-sky-700">
+                        {msg}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <p className="text-xs text-stone-300">
                   {syncSuggestion.description}

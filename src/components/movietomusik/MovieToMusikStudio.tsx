@@ -19,10 +19,11 @@ import {
   Headphones, 
   Layers, 
   Music2, 
-  Clock 
+  Clock,
+  Download
 } from 'lucide-react';
 import { MovieToMusikProject, AudioTrack, EQSettings, GENRES } from '../../lib/types';
-import { MicrophoneRecorder, MultiTrackAudioEngine, blobToBase64, extractWaveformData } from '../../lib/audioEngine';
+import { MicrophoneRecorder, MultiTrackAudioEngine, blobToBase64, extractWaveformData, exportMixToWav } from '../../lib/audioEngine';
 import { createMovieToMusikProject } from '../../lib/supabase';
 
 interface MovieToMusikStudioProps {
@@ -65,6 +66,7 @@ interface WaveformTrackProps {
   isSelected: boolean;
   onSelect: () => void;
   onUpdateTrim: (trimStart: number, trimEnd: number) => void;
+  onUpdateOffset: (newOffset: number) => void;
   onToggleMute: () => void;
   onToggleSolo: () => void;
   onDelete: () => void;
@@ -79,6 +81,7 @@ const WaveformTrackRow: React.FC<WaveformTrackProps> = ({
   isSelected,
   onSelect,
   onUpdateTrim,
+  onUpdateOffset,
   onToggleMute,
   onToggleSolo,
   onDelete,
@@ -90,6 +93,8 @@ const WaveformTrackRow: React.FC<WaveformTrackProps> = ({
 
   const duration = Math.max(track.duration, 0.1);
   const trackWidthPercent = Math.min(100, (duration / Math.max(maxTimelineDuration, 1)) * 100);
+  const startOffset = track.start_offset || 0;
+  const offsetPercent = (startOffset / Math.max(maxTimelineDuration, 1)) * 100;
   const trimStartPercent = (track.trim_start / duration) * 100;
   const trimEndPercent = (track.trim_end / duration) * 100;
 
@@ -204,8 +209,8 @@ const WaveformTrackRow: React.FC<WaveformTrackProps> = ({
         ref={containerRef}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        className="relative h-16 sm:h-20 bg-stone-950 rounded-xl overflow-hidden select-none border border-stone-800"
-        style={{ width: `${trackWidthPercent}%` }}
+        className="relative h-16 sm:h-20 bg-stone-950 rounded-xl overflow-hidden select-none border border-stone-800 transition-all"
+        style={{ width: `${trackWidthPercent}%`, marginLeft: `${offsetPercent}%` }}
       >
         {/* Forme d'onde SVG / Bâtons d'amplitude */}
         <div className="absolute inset-0 flex items-center justify-between px-1 gap-[2px]">
@@ -313,6 +318,23 @@ const WaveformTrackRow: React.FC<WaveformTrackProps> = ({
 
         <div className="flex items-center gap-1.5">
           <span className="text-stone-700 font-bold flex items-center gap-1">
+            <Clock className="w-3 h-3 text-sky-600" />
+            Décalage :
+          </span>
+          <input
+            type="number"
+            min="0"
+            max={Math.max(0, maxTimelineDuration - 0.2)}
+            step="0.1"
+            value={(track.start_offset || 0).toFixed(2)}
+            onChange={(e) => onUpdateOffset(Math.max(0, parseFloat(e.target.value) || 0))}
+            className="w-14 bg-stone-100 border border-stone-200 rounded px-1 py-0.5 text-center font-bold text-stone-900 focus:outline-none focus:border-stone-900"
+          />
+          <span>s (Slip)</span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-stone-700 font-bold flex items-center gap-1">
             <Scissors className="w-3 h-3 text-rose-600" />
             Fin :
           </span>
@@ -348,6 +370,10 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   // Enregistrement Micro (Overdub)
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  const [hasCountdown, setHasCountdown] = useState<boolean>(true);
+  const [micLatencyMs, setMicLatencyMs] = useState<number>(0);
+  const [isExportingWav, setIsExportingWav] = useState<boolean>(false);
+  const [customTimelineDuration, setCustomTimelineDuration] = useState<number | null>(null);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -432,6 +458,17 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
       ? 'gif'
       : 'image';
 
+    if (fileType === 'video') {
+      const tempVideo = document.createElement('video');
+      tempVideo.src = URL.createObjectURL(file);
+      tempVideo.onloadedmetadata = () => {
+        if (tempVideo.duration && !isNaN(tempVideo.duration)) {
+          setCustomTimelineDuration(Math.max(10, Math.ceil(tempVideo.duration)));
+        }
+        URL.revokeObjectURL(tempVideo.src);
+      };
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
@@ -448,6 +485,11 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     if (isPlayingMaster && engineRef.current) {
       engineRef.current.pause();
       setIsPlayingMaster(false);
+    }
+
+    if (!hasCountdown) {
+      executeStartRecording();
+      return;
     }
 
     setCountdown(3);
@@ -522,6 +564,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     const waveform = await extractWaveformData(blob, 100);
 
     const newTrackIndex = tracks.length + 1;
+    const initialOffset = Math.max(0, micLatencyMs / 1000);
     const newTrack: AudioTrack = {
       id: crypto.randomUUID(),
       name: `Piste ${newTrackIndex} (${newTrackIndex === 1 ? 'Rythme / Voix' : 'Superposition'})`,
@@ -529,6 +572,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
       duration,
       trim_start: 0.08, // Coupe du clic initial automatique par défaut
       trim_end: duration,
+      start_offset: initialOffset,
       is_muted: false,
       is_solo: false,
       waveform,
@@ -546,6 +590,87 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
 
     if (engineRef.current) {
       engineRef.current.loadTracks(nextTracks);
+    }
+  };
+
+  // 📂 Importer un fichier audio externe sur une piste
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await blobToBase64(file);
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      const duration = audioBuffer.duration;
+      try { await audioCtx.close(); } catch (_) {}
+
+      const waveform = await extractWaveformData(file, 100);
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      const newTrackIndex = tracks.length + 1;
+      const newTrack: AudioTrack = {
+        id: crypto.randomUUID(),
+        name: cleanName || `Son importé ${newTrackIndex}`,
+        audio_data: base64,
+        duration,
+        trim_start: 0,
+        trim_end: duration,
+        start_offset: 0,
+        is_muted: false,
+        is_solo: false,
+        waveform,
+        eq_settings: {
+          bass: 0,
+          mid: 0,
+          treble: 0,
+          volume: 1.0,
+        },
+      };
+
+      const nextTracks = [...tracks, newTrack];
+      setTracks(nextTracks);
+      setActiveTrackId(newTrack.id);
+      if (engineRef.current) {
+        engineRef.current.loadTracks(nextTracks);
+      }
+    } catch (err) {
+      console.error("Erreur import audio:", err);
+    }
+  };
+
+  // 📥 Télécharger le Mix final au format WAV
+  const handleExportMixWav = async () => {
+    if (tracks.length === 0) return;
+    setIsExportingWav(true);
+    try {
+      const wavBlob = await exportMixToWav(tracks, maxTimelineDuration);
+      const url = URL.createObjectURL(wavBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${projectTitle || 'Mix_MovieToMusik'}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Erreur export mix:", err);
+    } finally {
+      setIsExportingWav(false);
+    }
+  };
+
+  // ↔️ Décaler horizontalement une piste (Slip)
+  const handleUpdateOffset = (trackId: string, newOffset: number) => {
+    const updated = tracks.map((t) => {
+      if (t.id === trackId) {
+        return { ...t, start_offset: Math.max(0, newOffset) };
+      }
+      return t;
+    });
+    setTracks(updated);
+    if (engineRef.current) {
+      engineRef.current.loadTracks(updated);
     }
   };
 
@@ -664,7 +789,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
   };
 
   const activeTrack = tracks.find((t) => t.id === activeTrackId) || tracks[0];
-  const maxTimelineDuration = Math.max(...tracks.map((t) => t.duration), 5);
+  const maxTimelineDuration = customTimelineDuration || Math.max(...tracks.map((t) => (t.duration || 0) + (t.start_offset || 0)), 5);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
@@ -752,46 +877,100 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
           </div>
 
           {/* Boutons d'action Enregistrement & Master Play */}
-          <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
-            {!isRecording ? (
-              <button
-                type="button"
-                onClick={startRecordingFlow}
-                className="px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-transform hover:scale-105 shadow-md shadow-rose-200 flex-1 justify-center"
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <Mic className="w-4 h-4" />
-                <span>
-                  {tracks.length === 0
-                    ? 'Enregistrer la 1ère Piste'
-                    : `Ajouter la Piste ${tracks.length + 1}`}
-                </span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={stopRecording}
-                className="px-5 py-3 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-transform hover:scale-105 shadow-md animate-pulse flex-1 justify-center"
-              >
-                <Square className="w-4 h-4 fill-current text-rose-500" />
-                <span>Terminer la prise ({recordingSeconds}s)</span>
-              </button>
-            )}
+          <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              {!isRecording ? (
+                <button
+                  type="button"
+                  onClick={startRecordingFlow}
+                  className="px-4 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-transform hover:scale-105 shadow-md shadow-rose-200 flex-1 justify-center cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <Mic className="w-4 h-4" />
+                  <span>
+                    {tracks.length === 0
+                      ? 'Enregistrer la 1ère Piste'
+                      : `Ajouter Piste ${tracks.length + 1}`}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={stopRecording}
+                  className="px-5 py-3 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-transform hover:scale-105 shadow-md animate-pulse flex-1 justify-center cursor-pointer"
+                >
+                  <Square className="w-4 h-4 fill-current text-rose-500" />
+                  <span>Terminer la prise ({recordingSeconds}s)</span>
+                </button>
+              )}
 
-            {tracks.length > 0 && !isRecording && (
-              <button
-                type="button"
-                onClick={togglePlayMaster}
-                className={`px-4 py-3 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center gap-2 transition-all shrink-0 ${
-                  isPlayingMaster
-                    ? 'bg-rose-600 text-white shadow-rose-200'
-                    : 'bg-stone-900 hover:bg-stone-800 text-white shadow-sm'
-                }`}
-              >
-                {isPlayingMaster ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-                <span>{isPlayingMaster ? 'Pause' : '🔁 Play Mix'}</span>
-              </button>
-            )}
+              {/* 📂 Importer un son externe */}
+              <label className="cursor-pointer px-4 py-3 rounded-2xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all shadow-sm shrink-0">
+                <Upload className="w-4 h-4 text-stone-600" />
+                <span>Importer un son</span>
+                <input
+                  type="file"
+                  accept="audio/*,.mp3,.wav,.ogg,.m4a"
+                  onChange={handleAudioUpload}
+                  className="hidden"
+                />
+              </label>
+
+              {tracks.length > 0 && !isRecording && (
+                <button
+                  type="button"
+                  onClick={togglePlayMaster}
+                  className={`px-4 py-3 rounded-2xl text-xs sm:text-sm font-extrabold flex items-center gap-2 transition-all shrink-0 cursor-pointer ${
+                    isPlayingMaster
+                      ? 'bg-rose-600 text-white shadow-rose-200'
+                      : 'bg-stone-900 hover:bg-stone-800 text-white shadow-sm'
+                  }`}
+                >
+                  {isPlayingMaster ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                  <span>{isPlayingMaster ? 'Pause' : '🔁 Play Mix'}</span>
+                </button>
+              )}
+
+              {tracks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleExportMixWav}
+                  disabled={isExportingWav}
+                  className="px-3.5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-sm shrink-0 cursor-pointer disabled:opacity-50"
+                  title="Télécharger le mix complet en un fichier WAV stéréo"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>{isExportingWav ? 'Export...' : 'Mix WAV'}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Barre de réglages rapides : Décompte & Latence */}
+            <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-3 text-xs text-stone-600">
+              <label className="flex items-center gap-2 cursor-pointer select-none font-medium">
+                <input
+                  type="checkbox"
+                  checked={hasCountdown}
+                  onChange={(e) => setHasCountdown(e.target.checked)}
+                  className="w-3.5 h-3.5 text-rose-600 rounded border-stone-300 focus:ring-rose-500"
+                />
+                <span>⏱️ Décompte 3s avant enregistrement</span>
+              </label>
+
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-stone-500">🎛️ Latence micro :</span>
+                <input
+                  type="number"
+                  min="-200"
+                  max="200"
+                  step="10"
+                  value={micLatencyMs}
+                  onChange={(e) => setMicLatencyMs(parseInt(e.target.value, 10) || 0)}
+                  className="w-16 px-1.5 py-0.5 bg-stone-50 border border-stone-200 rounded text-center font-mono font-bold text-stone-800 text-xs focus:outline-none focus:border-stone-900"
+                />
+                <span className="font-mono text-stone-400">ms</span>
+              </div>
+            </div>
           </div>
 
           {/* Formulaire de publication */}
@@ -915,6 +1094,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                     isSelected={activeTrack?.id === track.id}
                     onSelect={() => setActiveTrackId(track.id)}
                     onUpdateTrim={(start, end) => handleUpdateTrim(track.id, start, end)}
+                    onUpdateOffset={(newOffset) => handleUpdateOffset(track.id, newOffset)}
                     onToggleMute={() => handleToggleMute(track.id)}
                     onToggleSolo={() => handleToggleSolo(track.id)}
                     onDelete={() => handleDeleteTrack(track.id)}

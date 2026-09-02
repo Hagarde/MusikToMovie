@@ -359,3 +359,105 @@ export class MultiTrackAudioEngine {
   }
 }
 
+
+// 💽 Export du Mix vers un fichier WAV
+function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+  const numOfChan = buffer.numberOfChannels;
+  const length = buffer.length * numOfChan * 2 + 44;
+  const out = new ArrayBuffer(length);
+  const view = new DataView(out);
+  const channels: Float32Array[] = [];
+  const sampleRate = buffer.sampleRate;
+  let offset = 0;
+  let pos = 0;
+  
+  function setUint16(data: number) {
+    view.setUint16(pos, data, true);
+    pos += 2;
+  }
+  
+  function setUint32(data: number) {
+    view.setUint32(pos, data, true);
+    pos += 4;
+  }
+
+  setUint32(0x46464952); // "RIFF"
+  setUint32(length - 8); // file length - 8
+  setUint32(0x45564157); // "WAVE"
+  
+  setUint32(0x20746d66); // "fmt " chunk
+  setUint32(16);         // length = 16
+  setUint16(1);          // PCM (uncompressed)
+  setUint16(numOfChan);
+  setUint32(sampleRate);
+  setUint32(sampleRate * 2 * numOfChan); // avg. bytes/sec
+  setUint16(numOfChan * 2);              // block-align
+  setUint16(16);         // 16-bit
+  
+  setUint32(0x61746164); // "data" - chunk
+  setUint32(length - pos - 4); // chunk length
+  
+  for (let i = 0; i < buffer.numberOfChannels; i++) {
+    channels.push(buffer.getChannelData(i));
+  }
+  
+  while(pos < length) {
+    for (let i = 0; i < numOfChan; i++) {
+      let sample = Math.max(-1, Math.min(1, channels[i][offset]));
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(pos, sample, true); 
+      pos += 2;
+    }
+    offset++;
+  }
+  
+  return new Blob([view], {type: "audio/wav"});
+}
+
+export async function exportMixToWav(tracks: AudioTrack[], maxDuration: number): Promise<Blob> {
+  const sampleRate = 44100;
+  const offlineCtx = new OfflineAudioContext(2, Math.max(1, sampleRate * maxDuration), sampleRate);
+  
+  const hasSolo = tracks.some(t => t.is_solo);
+  
+  for (const t of tracks) {
+    if (!t.audio_data) continue;
+    const isMuted = t.is_muted || (hasSolo && !t.is_solo);
+    if (isMuted) continue;
+    
+    try {
+      const blob = base64ToBlob(t.audio_data);
+      const arrayBuffer = await blob.arrayBuffer();
+      const buffer = await offlineCtx.decodeAudioData(arrayBuffer);
+      
+      const source = offlineCtx.createBufferSource();
+      source.buffer = buffer;
+      
+      const bass = offlineCtx.createBiquadFilter();
+      bass.type = 'lowshelf'; bass.frequency.value = 200; bass.gain.value = t.eq_settings?.bass || 0;
+      
+      const mid = offlineCtx.createBiquadFilter();
+      mid.type = 'peaking'; mid.frequency.value = 1200; mid.Q.value = 1.0; mid.gain.value = t.eq_settings?.mid || 0;
+      
+      const treble = offlineCtx.createBiquadFilter();
+      treble.type = 'highshelf'; treble.frequency.value = 3500; treble.gain.value = t.eq_settings?.treble || 0;
+      
+      const gain = offlineCtx.createGain();
+      gain.gain.value = t.eq_settings?.volume ?? 1.0;
+      
+      source.connect(bass).connect(mid).connect(treble).connect(gain).connect(offlineCtx.destination);
+      
+      const offset = t.start_offset || 0;
+      const trimStart = t.trim_start || 0;
+      const trimEnd = t.trim_end || t.duration;
+      const duration = Math.max(0.1, trimEnd - trimStart);
+      
+      source.start(offset, trimStart, duration);
+    } catch (e) {
+      console.error("Erreur mix track", t.name, e);
+    }
+  }
+  
+  const renderedBuffer = await offlineCtx.startRendering();
+  return audioBufferToWavBlob(renderedBuffer);
+}

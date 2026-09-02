@@ -147,14 +147,78 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
   const [animFps, setAnimFps] = useState<number>(fps);
   const [playFrameIndex, setPlayFrameIndex] = useState<number>(0);
 
-  // Historique Undo/Redo pour la frame active
+  // Historique Undo/Redo persistant par frame
   const MAX_HISTORY_STEPS = 25;
-  const [history, setHistory] = useState<ImageData[]>([]);
-  const [historyStep, setHistoryStep] = useState<number>(-1);
+  const [histories, setHistories] = useState<Record<number, { states: ImageData[], step: number }>>({});
+  
+  const history = histories[currentFrameIndex]?.states || [];
+  const historyStep = histories[currentFrameIndex]?.step ?? -1;
+
+  const setHistory = useCallback((action: ImageData[] | ((prev: ImageData[]) => ImageData[])) => {
+    setHistories(prev => {
+      const currentStates = prev[currentFrameIndex]?.states || [];
+      const newStates = typeof action === 'function' ? action(currentStates) : action;
+      return { ...prev, [currentFrameIndex]: { ...prev[currentFrameIndex], states: newStates } };
+    });
+  }, [currentFrameIndex]);
+
+  const setHistoryStep = useCallback((action: number | ((prev: number) => number)) => {
+    setHistories(prev => {
+      const currentStep = prev[currentFrameIndex]?.step ?? -1;
+      const newStep = typeof action === 'function' ? action(currentStep) : action;
+      return { ...prev, [currentFrameIndex]: { ...prev[currentFrameIndex], step: newStep } };
+    });
+  }, [currentFrameIndex]);
 
   // Export State
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<number>(0);
+
+  // Aspect Ratio
+  type AspectRatio = '16:9' | '2.39:1' | '4:3' | '9:16' | '1:1';
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
+  const ASPECT_RATIOS: Record<AspectRatio, { width: number; height: number; label: string }> = {
+    '16:9': { width: 640, height: 360, label: '16:9' },
+    '2.39:1': { width: 640, height: 268, label: '2.39:1' },
+    '4:3': { width: 480, height: 360, label: '4:3' },
+    '9:16': { width: 360, height: 640, label: '9:16' },
+    '1:1': { width: 400, height: 400, label: '1:1' },
+  };
+  const { width: canvasWidth, height: canvasHeight } = ASPECT_RATIOS[aspectRatio];
+
+  // Image de référence (Rotoscopie)
+  const [refImage, setRefImage] = useState<string | null>(null);
+  const [refOpacity, setRefOpacity] = useState<number>(50);
+  const refInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleRefImageImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) setRefImage(event.target.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const mergeReference = () => {
+    if (!refImage) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = new Image();
+    img.onload = () => {
+      ctx.save();
+      ctx.globalAlpha = refOpacity / 100;
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+      saveHistoryState();
+      saveCurrentFrameToState();
+    };
+    img.src = refImage;
+  };
 
   // Sauvegarder l'état dans l'historique
   const saveHistoryState = useCallback(() => {
@@ -241,7 +305,7 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     if (!isPlayingAnim) {
       loadFrame(currentFrameIndex, frames);
     }
-  }, [currentFrameIndex]);
+  }, [currentFrameIndex, isPlayingAnim, frames, loadFrame, canvasWidth, canvasHeight]);
 
   // Boucle de lecture d'animation Flipbook
   useEffect(() => {
@@ -1886,10 +1950,20 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="p-2 rounded-xl text-xs flex items-center gap-1 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 transition-colors shadow-sm"
-              title="Importer une image"
+              title="Importer une image sur le calque actif"
             >
               <ImageIcon className="w-4 h-4" />
               <span className="hidden lg:inline text-[11px]">Image</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => refInputRef.current?.click()}
+              className="p-2 rounded-xl text-xs flex items-center gap-1 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 transition-colors shadow-sm"
+              title="🖼️ Image de référence (Fond)"
+            >
+              <ImageIcon className="w-4 h-4 text-emerald-600" />
+              <span className="hidden lg:inline text-[11px]">Réf</span>
             </button>
 
             <div className="flex items-center gap-0.5 bg-white p-1 rounded-2xl border border-stone-200 shadow-sm">
@@ -1920,7 +1994,47 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
+            
+            <select 
+              value={aspectRatio}
+              onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
+              className="text-xs bg-white border border-stone-200 rounded-xl px-2 py-1.5 focus:outline-none focus:border-stone-400 font-medium"
+              title="Format du Canvas"
+            >
+              {Object.entries(ASPECT_RATIOS).map(([key, { label }]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
           </div>
+        </div>
+      )}
+      
+      {/* Contrôles de l'image de référence */}
+      {!readOnly && refImage && (
+        <div className="flex items-center gap-3 px-3 sm:px-4 py-1.5 bg-stone-100 border-b border-stone-200 text-xs text-stone-700">
+          <span className="font-semibold text-[11px]">Image de référence :</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px]">Opacité ({refOpacity}%)</span>
+            <input 
+              type="range" min="0" max="100" value={refOpacity} 
+              onChange={(e) => setRefOpacity(parseInt(e.target.value, 10))} 
+              className="w-24 h-1.5 bg-stone-300 rounded-lg appearance-none cursor-pointer accent-stone-700"
+            />
+          </div>
+          <button 
+            type="button" onClick={mergeReference}
+            className="px-2 py-1 bg-white border border-stone-300 rounded-lg text-[10px] font-bold hover:bg-stone-50 transition-colors flex items-center gap-1"
+          >
+            <Check className="w-3 h-3" />
+            Fusionner la référence
+          </button>
+          <button 
+            type="button" onClick={() => setRefImage(null)}
+            className="p-1 text-rose-500 hover:text-rose-700 font-bold bg-white border border-stone-300 rounded-lg transition-colors"
+            title="Supprimer la référence"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
         </div>
       )}
 
@@ -2062,6 +2176,16 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </div>
         ) : (
           <>
+            {/* 🖼️ Image de référence (Rotoscopie) */}
+            {refImage && (
+              <div 
+                className="absolute inset-0 pointer-events-none z-[0] flex items-center justify-center select-none"
+                style={{ opacity: refOpacity / 100 }}
+              >
+                <img src={refImage} alt="Référence" className="w-full h-full object-contain" />
+              </div>
+            )}
+
             {/* 🧅 Calque Pelure d'Oignon */}
             {onionSkin && currentFrameIndex > 0 && frames[currentFrameIndex - 1] && (
               <div className="absolute inset-0 pointer-events-none z-[1] overflow-hidden flex items-center justify-center opacity-30 select-none">
@@ -2083,16 +2207,16 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
             {/* Canvas de dessin actif (z-[2]) */}
             <canvas
               ref={canvasRef}
-              width={640}
-              height={360}
+              width={canvasWidth}
+              height={canvasHeight}
               className="w-full h-full object-contain relative z-[2]"
             />
 
             {/* Canvas Overlay interactif pour Lasso, Bounding Box et Transformation (z-[4]) */}
             <canvas
               ref={overlayCanvasRef}
-              width={640}
-              height={360}
+              width={canvasWidth}
+              height={canvasHeight}
               onMouseDown={handlePointerDown}
               onMouseMove={handlePointerMove}
               onMouseUp={handlePointerUp}
@@ -2331,6 +2455,14 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         type="file"
         accept="image/*"
         onChange={handleImageImport}
+        className="hidden"
+      />
+      
+      <input
+        ref={refInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleRefImageImport}
         className="hidden"
       />
     </div>
