@@ -20,10 +20,18 @@ import {
   Layers, 
   Music2, 
   Clock,
-  Download
+  Download,
+  Sparkles
 } from 'lucide-react';
 import { MovieToMusikProject, AudioTrack, EQSettings, GENRES } from '../../lib/types';
-import { MicrophoneRecorder, MultiTrackAudioEngine, blobToBase64, extractWaveformData, exportMixToWav } from '../../lib/audioEngine';
+import { 
+  MicrophoneRecorder, 
+  MultiTrackAudioEngine, 
+  blobToBase64, 
+  extractWaveformData, 
+  exportMixToWav,
+  generateCinematicSFX 
+} from '../../lib/audioEngine';
 import { createMovieToMusikProject } from '../../lib/supabase';
 
 interface MovieToMusikStudioProps {
@@ -674,6 +682,152 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
     }
   };
 
+  const [isExportingVideo, setIsExportingVideo] = useState<boolean>(false);
+  const [isGeneratingSFX, setIsGeneratingSFX] = useState<boolean>(false);
+
+  // 🔊 Insérer un bruitage cinématique procédural (SFX)
+  const handleInsertSFX = async (type: 'thunder' | 'rain' | 'click' | 'laser' | 'nebula', label: string) => {
+    setIsGeneratingSFX(true);
+    try {
+      const sfxBlob = await generateCinematicSFX(type);
+      const base64 = await blobToBase64(sfxBlob);
+      const waveform = await extractWaveformData(sfxBlob, 100);
+      const duration = type === 'rain' ? 4.0 : type === 'nebula' ? 3.5 : type === 'thunder' ? 3.0 : 0.8;
+      
+      const newTrack: AudioTrack = {
+        id: crypto.randomUUID(),
+        name: `SFX ${label}`,
+        audio_data: base64,
+        duration,
+        trim_start: 0,
+        trim_end: duration,
+        start_offset: Math.min(playheadTime, Math.max(0, maxTimelineDuration - duration)),
+        is_muted: false,
+        is_solo: false,
+        waveform,
+        eq_settings: {
+          bass: 0,
+          mid: 0,
+          treble: 0,
+          volume: 1.0,
+          reverb: type === 'thunder' || type === 'nebula' ? 0.4 : 0,
+          delay: type === 'laser' ? 0.35 : 0,
+        },
+      };
+
+      const nextTracks = [...tracks, newTrack];
+      setTracks(nextTracks);
+      setActiveTrackId(newTrack.id);
+      if (engineRef.current) {
+        engineRef.current.loadTracks(nextTracks);
+      }
+    } catch (err) {
+      console.error("Erreur génération SFX:", err);
+    } finally {
+      setIsGeneratingSFX(false);
+    }
+  };
+
+  // 🎬 Exporter la vidéo complète avec le son mixé incrusté
+  const handleExportFullVideo = async () => {
+    if (tracks.length === 0) return;
+    setIsExportingVideo(true);
+    try {
+      const wavBlob = await exportMixToWav(tracks, maxTimelineDuration);
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      const arrayBuffer = await wavBlob.arrayBuffer();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = 1280;
+      exportCanvas.height = 720;
+      const ctx = exportCanvas.getContext('2d')!;
+
+      const canvasStream = exportCanvas.captureStream(30);
+      const audioDest = audioCtx.createMediaStreamDestination();
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioDest);
+
+      const combinedStream = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+        ...audioDest.stream.getAudioTracks(),
+      ]);
+
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+          ? 'video/webm;codecs=vp9,opus'
+          : 'video/webm',
+      });
+
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      const renderDuration = Math.min(maxTimelineDuration, 30);
+      let imgElement: HTMLImageElement | null = null;
+      let vidElement: HTMLVideoElement | null = null;
+
+      if (visualType === 'video' && videoRef.current) {
+        vidElement = videoRef.current;
+        vidElement.currentTime = 0;
+        vidElement.play().catch(() => {});
+      } else {
+        imgElement = new Image();
+        imgElement.crossOrigin = 'anonymous';
+        imgElement.src = visualUrl;
+        await new Promise((r) => { imgElement!.onload = r; imgElement!.onerror = r; });
+      }
+
+      recorder.start();
+      source.start(0);
+
+      const startTime = performance.now();
+      let animId: number;
+
+      const drawLoop = () => {
+        const elapsed = (performance.now() - startTime) / 1000;
+        if (vidElement && !vidElement.paused) {
+          ctx.drawImage(vidElement, 0, 0, exportCanvas.width, exportCanvas.height);
+        } else if (imgElement) {
+          ctx.drawImage(imgElement, 0, 0, exportCanvas.width, exportCanvas.height);
+        }
+
+        if (elapsed < renderDuration) {
+          animId = requestAnimationFrame(drawLoop);
+        } else {
+          cancelAnimationFrame(animId);
+          try { source.stop(); } catch (_) {}
+          try { recorder.stop(); } catch (_) {}
+        }
+      };
+
+      drawLoop();
+
+      await new Promise<void>((resolve) => {
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${projectTitle || 'Film_MovieToMusik'}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          try { audioCtx.close(); } catch (_) {}
+          resolve();
+        };
+      });
+    } catch (err) {
+      console.error("Erreur export vidéo:", err);
+    } finally {
+      setIsExportingVideo(false);
+    }
+  };
+
   // ✂️ Ajuster le rognage Début (Anti-clic) ou Fin
   const handleUpdateTrim = (trackId: string, trimStart: number, trimEnd: number) => {
     const updated = tracks.map((t) => {
@@ -932,17 +1086,83 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
               )}
 
               {tracks.length > 0 && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleExportMixWav}
+                    disabled={isExportingWav}
+                    className="px-3.5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                    title="Télécharger le mix complet en un fichier WAV stéréo"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{isExportingWav ? 'Export...' : 'Mix WAV'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportFullVideo}
+                    disabled={isExportingVideo}
+                    className="px-3.5 py-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                    title="Exporter la vidéo avec le son mixé incrusté"
+                  >
+                    <Film className="w-4 h-4" />
+                    <span>{isExportingVideo ? 'Rendu...' : 'Film (.webm)'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ⚡ Bibliothèque de Bruitages SFX Cinéma Procéduraux */}
+            <div className="pt-2 border-t border-stone-100 space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-stone-600 font-semibold">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  Bruitages Cinéma (SFX 1-Clic) :
+                </span>
+                {isGeneratingSFX && <span className="text-[10px] text-amber-600 animate-pulse font-mono font-bold">Génération du son...</span>}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  onClick={handleExportMixWav}
-                  disabled={isExportingWav}
-                  className="px-3.5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-1.5 transition-all shadow-sm shrink-0 cursor-pointer disabled:opacity-50"
-                  title="Télécharger le mix complet en un fichier WAV stéréo"
+                  disabled={isGeneratingSFX}
+                  onClick={() => handleInsertSFX('thunder', 'Tonnerre')}
+                  className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-amber-900 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>{isExportingWav ? 'Export...' : 'Mix WAV'}</span>
+                  🌩️ Tonnerre
                 </button>
-              )}
+                <button
+                  type="button"
+                  disabled={isGeneratingSFX}
+                  onClick={() => handleInsertSFX('rain', 'Pluie')}
+                  className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-sky-100 text-stone-700 hover:text-sky-900 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  🌧️ Pluie
+                </button>
+                <button
+                  type="button"
+                  disabled={isGeneratingSFX}
+                  onClick={() => handleInsertSFX('click', 'Clap')}
+                  className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-rose-100 text-stone-700 hover:text-rose-900 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  🎬 Clap / Clic
+                </button>
+                <button
+                  type="button"
+                  disabled={isGeneratingSFX}
+                  onClick={() => handleInsertSFX('laser', 'Laser Sci-Fi')}
+                  className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-purple-100 text-stone-700 hover:text-purple-900 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  💥 Laser
+                </button>
+                <button
+                  type="button"
+                  disabled={isGeneratingSFX}
+                  onClick={() => handleInsertSFX('nebula', 'Nébuleuse')}
+                  className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-indigo-100 text-stone-700 hover:text-indigo-900 text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  🌌 Nébuleuse
+                </button>
+              </div>
             </div>
 
             {/* Barre de réglages rapides : Décompte & Latence */}
@@ -1129,7 +1349,7 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
                 {/* Graves */}
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px] font-mono">
@@ -1184,6 +1404,44 @@ export const MovieToMusikStudio: React.FC<MovieToMusikStudioProps> = ({
                     value={activeTrack.eq_settings.treble}
                     onChange={(e) => handleUpdateTrackEQ(activeTrack.id, 'treble', parseFloat(e.target.value))}
                     className="w-full accent-rose-500 bg-stone-800 rounded-lg cursor-pointer h-1.5"
+                  />
+                </div>
+
+                {/* Réverbération */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-stone-300">🌌 Reverb</span>
+                    <span className="text-violet-400 font-bold">
+                      {Math.round((activeTrack.eq_settings.reverb || 0) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={activeTrack.eq_settings.reverb || 0}
+                    onChange={(e) => handleUpdateTrackEQ(activeTrack.id, 'reverb', parseFloat(e.target.value))}
+                    className="w-full accent-violet-500 bg-stone-800 rounded-lg cursor-pointer h-1.5"
+                  />
+                </div>
+
+                {/* Délai / Écho */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono">
+                    <span className="text-stone-300">⏱️ Délai</span>
+                    <span className="text-sky-400 font-bold">
+                      {Math.round((activeTrack.eq_settings.delay || 0) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={activeTrack.eq_settings.delay || 0}
+                    onChange={(e) => handleUpdateTrackEQ(activeTrack.id, 'delay', parseFloat(e.target.value))}
+                    className="w-full accent-sky-500 bg-stone-800 rounded-lg cursor-pointer h-1.5"
                   />
                 </div>
 

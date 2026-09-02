@@ -220,6 +220,10 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     img.src = refImage;
   };
 
+  // Calque de décor fixe partagé sous toutes les frames (Tâche 3)
+  const [bgLayerData, setBgLayerData] = useState<string | null>(null);
+  const [isEditingBg, setIsEditingBg] = useState<boolean>(false);
+
   // Sauvegarder l'état dans l'historique
   const saveHistoryState = useCallback(() => {
     const canvas = canvasRef.current;
@@ -251,6 +255,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     if (exportCtx) {
       exportCtx.fillStyle = '#1c1917';
       exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+      if (bgLayerData) {
+        const bgImg = new Image();
+        bgImg.src = bgLayerData;
+        if (bgImg.complete) {
+          exportCtx.drawImage(bgImg, 0, 0, exportCanvas.width, exportCanvas.height);
+        }
+      }
       exportCtx.drawImage(canvas, 0, 0);
       const dataUrl = exportCanvas.toDataURL('image/webp', 0.85);
       const updated = [...frames];
@@ -266,7 +277,39 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
     setFrames(updated);
     if (onChange) onChange(updated);
     return updated;
-  }, [currentFrameIndex, frames, onChange]);
+  }, [currentFrameIndex, frames, onChange, bgLayerData]);
+
+  // Basculer entre l'édition du Décor Partagé et l'Animation
+  const toggleEditBackground = () => {
+    if (floatingObject) commitFloatingObject();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (!isEditingBg) {
+      // Entrer dans le mode Décor
+      saveCurrentFrameToState();
+      setIsEditingBg(true);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (bgLayerData) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          saveHistoryState();
+        };
+        img.src = bgLayerData;
+      } else {
+        saveHistoryState();
+      }
+    } else {
+      // Quitter le mode Décor et enregistrer
+      const newBg = canvas.toDataURL('image/png');
+      setBgLayerData(newBg);
+      setIsEditingBg(false);
+      loadFrame(currentFrameIndex);
+    }
+  };
 
   // Charger ou réinitialiser le canvas sur une frame précise
   const loadFrame = useCallback((index: number, framesList: string[] = frames) => {
@@ -785,6 +828,18 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
         ctx.fillStyle = '#1c1917';
         ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
         
+        if (bgLayerData) {
+          const bgImg = new Image();
+          await new Promise<void>((resolve) => {
+            bgImg.onload = () => {
+              ctx.drawImage(bgImg, 0, 0, exportCanvas.width, exportCanvas.height);
+              resolve();
+            };
+            bgImg.onerror = () => resolve();
+            bgImg.src = bgLayerData;
+          });
+        }
+
         if (frames[i]) {
           const img = new Image();
           await new Promise<void>((resolve) => {
@@ -1994,6 +2049,35 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {/* 🌄 Calque Décor Partagé (Tâche 3) */}
+            <div className="flex items-center gap-1 bg-stone-100 p-0.5 rounded-xl border border-stone-200">
+              <button
+                type="button"
+                onClick={toggleEditBackground}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  isEditingBg 
+                    ? 'bg-amber-500 text-stone-950 shadow-sm animate-pulse' 
+                    : bgLayerData 
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300' 
+                      : 'hover:bg-stone-200 text-stone-700'
+                }`}
+                title="Dessiner un décor fixe partagé qui apparaîtra sous toutes les frames"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>{isEditingBg ? '✓ Valider Décor' : bgLayerData ? '🌄 Décor actif' : '🌄 Décor Fixe'}</span>
+              </button>
+              {bgLayerData && !isEditingBg && (
+                <button
+                  type="button"
+                  onClick={() => setBgLayerData(null)}
+                  className="p-1 hover:bg-rose-100 text-rose-600 rounded text-xs cursor-pointer"
+                  title="Supprimer le décor partagé"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
             
             <select 
               value={aspectRatio}
@@ -2006,6 +2090,23 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
               ))}
             </select>
           </div>
+        </div>
+      )}
+
+      {/* 🎨 Bannière Mode Décor Partagé */}
+      {isEditingBg && (
+        <div className="bg-amber-400 text-stone-950 font-bold px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-amber-500 shadow-sm animate-in slide-in-from-top-1">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🌄</span>
+            <span>Mode Décor Partagé : Ce décor restera visible sous TOUTES vos frames d'animation.</span>
+          </div>
+          <button
+            type="button"
+            onClick={toggleEditBackground}
+            className="px-3 py-1 bg-stone-950 hover:bg-stone-800 text-white rounded-lg text-xs font-extrabold cursor-pointer shadow-sm"
+          >
+            ✓ Valider & Revenir à l'Animation
+          </button>
         </div>
       )}
       
@@ -2176,6 +2277,13 @@ export const FlipanimCanvas: React.FC<FlipanimCanvasProps> = ({
           </div>
         ) : (
           <>
+            {/* 🌄 Calque Fond / Décor Fixe Partagé (z-[0]) */}
+            {bgLayerData && !isEditingBg && (
+              <div className="absolute inset-0 pointer-events-none z-[0] flex items-center justify-center select-none">
+                <img src={bgLayerData} alt="Décor Partagé" className="w-full h-full object-contain select-none" />
+              </div>
+            )}
+
             {/* 🖼️ Image de référence (Rotoscopie) */}
             {refImage && (
               <div 

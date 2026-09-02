@@ -232,6 +232,10 @@ export class MashupAudioEngine {
         this.deckB.crossOrigin = 'anonymous';
         this.deckB.src = urlB;
         this.deckB.loop = true;
+        this.deckB.preservesPitch = true;
+        (this.deckB as any).mozPreservesPitch = true;
+        (this.deckB as any).webkitPreservesPitch = true;
+        this.deckB.playbackRate = this.speedB;
         this.processorB = new DeckStemProcessor(ctx, this.deckB);
         this.processorB.connectToDestination(this.masterGain!);
       } catch (e) {
@@ -256,7 +260,12 @@ export class MashupAudioEngine {
       audio.crossOrigin = 'anonymous';
       audio.src = url;
       audio.loop = true;
-      if (isDeckB) audio.playbackRate = this.speedB;
+      if (isDeckB) {
+        audio.preservesPitch = true;
+        (audio as any).mozPreservesPitch = true;
+        (audio as any).webkitPreservesPitch = true;
+        audio.playbackRate = this.speedB;
+      }
 
       const source = ctx.createMediaElementSource(audio);
       const gain = ctx.createGain();
@@ -321,11 +330,19 @@ export class MashupAudioEngine {
   public setSpeedB(ratio: number): void {
     this.speedB = Math.max(0.7, Math.min(1.4, ratio));
     if (this.deckB) {
+      this.deckB.preservesPitch = true;
+      (this.deckB as any).mozPreservesPitch = true;
+      (this.deckB as any).webkitPreservesPitch = true;
       this.deckB.playbackRate = this.speedB;
     }
     if (this.isUsingHD) {
       Object.values(this.hdAudioNodes.audioB).forEach((audio) => {
-        if (audio) audio.playbackRate = this.speedB;
+        if (audio) {
+          audio.preservesPitch = true;
+          (audio as any).mozPreservesPitch = true;
+          (audio as any).webkitPreservesPitch = true;
+          audio.playbackRate = this.speedB;
+        }
       });
     }
   }
@@ -353,6 +370,9 @@ export class MashupAudioEngine {
       Object.values(this.hdAudioNodes.audioA).forEach((a) => a?.play().catch(() => {}));
       Object.values(this.hdAudioNodes.audioB).forEach((b) => {
         if (b) {
+          b.preservesPitch = true;
+          (b as any).mozPreservesPitch = true;
+          (b as any).webkitPreservesPitch = true;
           b.playbackRate = this.speedB;
           b.play().catch(() => {});
         }
@@ -364,6 +384,9 @@ export class MashupAudioEngine {
       await this.deckA.play().catch(() => {});
     }
     if (this.deckB) {
+      this.deckB.preservesPitch = true;
+      (this.deckB as any).mozPreservesPitch = true;
+      (this.deckB as any).webkitPreservesPitch = true;
       this.deckB.playbackRate = this.speedB;
       if (this.deckA) {
         this.deckB.currentTime = (this.deckA.currentTime + this.offsetB) % (this.deckB.duration || 100);

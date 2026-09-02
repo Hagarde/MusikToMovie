@@ -82,6 +82,8 @@ export interface EQSettings {
   mid: number;     // Gain en dB (-12 à +12)
   treble: number;  // Gain en dB (-12 à +12)
   volume: number;  // Volume master (0 à 1.5)
+  reverb?: number; // Réverbération spatiale (0 à 1)
+  delay?: number;  // Écho / Délai (0 à 1)
 }
 
 export interface AudioTrack {

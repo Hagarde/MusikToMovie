@@ -169,14 +169,34 @@ interface TrackChannel {
   midFilter: BiquadFilterNode;
   trebleFilter: BiquadFilterNode;
   gainNode: GainNode;
+  reverbGain: GainNode;
+  delayGain: GainNode;
   timeUpdateListener?: () => void;
 }
 
-// 🎛️ Moteur Audio Multi-Pistes (Superposition, Rognage Début/Fin, Mute/Solo, EQ indépendants)
+// Générateur d'impulsion synthétique pour réverbération à convolution
+export function createReverbImpulseBuffer(ctx: BaseAudioContext, duration: number = 2.0, decay: number = 2.0): AudioBuffer {
+  const rate = ctx.sampleRate;
+  const length = rate * duration;
+  const impulse = ctx.createBuffer(2, length, rate);
+  const left = impulse.getChannelData(0);
+  const right = impulse.getChannelData(1);
+  for (let i = 0; i < length; i++) {
+    const n = length - i;
+    left[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
+    right[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
+  }
+  return impulse;
+}
+
+// 🎛️ Moteur Audio Multi-Pistes (Superposition, Rognage Début/Fin, Mute/Solo, EQ, Reverb & Delay)
 export class MultiTrackAudioEngine {
   private audioContext: AudioContext | null = null;
   private channels: Map<string, TrackChannel> = new Map();
   private masterGain: GainNode | null = null;
+  private reverbNode: ConvolverNode | null = null;
+  private delayNode: DelayNode | null = null;
+  private delayFeedback: GainNode | null = null;
   private isPlaying: boolean = false;
 
   private initAudioContext(): AudioContext {
@@ -186,6 +206,20 @@ export class MultiTrackAudioEngine {
       this.masterGain = this.audioContext.createGain();
       this.masterGain.gain.value = 1.0;
       this.masterGain.connect(this.audioContext.destination);
+
+      // Bus de réverbération
+      this.reverbNode = this.audioContext.createConvolver();
+      this.reverbNode.buffer = createReverbImpulseBuffer(this.audioContext, 2.0, 2.0);
+      this.reverbNode.connect(this.masterGain);
+
+      // Bus de délai / écho
+      this.delayNode = this.audioContext.createDelay(1.0);
+      this.delayNode.delayTime.value = 0.25;
+      this.delayFeedback = this.audioContext.createGain();
+      this.delayFeedback.gain.value = 0.35;
+      this.delayNode.connect(this.delayFeedback);
+      this.delayFeedback.connect(this.delayNode);
+      this.delayNode.connect(this.masterGain);
     }
     return this.audioContext;
   }
@@ -230,13 +264,22 @@ export class MultiTrackAudioEngine {
       const isMutedEffective = t.is_muted || (hasSolo && !t.is_solo);
       gainNode.gain.value = isMutedEffective ? 0 : (t.eq_settings?.volume ?? 1.0);
 
+      // 5. Départs Réverb & Délai
+      const reverbGain = ctx.createGain();
+      reverbGain.gain.value = t.eq_settings?.reverb || 0;
+
+      const delayGain = ctx.createGain();
+      delayGain.gain.value = t.eq_settings?.delay || 0;
+
       // Chaîne : Source -> Bass -> Mid -> Treble -> Gain -> Master
       sourceNode
         .connect(bassFilter)
         .connect(midFilter)
-        .connect(trebleFilter)
-        .connect(gainNode)
-        .connect(this.masterGain!);
+        .connect(trebleFilter);
+
+      trebleFilter.connect(gainNode).connect(this.masterGain!);
+      if (this.reverbNode) trebleFilter.connect(reverbGain).connect(this.reverbNode);
+      if (this.delayNode) trebleFilter.connect(delayGain).connect(this.delayNode);
 
       // Surveillance du rognage de fin (trim_end) et boucle (trim_start)
       const timeUpdateListener = () => {
@@ -261,6 +304,8 @@ export class MultiTrackAudioEngine {
         midFilter,
         trebleFilter,
         gainNode,
+        reverbGain,
+        delayGain,
         timeUpdateListener,
       });
     });
@@ -273,6 +318,8 @@ export class MultiTrackAudioEngine {
     ch.midFilter.gain.value = settings.mid;
     ch.trebleFilter.gain.value = settings.treble;
     ch.gainNode.gain.value = ch.track.is_muted ? 0 : settings.volume;
+    if (settings.reverb !== undefined) ch.reverbGain.gain.value = settings.reverb;
+    if (settings.delay !== undefined) ch.delayGain.gain.value = settings.delay;
   }
 
   public updateTracksState(tracks: AudioTrack[]): void {
@@ -416,8 +463,22 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
 
 export async function exportMixToWav(tracks: AudioTrack[], maxDuration: number): Promise<Blob> {
   const sampleRate = 44100;
-  const offlineCtx = new OfflineAudioContext(2, Math.max(1, sampleRate * maxDuration), sampleRate);
+  const offlineCtx = new OfflineAudioContext(2, Math.max(1, Math.ceil(sampleRate * maxDuration)), sampleRate);
   
+  // Bus de réverbération dans le rendu offline
+  const reverbConvolver = offlineCtx.createConvolver();
+  reverbConvolver.buffer = createReverbImpulseBuffer(offlineCtx, 2.0, 2.0);
+  reverbConvolver.connect(offlineCtx.destination);
+
+  // Bus de délai dans le rendu offline
+  const delayNode = offlineCtx.createDelay(1.0);
+  delayNode.delayTime.value = 0.25;
+  const delayFeedback = offlineCtx.createGain();
+  delayFeedback.gain.value = 0.35;
+  delayNode.connect(delayFeedback);
+  delayFeedback.connect(delayNode);
+  delayNode.connect(offlineCtx.destination);
+
   const hasSolo = tracks.some(t => t.is_solo);
   
   for (const t of tracks) {
@@ -445,7 +506,20 @@ export async function exportMixToWav(tracks: AudioTrack[], maxDuration: number):
       const gain = offlineCtx.createGain();
       gain.gain.value = t.eq_settings?.volume ?? 1.0;
       
-      source.connect(bass).connect(mid).connect(treble).connect(gain).connect(offlineCtx.destination);
+      source.connect(bass).connect(mid).connect(treble);
+      treble.connect(gain).connect(offlineCtx.destination);
+
+      if (t.eq_settings?.reverb) {
+        const revGain = offlineCtx.createGain();
+        revGain.gain.value = t.eq_settings.reverb;
+        treble.connect(revGain).connect(reverbConvolver);
+      }
+
+      if (t.eq_settings?.delay) {
+        const delGain = offlineCtx.createGain();
+        delGain.gain.value = t.eq_settings.delay;
+        treble.connect(delGain).connect(delayNode);
+      }
       
       const offset = t.start_offset || 0;
       const trimStart = t.trim_start || 0;
@@ -460,4 +534,84 @@ export async function exportMixToWav(tracks: AudioTrack[], maxDuration: number):
   
   const renderedBuffer = await offlineCtx.startRendering();
   return audioBufferToWavBlob(renderedBuffer);
+}
+
+// 🔊 Synthèse procédurale de bruitages cinématiques (SFX)
+export async function generateCinematicSFX(
+  type: 'thunder' | 'rain' | 'click' | 'laser' | 'nebula'
+): Promise<Blob> {
+  const sampleRate = 44100;
+  const duration = type === 'rain' ? 4.0 : type === 'nebula' ? 3.5 : type === 'thunder' ? 3.0 : 0.8;
+  const ctx = new OfflineAudioContext(2, Math.floor(sampleRate * duration), sampleRate);
+
+  if (type === 'thunder') {
+    const noiseBuffer = ctx.createBuffer(2, Math.floor(sampleRate * duration), sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const data = noiseBuffer.getChannelData(c);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.9;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(600, 0);
+    filter.frequency.exponentialRampToValueAtTime(60, duration);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(1.0, 0);
+    gain.gain.exponentialRampToValueAtTime(0.01, duration);
+    noise.connect(filter).connect(gain).connect(ctx.destination);
+    noise.start(0);
+  } else if (type === 'rain') {
+    const noiseBuffer = ctx.createBuffer(2, Math.floor(sampleRate * duration), sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const data = noiseBuffer.getChannelData(c);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.4;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1800;
+    filter.Q.value = 0.8;
+    noise.connect(filter).connect(ctx.destination);
+    noise.start(0);
+  } else if (type === 'laser') {
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1400, 0);
+    osc.frequency.exponentialRampToValueAtTime(80, 0.35);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.7, 0);
+    gain.gain.exponentialRampToValueAtTime(0.01, 0.35);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(0);
+    osc.stop(0.35);
+  } else if (type === 'click') {
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(3000, 0);
+    osc.frequency.exponentialRampToValueAtTime(200, 0.04);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.9, 0);
+    gain.gain.exponentialRampToValueAtTime(0.01, 0.04);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(0);
+    osc.stop(0.04);
+  } else {
+    // Nebula / Accord ambiant
+    [261.63, 329.63, 392.00, 523.25].forEach((freq) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.2, 0);
+      gain.gain.exponentialRampToValueAtTime(0.005, duration);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(0);
+      osc.stop(duration);
+    });
+  }
+
+  const rendered = await ctx.startRendering();
+  return audioBufferToWavBlob(rendered);
 }
