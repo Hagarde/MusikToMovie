@@ -23,6 +23,7 @@ import {
 } from '../../lib/youtube';
 import { Modal } from '../ui/Modal';
 import { YouTubeIcon } from '../icons/YouTubeIcon';
+import { extractBpmFromFilename } from '../../lib/bpmDetector';
 
 interface TrackUploadModalProps {
   isOpen: boolean;
@@ -43,6 +44,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const [artist, setArtist] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
   const [duration, setDuration] = useState(180);
+  const [bpm, setBpm] = useState<number | ''>('');
   
   // Segment : 2 Points (Début et Fin)
   const [startTime, setStartTime] = useState<number>(30);
@@ -92,6 +94,14 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
 
     return () => clearTimeout(timer);
   }, [youtubeUrl]);
+
+  // Extraction automatique du BPM si présent dans le titre ou l'URL (ex: [124 BPM])
+  useEffect(() => {
+    const extracted = extractBpmFromFilename(title) || extractBpmFromFilename(youtubeUrl);
+    if (extracted && !bpm) {
+      setBpm(extracted);
+    }
+  }, [title, youtubeUrl]);
 
   // Mise à jour de la durée réelle
   const updateExactDuration = (player: any) => {
@@ -354,6 +364,7 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
         duration: duration || 180,
         default_start_time: startTime,
         default_end_time: endTime,
+        bpm: bpm ? Number(bpm) : undefined,
       });
 
       onTrackCreated(created);
@@ -798,21 +809,45 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-stone-700 mb-1">
-              Genre / Ambiance Cinéma
-            </label>
-            <select
-              value={genre}
-              onChange={(e) => setGenre(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-stone-900 cursor-pointer"
-            >
-              {GENRES.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Genre / Ambiance Cinéma
+              </label>
+              <select
+                value={genre}
+                onChange={(e) => setGenre(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-stone-900 cursor-pointer"
+              >
+                {GENRES.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-stone-700">
+                  Tempo BPM (Optionnel)
+                </label>
+                {bpm && (
+                  <span className="text-[10px] text-emerald-600 font-bold font-mono">
+                    ✓ Détecté [{bpm} BPM]
+                  </span>
+                )}
+              </div>
+              <input
+                type="number"
+                min="40"
+                max="240"
+                value={bpm}
+                onChange={(e) => setBpm(e.target.value ? parseInt(e.target.value, 10) : '')}
+                placeholder="Ex: 124"
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 font-mono placeholder-stone-400 focus:outline-none focus:border-stone-900"
+              />
+            </div>
           </div>
 
           {/* Actions */}
