@@ -388,13 +388,15 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
   const endPercent = duration > 0 ? (endTime / duration) * 100 : 100;
   const playheadPercentOnGlobal = duration > 0 ? (clampedPlayTime / duration) * 100 : 0;
 
+  const handleModalClose = () => {
+    if (ytPlayerRef.current) {
+      try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
+    }
+    onClose();
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={() => {
-      if (ytPlayerRef.current) {
-        try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
-      }
-      onClose();
-    }} title="Ajouter une Musique" size="md">
+    <Modal isOpen={isOpen} onClose={handleModalClose} title="Ajouter une Musique" size="lg" theme="light">
       <div className="hidden pointer-events-none opacity-0">
         <div ref={ytContainerRef} />
       </div>
@@ -499,6 +501,87 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* 📝 Informations du morceau (Titre, Artiste, Genre, BPM) */}
+          <div className="bg-stone-50/90 rounded-2xl border border-stone-200 p-3.5 sm:p-4 space-y-3.5 shadow-sm">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-200/80">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">🎵</span>
+                <span className="text-xs font-bold text-stone-900">Métadonnées du Morceau</span>
+              </div>
+              <span className="text-[11px] text-stone-500 font-medium">Modifiables au clic</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">
+                  Titre du morceau *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex: Time - Inception"
+                  className="w-full bg-white border border-stone-300 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:border-stone-900 shadow-sm transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">
+                  Artiste / Compositeur
+                </label>
+                <input
+                  type="text"
+                  value={artist}
+                  onChange={(e) => setArtist(e.target.value)}
+                  placeholder="Ex: Hans Zimmer"
+                  className="w-full bg-white border border-stone-300 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:border-stone-900 shadow-sm transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">
+                  Genre / Ambiance Cinéma *
+                </label>
+                <select
+                  value={genre}
+                  onChange={(e) => setGenre(e.target.value)}
+                  className="w-full bg-white border border-stone-300 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 font-medium focus:outline-none focus:ring-2 focus:ring-stone-900 focus:border-stone-900 cursor-pointer shadow-sm transition-all"
+                >
+                  {GENRES.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-stone-800">
+                    Tempo BPM (Optionnel)
+                  </label>
+                  {bpm && (
+                    <span className="text-[10px] text-emerald-600 font-bold font-mono">
+                      ✓ Détecté [{bpm} BPM]
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  min="40"
+                  max="240"
+                  value={bpm}
+                  onChange={(e) => setBpm(e.target.value ? parseInt(e.target.value, 10) : '')}
+                  placeholder="Ex: 124"
+                  className="w-full bg-white border border-stone-300 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 font-mono placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:border-stone-900 shadow-sm transition-all"
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Aperçu YouTube & Module de Boucle */}
           {youtubeId && (
@@ -779,87 +862,12 @@ export const TrackUploadModal: React.FC<TrackUploadModalProps> = ({
             </div>
           )}
 
-          {/* Formulaire des métadonnées */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Titre du morceau *
-              </label>
-              <input
-                type="text"
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex: Time - Inception"
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Artiste / Compositeur
-              </label>
-              <input
-                type="text"
-                value={artist}
-                onChange={(e) => setArtist(e.target.value)}
-                placeholder="Ex: Hans Zimmer"
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:outline-none focus:border-stone-900"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Genre / Ambiance Cinéma
-              </label>
-              <select
-                value={genre}
-                onChange={(e) => setGenre(e.target.value)}
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-stone-900 cursor-pointer"
-              >
-                {GENRES.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-stone-700">
-                  Tempo BPM (Optionnel)
-                </label>
-                {bpm && (
-                  <span className="text-[10px] text-emerald-600 font-bold font-mono">
-                    ✓ Détecté [{bpm} BPM]
-                  </span>
-                )}
-              </div>
-              <input
-                type="number"
-                min="40"
-                max="240"
-                value={bpm}
-                onChange={(e) => setBpm(e.target.value ? parseInt(e.target.value, 10) : '')}
-                placeholder="Ex: 124"
-                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-stone-900 font-mono placeholder-stone-400 focus:outline-none focus:border-stone-900"
-              />
-            </div>
-          </div>
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-3 sm:pt-4 border-t border-stone-200">
             <button
               type="button"
-              onClick={() => {
-                if (ytPlayerRef.current) {
-                  try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
-                }
-                onClose();
-              }}
+              onClick={handleModalClose}
               className="px-4 py-2 rounded-xl text-xs font-medium text-stone-600 hover:bg-stone-100 transition-colors"
             >
               Annuler

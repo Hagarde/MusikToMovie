@@ -7,46 +7,63 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  theme?: 'dark' | 'light';
 }
 
-export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, size = 'md', theme = 'dark' }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    if (isOpen) {
-      // Prevent body scroll
-      document.body.style.overflow = 'hidden';
-      
-      // Store previous focus
-      previousFocusRef.current = document.activeElement as HTMLElement;
-      
-      // Focus first focusable element in modal
-      const focusableElements = modalRef.current?.querySelectorAll(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      if (focusableElements && focusableElements.length > 0) {
-        (focusableElements[0] as HTMLElement).focus();
-      } else {
-        modalRef.current?.focus();
-      }
+    if (!isOpen) return;
 
-      // Handle Escape key
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') onClose();
-      };
-      document.addEventListener('keydown', handleKeyDown);
-      
-      return () => {
-        document.body.style.overflow = '';
-        document.removeEventListener('keydown', handleKeyDown);
-        // Restore focus
-        if (previousFocusRef.current) {
-          previousFocusRef.current.focus();
+    // Prevent body scroll
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    
+    // Store previous focus
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    
+    // Focus first interactive element once on mount
+    const timer = setTimeout(() => {
+      if (!modalRef.current) return;
+      const inputs = modalRef.current.querySelectorAll<HTMLElement>(
+        'input:not([type="range"]):not([type="hidden"]), select, textarea'
+      );
+      if (inputs.length > 0) {
+        inputs[0].focus();
+      } else {
+        const anyFocusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (anyFocusable.length > 0) {
+          anyFocusable[0].focus();
+        } else {
+          modalRef.current.focus();
         }
-      };
-    }
-  }, [isOpen, onClose]);
+      }
+    }, 50);
+
+    // Handle Escape key
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCloseRef.current();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      clearTimeout(timer);
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      // Restore focus
+      if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -57,8 +74,10 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     xl: 'max-w-6xl'
   };
 
+  const isLight = theme === 'light';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
@@ -73,16 +92,29 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
         aria-modal="true"
         aria-labelledby="modal-title"
         tabIndex={-1}
-        className={`relative w-full ${sizeClasses[size]} bg-stone-900 rounded-xl shadow-2xl border border-stone-800 transform transition-all scale-100 opacity-100 flex flex-col max-h-[90vh]`}
+        className={`relative w-full ${sizeClasses[size]} ${
+          isLight 
+            ? 'bg-white text-stone-900 border-stone-200 shadow-2xl' 
+            : 'bg-stone-900 text-stone-100 border-stone-800 shadow-2xl'
+        } rounded-3xl border transform transition-all scale-100 opacity-100 flex flex-col max-h-[90vh]`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-stone-800 shrink-0">
-          <h2 id="modal-title" className="text-xl font-semibold text-stone-100">
+        <div className={`flex items-center justify-between px-6 py-4 border-b shrink-0 ${
+          isLight ? 'border-stone-200 bg-stone-50/80 rounded-t-3xl' : 'border-stone-800 bg-stone-900/80 rounded-t-3xl'
+        }`}>
+          <h2 id="modal-title" className={`text-lg sm:text-xl font-bold font-display ${
+            isLight ? 'text-stone-900' : 'text-stone-100'
+          }`}>
             {title}
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-stone-400 hover:text-rose-400 hover:bg-stone-800 rounded-lg transition-colors"
+            className={`p-2 rounded-xl transition-colors ${
+              isLight 
+                ? 'text-stone-400 hover:text-stone-900 hover:bg-stone-200/70' 
+                : 'text-stone-400 hover:text-rose-400 hover:bg-stone-800'
+            }`}
             aria-label="Fermer"
           >
             <X size={20} />
@@ -90,7 +122,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
         </div>
         
         {/* Content */}
-        <div className="p-6 overflow-y-auto min-h-0">
+        <div className="p-4 sm:p-6 overflow-y-auto min-h-0">
           {children}
         </div>
       </div>
